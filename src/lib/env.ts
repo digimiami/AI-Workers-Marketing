@@ -10,7 +10,8 @@ const serverSchema = z.object({
 
   // Resend
   RESEND_API_KEY: z.string().min(10).optional(),
-  RESEND_FROM_EMAIL: z.string().email().optional(),
+  // Resend allows formats like: "Team <noreply@domain.com>"
+  RESEND_FROM_EMAIL: z.string().min(3).optional(),
 
   // OpenClaw
   OPENCLAW_BASE_URL: z.string().url().optional(),
