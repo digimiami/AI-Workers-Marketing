@@ -1,65 +1,119 @@
-import Image from "next/image";
+import Link from "next/link";
+
+import { HomeFinalCta } from "@/components/marketing/home-final-cta";
+import { HomeHero } from "@/components/marketing/home-hero";
+import { HomeProcessPipeline } from "@/components/marketing/home-process-pipeline";
+import { HomeResultsPreview } from "@/components/marketing/home-results-preview";
+import { Reveal } from "@/components/marketing/motion-primitives";
+import { SectionHeader } from "@/components/marketing/section-header";
+import { StatMetricCard } from "@/components/marketing/stat-metric-card";
+import { WorkerMarketCard } from "@/components/marketing/worker-market-card";
+import { PublicShell } from "@/components/marketing/PublicShell";
+import { buttonVariants } from "@/components/ui/button";
+import { WORKERS, type WorkerKey } from "@/lib/workersCatalog";
+
+const CORE_PATH: WorkerKey[] = ["opportunity-scout", "funnel-architect", "content-strategist"];
 
 export default function Home() {
+  const core = new Set(CORE_PATH);
+  const orderedWorkers = [
+    ...CORE_PATH.map((k) => WORKERS.find((w) => w.key === k)!),
+    ...WORKERS.filter((w) => !core.has(w.key)),
+  ];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <PublicShell>
+      <HomeHero />
+
+      <section className="border-t border-border/50 bg-muted/10">
+        <div className="mkt-page">
+          <SectionHeader
+            eyebrow="Pipeline"
+            title="How it works"
+            description="Predictable leads start with a clear sequence. A modular pipeline you run internally today—and productize as a premium client service tomorrow."
+            action={
+              <Link href="/how-it-works" className={buttonVariants({ variant: "outline", className: "shrink-0" })}>
+                Full architecture
+              </Link>
+            }
+          />
+          <div className="mt-10">
+            <HomeProcessPipeline />
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      <section className="border-t border-border/50">
+        <div className="mkt-page">
+          <SectionHeader
+            eyebrow="Workforce"
+            title="AI workers as an operating system"
+            description="Automated workflows—human ownership at critical gates. Each role is modular: enable, schedule, approve, and audit. Orchestration stays explicit—no black-box autopilot."
+            action={
+              <Link href="/ai-workers" className={buttonVariants({ variant: "outline", className: "shrink-0" })}>
+                Explore all workers
+              </Link>
+            }
+          />
+          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {orderedWorkers.map((w) => (
+              <WorkerMarketCard key={w.key} worker={w} emphasis={core.has(w.key) ? "featured" : "default"} />
+            ))}
+          </div>
         </div>
-      </main>
-    </div>
+      </section>
+
+      <section className="border-t border-border/50 bg-muted/10">
+        <div className="mkt-page">
+          <SectionHeader
+            eyebrow="Telemetry"
+            title="Results you can stand behind"
+            description="System-driven growth shows up in the dashboard. Campaign throughput, publishing cadence, lead capture, clicks, conversions, and worker run history—aligned for operators and stakeholders."
+            action={
+              <Link href="/results" className={buttonVariants({ className: "shrink-0" })}>
+                Open results view
+              </Link>
+            }
+          />
+          <Reveal>
+            <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <StatMetricCard
+                label="Campaigns"
+                value="1"
+                hint="Seeded workspace ready for expansion"
+                trend="+pipeline"
+              />
+              <StatMetricCard
+                label="Content"
+                value="Queue"
+                hint="Draft → review → publish with approvals"
+                trend="on track"
+              />
+              <StatMetricCard
+                label="Leads"
+                value="Capture"
+                hint="Forms + nurture handoff to workers"
+                trend="stable"
+              />
+              <StatMetricCard
+                label="Clicks"
+                value="Tracked"
+                hint="Affiliate redirects + event stream"
+                trend="instrumented"
+              />
+            </div>
+          </Reveal>
+          <div className="mt-8">
+            <HomeResultsPreview />
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-border/50">
+        <div className="mkt-page pb-16 pt-12 md:pb-20 md:pt-16">
+          <HomeFinalCta />
+        </div>
+      </section>
+    </PublicShell>
   );
 }
