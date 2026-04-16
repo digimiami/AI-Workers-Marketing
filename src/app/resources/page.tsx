@@ -15,28 +15,28 @@ import { Input } from "@/components/ui/input";
 const categories = [
   {
     slug: "ai-marketing",
-    title: "AI marketing",
-    desc: "Systems, prompts, orchestration patterns, and measurement for AI-led growth teams.",
+    title: "Operating system",
+    desc: "Orchestration patterns, worker contracts, approvals, and telemetry—how the system actually runs.",
   },
   {
     slug: "funnels",
     title: "Funnels",
-    desc: "Landing and bridge architecture, CTA testing, and offer sequencing that survives scrutiny.",
+    desc: "Architecture, sequencing, and CTA testing that turns traffic into measurable pipeline.",
   },
   {
     slug: "ai-visibility",
     title: "AI visibility",
-    desc: "Brand demand, discoverability, and authority plays in an AI-mediated search landscape.",
+    desc: "Authority plays and demand capture in an AI-mediated discovery landscape.",
   },
   {
     slug: "automation-playbooks",
-    title: "Automation playbooks",
-    desc: "Repeatable SOPs for campaigns, approvals, and telemetry you can hand to operators.",
+    title: "Runbooks",
+    desc: "Repeatable SOPs for workflows, approvals, and measurement you can hand to operators.",
   },
   {
     slug: "comparisons",
     title: "Comparisons",
-    desc: "Tools, stacks, and delivery models—cut through vendor noise with operator-grade notes.",
+    desc: "Stacks, tools, and delivery models—clear trade-offs without vendor noise.",
   },
 ];
 
@@ -48,9 +48,9 @@ const featured = [
     href: "/resources/automation-playbooks",
   },
   {
-    title: "OpenClaw orchestration for marketing operators",
+    title: "Orchestration for growth operators (no black boxes)",
     tag: "Deep dive",
-    excerpt: "How we structure workers, schedules, and structured outputs without a black-box autopilot.",
+    excerpt: "How workers chain, how approvals work, and how structured outputs become repeatable workflows.",
     href: "/resources/ai-marketing",
   },
 ];
@@ -61,9 +61,9 @@ export default function ResourcesPage() {
   return (
     <PublicShell>
       <PageHero
-        eyebrow="Insights hub"
-        title="Resources built for serious operators."
-        description="Long-form guides, playbooks, and benchmarks—wired for the same events, workers, and approvals as the product. New drops ship here first."
+        eyebrow="Operator library"
+        title="Operating manuals for AI-driven growth."
+        description="Guides, runbooks, and benchmarks—built around workers, approvals, and telemetry. Less hype, more implementation."
         motif={
           <div className="flex size-24 items-center justify-center rounded-3xl border border-primary/30 bg-primary/10 text-primary shadow-lg md:size-28">
             <Newspaper className="size-11 md:size-12" aria-hidden />
@@ -135,7 +135,7 @@ export default function ResourcesPage() {
               </div>
               <h3 className="font-display text-xl font-bold tracking-tight">Ship notes for AI GTM teams</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Orchestration tips, funnel teardowns, and benchmark drops—no fluff, no third-party ads.
+                Orchestration notes, funnel teardowns, and benchmark drops—no fluff, no third-party ads.
               </p>
             </div>
             <div className="flex w-full max-w-md flex-col gap-2 sm:flex-row">
@@ -157,9 +157,9 @@ export default function ResourcesPage() {
 
         <CtaBanner
           title="Want content mapped to your stack?"
-          description="Tell us your funnel stage and approval model—we’ll recommend the first articles to implement and measure."
+          description="Tell us your funnel stage and approval model—we’ll recommend what to implement first and what to measure."
           primary={{ href: "/book", label: "Book audit" }}
-          secondary={{ href: "/demo", label: "Watch demo" }}
+          secondary={{ href: "/demo", label: "Run demo" }}
         />
       </div>
 

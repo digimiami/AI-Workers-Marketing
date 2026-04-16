@@ -29,11 +29,11 @@ export function HomeFinalCta() {
         />
         <div className="relative mx-auto max-w-3xl space-y-4">
           <h2 className="font-display text-3xl font-bold tracking-tight text-balance text-foreground md:text-4xl lg:text-[2.5rem] lg:leading-tight">
-            Ready to deploy AI workers on your business?
+            Ready to deploy an AI workforce operating system?
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground md:text-base">
-            Predictable lead flow, automated workflows, and system-driven growth—without surrendering approvals or
-            auditability.
+            Replace fragmented execution with orchestrated leverage—connected workflows, approval gates, and telemetry
+            that turns marketing into a measurable system.
           </p>
           <div className="flex flex-col items-center justify-center gap-3 pt-4 sm:flex-row sm:flex-wrap">
             <Link href="/demo" className={buttonVariants({ size: "lg", className: "min-w-[200px] btn-primary-cta px-8" })}>
@@ -47,7 +47,7 @@ export function HomeFinalCta() {
                 className: "min-w-[180px] border-white/25 bg-background/50 font-semibold backdrop-blur-sm hover:bg-background/75",
               })}
             >
-              Book audit
+              Book workflow audit
             </Link>
             <Link
               href="/how-it-works"
@@ -57,7 +57,7 @@ export function HomeFinalCta() {
                 className: "min-w-[160px] border border-border/60 bg-background/40 font-semibold backdrop-blur-sm",
               })}
             >
-              See system
+              Explore architecture
             </Link>
           </div>
         </div>

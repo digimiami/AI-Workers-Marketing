@@ -11,37 +11,37 @@ import { buttonVariants } from "@/components/ui/button";
 
 const tiers = [
   {
-    name: "Starter Automation",
+    name: "Baseline OS Deployment",
     priceLabel: "Starter",
-    description: "A working funnel, tracking baseline, and core worker templates to prove motion fast.",
+    description: "Deploy the core operating flow: funnel, capture, telemetry, and the templates to ship the first motion fast.",
     bullets: [
-      "Campaign + funnel setup",
-      "Lead capture + basic nurture",
-      "Affiliate click tracking",
-      "Core worker templates",
+      "Funnel + capture baseline",
+      "Telemetry wiring (events + KPIs)",
+      "Core worker templates + guardrails",
+      "Operator runbook + approvals",
     ],
   },
   {
-    name: "Growth Engine",
+    name: "Throughput + Optimization OS",
     priceLabel: "Growth",
-    description: "Content and publishing throughput with optimization loops and operator approvals.",
+    description: "Increase throughput and learning speed with publishing cadence, nurture loops, and operator approvals.",
     bullets: [
-      "Content batch workflows",
-      "Publishing queue + scheduling",
-      "Analytics dashboard + KPIs",
-      "Approval workflows for sensitive sends",
+      "Content engine + publishing cadence",
+      "Nurture automation with approvals",
+      "Executive dashboard + KPI definitions",
+      "Weekly experiment loop + backlog",
     ],
     featured: true as const,
   },
   {
-    name: "Done-For-You AI Department",
+    name: "Managed Growth Operations",
     priceLabel: "DFY",
-    description: "We operate your workforce weekly—new creatives, funnels, and experiments on a fixed rhythm.",
+    description: "We operate the system weekly: new funnels, creatives, and experiments on a fixed cadence with reporting.",
     bullets: [
-      "Weekly optimization cycles",
-      "New creatives + funnel iterations",
-      "Email + on-site conversion assistance",
-      "Dedicated reporting for stakeholders",
+      "Weekly launches + iteration rhythm",
+      "Creative + funnel + CRO execution",
+      "Nurture + on-site conversion tuning",
+      "Stakeholder reporting + governance",
     ],
   },
 ];
@@ -49,7 +49,7 @@ const tiers = [
 const faq = [
   {
     q: "Is pricing fixed or custom?",
-    a: "Packages above are positioning tiers. Final scope depends on traffic volume, approval complexity, and integrations—we align in the audit call.",
+    a: "Tiers are deployment levels. Final scope depends on traffic volume, approval complexity, integrations, and how much of the operating cadence you want managed.",
   },
   {
     q: "Can we self-host?",
@@ -57,11 +57,11 @@ const faq = [
   },
   {
     q: "What approvals are supported?",
-    a: "Human gates on publishing, outbound email, and high-risk copy changes—mirrored in the admin approval queue.",
+    a: "Human gates on publishing, outbound email, and high-risk copy changes—captured in the approval queue with an audit trail.",
   },
   {
     q: "How fast is implementation?",
-    a: "Starter motions are designed to go live quickly with templates; Growth and DFY add orchestration depth and weekly iteration cadence.",
+    a: "Baseline deployments are designed to go live quickly with templates. Higher tiers add orchestration depth, telemetry loops, and a weekly iteration cadence.",
   },
 ];
 
@@ -69,9 +69,9 @@ export default function PricingPage() {
   return (
     <PublicShell>
       <PageHero
-        eyebrow="Engagement models"
-        title="Invest in leverage, not busywork."
-        description="Pick the depth that matches your stage—from a working baseline you operate yourself, to a fully managed AI department that compounds weekly."
+        eyebrow="Deployment levels"
+        title="Deploy leverage at the depth you need."
+        description="Start with a baseline you operate yourself, then scale into throughput + optimization loops—or hand operations to us weekly."
         motif={
           <div className="flex size-24 items-center justify-center rounded-3xl border border-primary/30 bg-primary/10 text-primary shadow-lg md:size-28">
             <CreditCard className="size-11 md:size-12" aria-hidden />
@@ -82,7 +82,7 @@ export default function PricingPage() {
           Book audit
         </Link>
         <Link href="/demo" className={buttonVariants({ size: "lg", variant: "outline" })}>
-          Watch demo
+          Run demo
         </Link>
       </PageHero>
 

@@ -42,13 +42,13 @@ export function PublicShell({
                 className: "hidden sm:inline-flex border-primary/25",
               })}
             >
-              Watch demo
+              Run demo
             </Link>
             <Link
               href="/book"
               className={buttonVariants({ className: "btn-primary-cta shadow-sm shadow-primary/20" })}
             >
-              Book audit
+              Book workflow audit
             </Link>
           </div>
         </div>

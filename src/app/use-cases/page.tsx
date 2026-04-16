@@ -13,42 +13,42 @@ const cases = [
   {
     title: "Local businesses",
     summary:
-      "High-intent lead funnels, automated nurture, and booking CTAs tuned for service-area offers and seasonal promos.",
+      "Turn traffic into booked calls with a connected funnel → capture → nurture flow, tuned for seasonal demand.",
     workers: "Funnel Architect → Lead Nurture → Conversion Worker",
     iconKey: "building",
   },
   {
     title: "Realtors",
     summary:
-      "Neighborhood narratives, listing bridges, and follow-up sequences that respect compliance while staying human.",
+      "Listing funnels + follow-up sequences with approvals for compliance, without losing speed or consistency.",
     workers: "Content Strategist → Publishing → Nurture",
     iconKey: "home",
   },
   {
     title: "Med spas",
     summary:
-      "Offer testing with conservative claims, treatment education content, and appointment-first conversion paths.",
+      "Offer testing with guardrails, education content, and appointment-first conversion paths measured end-to-end.",
     workers: "Opportunity Scout → Funnel Architect → Analyst",
     iconKey: "stethoscope",
   },
   {
     title: "E-commerce",
     summary:
-      "Angle discovery, UGC scripts, PDP support content, and CRO loops informed by click and cart telemetry.",
+      "Angle discovery → creative output → CRO loops, tied to click/cart telemetry for faster iteration cycles.",
     workers: "Scout → Content → Analyst",
     iconKey: "shopping",
   },
   {
     title: "SaaS",
     summary:
-      "Demo-led funnels, trial nurture, activation content, and expansion plays coordinated across channels.",
+      "Demo funnels + trial nurture + activation content coordinated across channels with measurable pipeline impact.",
     workers: "Funnel Architect → Nurture → Conversion",
     iconKey: "layers",
   },
   {
     title: "Coaches & consultants",
     summary:
-      "Authority engines—webinars, workshops, and long-form nurture that move prospects from curiosity to calendar.",
+      "Authority engines (webinars/workshops) plus nurture that moves prospects from curiosity to calendar—on cadence.",
     workers: "Content → Video → Nurture",
     iconKey: "graduation",
   },
@@ -58,9 +58,9 @@ export default function UseCasesPage() {
   return (
     <PublicShell>
       <PageHero
-        eyebrow="Vertical playbooks"
-        title="Same workforce. Different winning motions."
-        description="Campaign context, brand voice, and approval rules shift per industry—while the underlying orchestration, telemetry, and worker contracts stay consistent."
+        eyebrow="System deployments"
+        title="One operating system. Many growth motions."
+        description="Industries differ. The system stays consistent: connected workers, approval gates, and telemetry loops that turn execution into learning."
         motif={
           <div className="grid grid-cols-2 gap-2 opacity-90">
             {[Layers, Home, ShoppingBag].map((Ic, i) => (
@@ -78,7 +78,7 @@ export default function UseCasesPage() {
           Meet the workers
         </Link>
         <Link href="/demo" className={buttonVariants({ size: "lg", className: "btn-primary-cta" })}>
-          Watch demo
+          Run demo
         </Link>
       </PageHero>
 
@@ -96,8 +96,8 @@ export default function UseCasesPage() {
         </div>
 
         <CtaBanner
-          title="Done-for-you industry rollout"
-          description="We map offer, funnel, content cadence, approvals, and analytics to your motion—then operate weekly optimization cycles with your team."
+          title="Deploy the system to your motion"
+          description="We map your offer, funnel, worker roles, approvals, and telemetry—then run weekly optimization cycles with your team."
           primary={{ href: "/book", label: "Book audit" }}
           secondary={{ href: "/pricing", label: "View pricing" }}
         />

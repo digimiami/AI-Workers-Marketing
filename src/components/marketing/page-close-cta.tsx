@@ -4,7 +4,7 @@ import { CtaBanner } from "@/components/marketing/cta-banner";
 
 export function PageCloseCta({
   title = "Ready to map this to your offer?",
-  description = "Book a short audit—we’ll align funnel, content, workers, and approvals to your growth goal.",
+  description = "Book an AI workflow audit—we’ll map your funnel, workers, approvals, and telemetry into a connected operating flow.",
 }: {
   title?: string;
   description?: string;
@@ -15,7 +15,7 @@ export function PageCloseCta({
         title={title}
         description={description}
         primary={{ href: "/book", label: "Book audit" }}
-        secondary={{ href: "/demo", label: "Watch demo" }}
+        secondary={{ href: "/demo", label: "Run demo" }}
       />
       <p className="mt-4 text-center text-xs text-muted-foreground">
         Prefer to explore first?{" "}

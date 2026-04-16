@@ -87,7 +87,7 @@ export function HomeProcessPipeline() {
   return (
     <div>
       <p className="mb-6 text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground lg:text-left">
-        Automated workflows · predictable leads · system-driven growth
+        Connected workers · operator control · measurable throughput
       </p>
       <div className="relative flex flex-col items-center gap-2 sm:flex-row sm:flex-wrap sm:justify-center lg:flex-nowrap lg:justify-between">
         <div className="pointer-events-none absolute left-8 right-8 top-[22px] hidden h-px lg:block" aria-hidden>

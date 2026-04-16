@@ -1,9 +1,11 @@
 import Link from "next/link";
 
+import { HomeComparison } from "@/components/marketing/home-comparison";
 import { HomeFinalCta } from "@/components/marketing/home-final-cta";
 import { HomeHero } from "@/components/marketing/home-hero";
 import { HomeProcessPipeline } from "@/components/marketing/home-process-pipeline";
 import { HomeResultsPreview } from "@/components/marketing/home-results-preview";
+import { HomeShiftSection } from "@/components/marketing/home-shift-section";
 import { Reveal } from "@/components/marketing/motion-primitives";
 import { SectionHeader } from "@/components/marketing/section-header";
 import { StatMetricCard } from "@/components/marketing/stat-metric-card";
@@ -25,15 +27,17 @@ export default function Home() {
     <PublicShell>
       <HomeHero />
 
+      <HomeShiftSection />
+
       <section className="border-t border-border/50 bg-muted/10">
         <div className="mkt-page">
           <SectionHeader
             eyebrow="Pipeline"
-            title="How it works"
-            description="Predictable leads start with a clear sequence. A modular pipeline you run internally today—and productize as a premium client service tomorrow."
+            title="A connected operating flow (not a feature list)"
+            description="Workers feed the next step: discover opportunities, build the funnel, generate content, capture + nurture leads, then optimize from telemetry."
             action={
               <Link href="/how-it-works" className={buttonVariants({ variant: "outline", className: "shrink-0" })}>
-                Full architecture
+                Explore the architecture
               </Link>
             }
           />
@@ -47,11 +51,11 @@ export default function Home() {
         <div className="mkt-page">
           <SectionHeader
             eyebrow="Workforce"
-            title="AI workers as an operating system"
-            description="Automated workflows—human ownership at critical gates. Each role is modular: enable, schedule, approve, and audit. Orchestration stays explicit—no black-box autopilot."
+            title="An AI workforce operating system for growth"
+            description="Modular workers. Approval gates. Shared telemetry. Replace fragmented execution with connected workflows you can run internally or deliver to clients."
             action={
               <Link href="/ai-workers" className={buttonVariants({ variant: "outline", className: "shrink-0" })}>
-                Explore all workers
+                View the workforce
               </Link>
             }
           />
@@ -67,11 +71,11 @@ export default function Home() {
         <div className="mkt-page">
           <SectionHeader
             eyebrow="Telemetry"
-            title="Results you can stand behind"
-            description="System-driven growth shows up in the dashboard. Campaign throughput, publishing cadence, lead capture, clicks, conversions, and worker run history—aligned for operators and stakeholders."
+            title="Proof of operational leverage"
+            description="Throughput you can measure: launches, content shipped, leads captured, conversions tracked, and optimization loops tied back to worker runs."
             action={
               <Link href="/results" className={buttonVariants({ className: "shrink-0" })}>
-                Open results view
+                Open executive view
               </Link>
             }
           />
@@ -108,6 +112,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <HomeComparison />
 
       <section className="border-t border-border/50">
         <div className="mkt-page pb-16 pt-12 md:pb-20 md:pt-16">

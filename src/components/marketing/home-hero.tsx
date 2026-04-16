@@ -78,17 +78,17 @@ function CommandPanel() {
 }
 
 const heroKpis = [
-  { label: "Runs / 7d", value: "186", hint: "demo workspace" },
-  { label: "Median approval", value: "4.2h", hint: "human gate" },
-  { label: "Structured outputs", value: "100%", hint: "JSON + logs" },
-  { label: "Worker roles live", value: "8", hint: "modular" },
+  { label: "Workflows shipped", value: "18", hint: "templates" },
+  { label: "Time-to-launch", value: "<24h", hint: "baseline motion" },
+  { label: "Approval coverage", value: "100%", hint: "high-risk gates" },
+  { label: "Telemetry events", value: "1.2M", hint: "demo dataset" },
 ];
 
 const credibility = [
-  "Approval queues",
-  "Audit-ready runs",
-  "Structured outputs",
-  "Vercel + Supabase ready",
+  "Launch faster",
+  "Operate leaner",
+  "Learn faster",
+  "Turn workflows into growth systems",
 ];
 
 export function HomeHero() {
@@ -148,17 +148,17 @@ export function HomeHero() {
           <Reveal className="space-y-6">
             <Badge className="border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold tracking-wide text-foreground backdrop-blur-sm">
               <Sparkles className="mr-1.5 inline size-3.5 text-primary" aria-hidden />
-              AI workforce for marketing
+              AI workforce operating system
             </Badge>
             <h1 className="font-display text-4xl font-bold leading-[1.05] tracking-tight text-balance md:text-5xl lg:text-[3.5rem]">
-              <span className="text-gradient-fx">Research. Funnels. Content.</span>{" "}
-              <span className="text-foreground">Leads that compound.</span>
+              <span className="text-gradient-fx">AI is not a tool.</span>{" "}
+              <span className="text-foreground">It’s a leverage system.</span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-muted-foreground text-pretty md:text-xl md:leading-relaxed">
-              Ship <span className="font-medium text-foreground">predictable leads</span> with{" "}
-              <span className="font-medium text-foreground">automated workflows</span> your team can trust—then prove{" "}
-              <span className="font-medium text-foreground">system-driven growth</span> to investors and clients with
-              approvals, logs, and KPIs in one place.
+              Replace manual marketing bottlenecks with <span className="font-medium text-foreground">connected AI workers</span>{" "}
+              for discovery, funnels, content, lead capture, nurture, and optimization—run on cadence with{" "}
+              <span className="font-medium text-foreground">approvals</span> and{" "}
+              <span className="font-medium text-foreground">telemetry</span> you can defend.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <Link
@@ -168,7 +168,7 @@ export function HomeHero() {
                   className: "min-h-11 min-w-[200px] px-8 text-base font-semibold shadow-lg shadow-primary/30",
                 })}
               >
-                Watch demo
+                Run the demo
               </Link>
               <Link
                 href="/book"
@@ -179,17 +179,17 @@ export function HomeHero() {
                     "min-h-11 min-w-[180px] border-primary/30 bg-background/50 text-base font-semibold backdrop-blur-sm hover:bg-background/80",
                 })}
               >
-                Book audit
+                Book workflow audit
               </Link>
               <Link
-                href="/case-study/semrush-test"
+                href="/how-it-works"
                 className={buttonVariants({
                   size: "lg",
                   variant: "secondary",
                   className: "min-h-11 border border-border/60 bg-muted/40 text-base font-medium",
                 })}
               >
-                Case study
+                See the system
               </Link>
             </div>
 
@@ -251,7 +251,7 @@ export function HomeHero() {
 
         <div className="mt-12 border-t border-border/50 pt-8">
           <p className="text-center text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
-            Trusted operating model
+            Operator thesis
           </p>
           <p className="mt-4 text-center text-xs font-medium leading-relaxed text-foreground/85">
             {credibility.join(" · ")}
