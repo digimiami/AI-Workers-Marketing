@@ -1,19 +1,11 @@
-import { EmptyState } from "@/components/app/EmptyState";
+import { redirect } from "next/navigation";
 
-export default function AdminAnalyticsPage() {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-        <p className="text-sm text-muted-foreground">
-          Events ingestion, dashboards, charts, and top-performing assets.
-        </p>
-      </div>
-      <EmptyState
-        title="No analytics data yet"
-        description="Next step: connect /api/events ingestion + dashboard queries + charts."
-      />
-    </div>
-  );
+import { AnalyticsClient } from "@/app/admin/analytics/AnalyticsClient";
+import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
+
+export default async function AdminAnalyticsPage() {
+  const orgId = await getCurrentOrgIdFromCookie();
+  if (!orgId) redirect("/admin/onboarding");
+
+  return <AnalyticsClient organizationId={orgId} />;
 }
-

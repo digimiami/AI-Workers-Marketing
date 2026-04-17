@@ -1,21 +1,11 @@
-import { EmptyState } from "@/components/app/EmptyState";
+import { redirect } from "next/navigation";
 
-export default function AdminContentPage() {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Content</h1>
-        <p className="text-sm text-muted-foreground">
-          Content ideas, scripts, captions, platform variants, publishing queue.
-        </p>
-      </div>
-      <EmptyState
-        title="No content assets loaded yet"
-        description="Next step: connect Content Strategist + Video Worker flows."
-        actionHref="/admin/ai-workers"
-        actionLabel="Open AI workers"
-      />
-    </div>
-  );
+import { ContentClient } from "@/app/admin/content/ContentClient";
+import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
+
+export default async function AdminContentPage() {
+  const orgId = await getCurrentOrgIdFromCookie();
+  if (!orgId) redirect("/admin/onboarding");
+
+  return <ContentClient organizationId={orgId} />;
 }
-

@@ -1,21 +1,11 @@
-import { EmptyState } from "@/components/app/EmptyState";
+import { redirect } from "next/navigation";
 
-export default function AdminFunnelsPage() {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Funnels</h1>
-        <p className="text-sm text-muted-foreground">
-          Visual list of funnels, steps, page content, CTAs, and A/B variants.
-        </p>
-      </div>
-      <EmptyState
-        title="No funnels loaded yet"
-        description="Next step: connect to funnel CRUD and page editors."
-        actionHref="/admin/campaigns"
-        actionLabel="Go to campaigns"
-      />
-    </div>
-  );
+import { FunnelsClient } from "@/app/admin/funnels/FunnelsClient";
+import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
+
+export default async function AdminFunnelsPage() {
+  const orgId = await getCurrentOrgIdFromCookie();
+  if (!orgId) redirect("/admin/onboarding");
+
+  return <FunnelsClient organizationId={orgId} />;
 }
-

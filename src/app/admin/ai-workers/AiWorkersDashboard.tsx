@@ -43,7 +43,11 @@ export function AiWorkersDashboard({ organizationId }: { organizationId: string 
       return (await res.json()) as {
         ok: boolean;
         agents: AgentRow[];
-        backend: { active: string; httpConfigured: boolean };
+        backend: {
+          active: string;
+          httpConfigured: boolean;
+          health?: { ok: boolean; message?: string } | null;
+        };
       };
     },
   });
@@ -206,6 +210,16 @@ export function AiWorkersDashboard({ organizationId }: { organizationId: string 
             <p className="mt-1 text-xs text-muted-foreground">
               Provider: <span className="text-foreground">{backend.active}</span>
               {backend.httpConfigured ? " (HTTP endpoint configured)" : " (stub until OPENCLAW_BASE_URL is set)"}
+              {backend.health ? (
+                <>
+                  {" · "}
+                  <span className={backend.health.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
+                    {backend.health.ok
+                      ? "OpenClaw /health OK"
+                      : `Health: ${backend.health.message ?? "unreachable"}`}
+                  </span>
+                </>
+              ) : null}
             </p>
           ) : null}
         </div>
@@ -360,6 +374,13 @@ export function AiWorkersDashboard({ organizationId }: { organizationId: string 
                 : 0}{" "}
               schedule(s)
             </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Production: Vercel Cron calls{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-[10px]">GET /api/cron/agent-schedules</code> every
+              10 minutes with <code className="rounded bg-muted px-1 py-0.5 text-[10px]">Authorization: Bearer CRON_SECRET</code>
+              . Requires <code className="rounded bg-muted px-1 py-0.5 text-[10px]">CRON_SECRET</code> and{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-[10px]">SUPABASE_SERVICE_ROLE_KEY</code> on the server.
+            </p>
           </CardContent>
         </Card>
 

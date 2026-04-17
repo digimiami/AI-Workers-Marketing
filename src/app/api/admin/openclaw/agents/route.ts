@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { z } from "zod";
 
+import { createOpenClawHttpProviderFromEnv } from "@/lib/openclaw/http-provider";
 import { describeOpenClawBackend } from "@/lib/openclaw/factory";
 import { withOrgMember, withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 import {
@@ -21,10 +22,22 @@ export async function GET(request: Request) {
   if (ctx.error) return ctx.error;
 
   const agents = await listAgents(ctx.supabase, parsed.data);
+  const backend = describeOpenClawBackend();
+  let health: { ok: boolean; message?: string } | null = null;
+  if (backend.active === "http") {
+    const http = createOpenClawHttpProviderFromEnv();
+    if (http) {
+      health = await http.healthCheck().catch((e) => ({
+        ok: false,
+        message: e instanceof Error ? e.message : "Health check failed",
+      }));
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     agents,
-    backend: describeOpenClawBackend(),
+    backend: { ...backend, health },
   });
 }
 
