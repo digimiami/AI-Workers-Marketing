@@ -9,10 +9,15 @@ export async function getCurrentOrgIdFromCookie() {
 
 export async function setCurrentOrgIdCookie(orgId: string) {
   const c = await cookies();
+  // Browsers ignore `secure` cookies on http://localhost, which breaks onboarding locally.
+  // In production (HTTPS), keep it secure.
+  const isProd =
+    process.env.NODE_ENV === "production" ||
+    process.env.VERCEL_ENV === "production";
   c.set(ORG_COOKIE, orgId, {
     httpOnly: true,
     sameSite: "lax",
-    secure: true,
+    secure: isProd,
     path: "/",
     maxAge: 60 * 60 * 24 * 90,
   });
