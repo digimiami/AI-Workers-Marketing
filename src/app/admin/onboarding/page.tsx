@@ -4,7 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { listMyOrganizations } from "@/services/org/orgService";
 
-export default async function AdminOnboardingPage() {
+export default async function AdminOnboardingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ error?: string }>;
+}) {
+  const sp = (await searchParams) ?? {};
+  const error = sp.error ? decodeURIComponent(sp.error) : null;
   const orgs = await listMyOrganizations().catch(() => []);
 
   return (
@@ -14,6 +20,11 @@ export default async function AdminOnboardingPage() {
         <p className="text-sm text-muted-foreground">
           Select an organization or create a new one.
         </p>
+        {error ? (
+          <p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
