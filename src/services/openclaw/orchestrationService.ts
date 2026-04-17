@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { computeNextRunIso } from "@/lib/cron/nextRun";
 import { getOpenClawProvider } from "@/lib/openclaw/factory";
 import { getRegistryEntry, OPENCLAW_AGENT_REGISTRY } from "@/lib/openclaw/registry";
 import type { ExecuteContext, OpenClawRunStatus, RunHumanGate } from "@/lib/openclaw/types";
@@ -873,6 +874,12 @@ export async function upsertSchedule(
     next_run_at?: string | null;
   },
 ) {
+  const tz = row.timezone ?? "UTC";
+  const resolvedNext =
+    row.next_run_at !== undefined
+      ? row.next_run_at
+      : computeNextRunIso(row.cron_expression, tz, new Date()) ?? new Date().toISOString();
+
   if (row.id) {
     const { data, error } = await db
       .from("agent_scheduled_tasks" as never)
@@ -883,7 +890,7 @@ export async function upsertSchedule(
         payload: row.payload ?? {},
         enabled: row.enabled ?? true,
         campaign_id: row.campaign_id ?? null,
-        next_run_at: row.next_run_at ?? null,
+        next_run_at: resolvedNext,
       } as never)
       .eq("id", row.id)
       .eq("organization_id", row.organization_id)
@@ -904,7 +911,7 @@ export async function upsertSchedule(
       timezone: row.timezone ?? "UTC",
       payload: row.payload ?? {},
       enabled: row.enabled ?? true,
-      next_run_at: row.next_run_at ?? new Date().toISOString(),
+      next_run_at: resolvedNext,
     } as never)
     .select("*")
     .single();

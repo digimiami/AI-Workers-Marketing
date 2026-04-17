@@ -75,7 +75,7 @@ export const WORKERS: WorkerCard[] = [
     inputs: ["Approved content asset", "Platform targets", "Schedule"],
     outputs: ["Publish jobs", "Platform links", "Status updates"],
     kpis: ["On-time rate", "Link clicks", "Content shipped", "Ops overhead"],
-    tools: ["Queue", "Provider connectors (TODO)"],
+    tools: ["Queue", "Platform connectors (per deployment)"],
     flow: ["Approve content", "Schedule", "Publish + log outcome"],
   },
   {

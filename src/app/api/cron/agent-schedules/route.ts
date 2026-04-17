@@ -7,7 +7,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { processDueAgentSchedules } from "@/services/jobs/openclawScheduleRunner";
 
 /**
- * Vercel Cron: GET /api/cron/agent-schedules?organizationId=<uuid>
+ * Vercel Cron: GET /api/cron/agent-schedules
+ * Optional: ?organizationId=<uuid> to scope to one org (otherwise processes all due tasks).
  * Header: Authorization: Bearer <CRON_SECRET>
  */
 export async function GET(request: Request) {
@@ -23,9 +24,9 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const organizationId = url.searchParams.get("organizationId");
-  const parsed = z.string().uuid().safeParse(organizationId);
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, message: "organizationId required" }, { status: 400 });
+  const orgParsed = organizationId ? z.string().uuid().safeParse(organizationId) : null;
+  if (organizationId && !orgParsed?.success) {
+    return NextResponse.json({ ok: false, message: "Invalid organizationId" }, { status: 400 });
   }
 
   let admin;
@@ -37,21 +38,25 @@ export async function GET(request: Request) {
       { status: 501 },
     );
   }
-  const { data: member, error } = await admin
-    .from("organization_members" as never)
-    .select("user_id")
-    .eq("organization_id", parsed.data)
-    .in("role", ["admin", "operator"])
-    .limit(1)
-    .maybeSingle();
 
-  if (error || !member) {
-    return NextResponse.json({ ok: false, message: "No operator found for org" }, { status: 400 });
+  let actorUserId: string | undefined;
+  if (orgParsed?.success) {
+    const { data: member, error } = await admin
+      .from("organization_members" as never)
+      .select("user_id")
+      .eq("organization_id", orgParsed.data)
+      .in("role", ["admin", "operator"])
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !member) {
+      return NextResponse.json({ ok: false, message: "No operator found for org" }, { status: 400 });
+    }
+    actorUserId = (member as { user_id: string }).user_id;
   }
 
-  const actorUserId = (member as { user_id: string }).user_id;
   const result = await processDueAgentSchedules(admin, {
-    organizationId: parsed.data,
+    organizationId: orgParsed?.success ? orgParsed.data : undefined,
     actorUserId,
     limit: 20,
   });

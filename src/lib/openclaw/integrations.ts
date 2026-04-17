@@ -52,7 +52,7 @@ export interface ContentPublishTool {
   }): Promise<{ queueId: string }>;
 }
 
-/** Registry of tool interfaces an agent may advertise; runtime wiring is TODO per vendor */
+/** Registry of tool interfaces an agent may advertise; runtime wiring is vendor-specific per deployment. */
 export type OpenClawToolContract =
   | WebResearchTool
   | SocialPostingTool

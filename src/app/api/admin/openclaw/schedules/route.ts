@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { withOrgMember, withOrgOperator } from "@/app/api/admin/openclaw/_shared";
+import { isValidCronExpression } from "@/lib/cron/nextRun";
 import { listSchedules, upsertSchedule } from "@/services/openclaw/orchestrationService";
 
 export async function GET(request: Request) {
@@ -38,6 +39,14 @@ export async function POST(request: Request) {
   const parsed = postSchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: "Invalid body" }, { status: 400 });
+  }
+
+  const tz = parsed.data.timezone ?? "UTC";
+  if (!isValidCronExpression(parsed.data.cron_expression, tz)) {
+    return NextResponse.json(
+      { ok: false, message: "Invalid cron_expression or timezone for schedule" },
+      { status: 400 },
+    );
   }
 
   const ctx = await withOrgOperator(parsed.data.organizationId);
