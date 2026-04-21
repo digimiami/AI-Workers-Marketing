@@ -11,6 +11,10 @@ const patchBody = z.object({
   full_name: z.string().nullable().optional(),
 });
 
+const deleteBody = z.object({
+  organizationId: z.string().uuid(),
+});
+
 export async function PATCH(
   request: Request,
   ctx: { params: Promise<{ leadId: string }> },
@@ -45,4 +49,32 @@ export async function PATCH(
   if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ ok: false, message: "Lead not found" }, { status: 404 });
   return NextResponse.json({ ok: true, lead: data });
+}
+
+export async function DELETE(
+  request: Request,
+  ctx: { params: Promise<{ leadId: string }> },
+) {
+  const { leadId } = await ctx.params;
+  if (!z.string().uuid().safeParse(leadId).success) {
+    return NextResponse.json({ ok: false, message: "Invalid leadId" }, { status: 400 });
+  }
+
+  const json = await request.json().catch(() => null);
+  const parsed = deleteBody.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, message: "Invalid body" }, { status: 400 });
+  }
+
+  const op = await withOrgOperator(parsed.data.organizationId);
+  if (op.error) return op.error;
+
+  const { error } = await op.supabase
+    .from("leads" as never)
+    .delete()
+    .eq("id", leadId)
+    .eq("organization_id", parsed.data.organizationId);
+
+  if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }

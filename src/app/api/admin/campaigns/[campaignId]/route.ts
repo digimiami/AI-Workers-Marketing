@@ -6,11 +6,11 @@ import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 
 const patchBody = z.object({
   organizationId: z.string().uuid(),
-  title: z.string().min(1).optional(),
-  status: z.enum(["draft", "approved", "scheduled", "published", "archived"]).optional(),
-  campaign_id: z.string().uuid().nullable().optional(),
-  funnel_id: z.string().uuid().nullable().optional(),
-  script_markdown: z.string().nullable().optional(),
+  name: z.string().min(2).optional(),
+  type: z.enum(["affiliate", "lead_gen", "internal_test", "client"]).optional(),
+  status: z.enum(["draft", "active", "paused", "completed"]).optional(),
+  targetAudience: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
 });
 
 const deleteBody = z.object({
@@ -19,11 +19,11 @@ const deleteBody = z.object({
 
 export async function PATCH(
   request: Request,
-  ctx: { params: Promise<{ assetId: string }> },
+  ctx: { params: Promise<{ campaignId: string }> },
 ) {
-  const { assetId } = await ctx.params;
-  if (!z.string().uuid().safeParse(assetId).success) {
-    return NextResponse.json({ ok: false, message: "Invalid assetId" }, { status: 400 });
+  const { campaignId } = await ctx.params;
+  if (!z.string().uuid().safeParse(campaignId).success) {
+    return NextResponse.json({ ok: false, message: "Invalid campaignId" }, { status: 400 });
   }
 
   const json = await request.json().catch(() => null);
@@ -36,32 +36,32 @@ export async function PATCH(
   if (op.error) return op.error;
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (parsed.data.title !== undefined) patch.title = parsed.data.title;
+  if (parsed.data.name !== undefined) patch.name = parsed.data.name;
+  if (parsed.data.type !== undefined) patch.type = parsed.data.type;
   if (parsed.data.status !== undefined) patch.status = parsed.data.status;
-  if (parsed.data.campaign_id !== undefined) patch.campaign_id = parsed.data.campaign_id;
-  if (parsed.data.funnel_id !== undefined) patch.funnel_id = parsed.data.funnel_id;
-  if (parsed.data.script_markdown !== undefined) patch.script_markdown = parsed.data.script_markdown;
+  if (parsed.data.targetAudience !== undefined) patch.target_audience = parsed.data.targetAudience;
+  if (parsed.data.description !== undefined) patch.description = parsed.data.description;
 
   const { data, error } = await op.supabase
-    .from("content_assets" as never)
+    .from("campaigns" as never)
     .update(patch as never)
-    .eq("id", assetId)
+    .eq("id", campaignId)
     .eq("organization_id", parsed.data.organizationId)
-    .select("id,title,status,campaign_id,funnel_id,updated_at")
+    .select("*")
     .maybeSingle();
 
   if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
-  if (!data) return NextResponse.json({ ok: false, message: "Asset not found" }, { status: 404 });
-  return NextResponse.json({ ok: true, asset: data });
+  if (!data) return NextResponse.json({ ok: false, message: "Campaign not found" }, { status: 404 });
+  return NextResponse.json({ ok: true, campaign: data });
 }
 
 export async function DELETE(
   request: Request,
-  ctx: { params: Promise<{ assetId: string }> },
+  ctx: { params: Promise<{ campaignId: string }> },
 ) {
-  const { assetId } = await ctx.params;
-  if (!z.string().uuid().safeParse(assetId).success) {
-    return NextResponse.json({ ok: false, message: "Invalid assetId" }, { status: 400 });
+  const { campaignId } = await ctx.params;
+  if (!z.string().uuid().safeParse(campaignId).success) {
+    return NextResponse.json({ ok: false, message: "Invalid campaignId" }, { status: 400 });
   }
 
   const json = await request.json().catch(() => null);
@@ -74,11 +74,12 @@ export async function DELETE(
   if (op.error) return op.error;
 
   const { error } = await op.supabase
-    .from("content_assets" as never)
+    .from("campaigns" as never)
     .delete()
-    .eq("id", assetId)
+    .eq("id", campaignId)
     .eq("organization_id", parsed.data.organizationId);
 
   if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+

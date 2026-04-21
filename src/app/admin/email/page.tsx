@@ -1,21 +1,12 @@
-import { EmptyState } from "@/components/app/EmptyState";
+import { redirect } from "next/navigation";
 
-export default function AdminEmailPage() {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Email</h1>
-        <p className="text-sm text-muted-foreground">
-          Templates, sequences, steps, triggers, logs, and Resend integration.
-        </p>
-      </div>
-      <EmptyState
-        title="No email sequences loaded yet"
-        description="Next step: connect sequences CRUD + send hooks."
-        actionHref="/admin/settings"
-        actionLabel="Configure Resend"
-      />
-    </div>
-  );
+import { EmailClient } from "@/app/admin/email/EmailClient";
+import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
+
+export default async function AdminEmailPage() {
+  const orgId = await getCurrentOrgIdFromCookie();
+  if (!orgId) redirect("/admin/onboarding");
+
+  return <EmailClient organizationId={orgId} />;
 }
 

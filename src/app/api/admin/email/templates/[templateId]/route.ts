@@ -6,11 +6,9 @@ import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 
 const patchBody = z.object({
   organizationId: z.string().uuid(),
-  title: z.string().min(1).optional(),
-  status: z.enum(["draft", "approved", "scheduled", "published", "archived"]).optional(),
-  campaign_id: z.string().uuid().nullable().optional(),
-  funnel_id: z.string().uuid().nullable().optional(),
-  script_markdown: z.string().nullable().optional(),
+  name: z.string().min(1).optional(),
+  subject: z.string().min(1).optional(),
+  body_markdown: z.string().min(1).optional(),
 });
 
 const deleteBody = z.object({
@@ -19,11 +17,11 @@ const deleteBody = z.object({
 
 export async function PATCH(
   request: Request,
-  ctx: { params: Promise<{ assetId: string }> },
+  ctx: { params: Promise<{ templateId: string }> },
 ) {
-  const { assetId } = await ctx.params;
-  if (!z.string().uuid().safeParse(assetId).success) {
-    return NextResponse.json({ ok: false, message: "Invalid assetId" }, { status: 400 });
+  const { templateId } = await ctx.params;
+  if (!z.string().uuid().safeParse(templateId).success) {
+    return NextResponse.json({ ok: false, message: "Invalid templateId" }, { status: 400 });
   }
 
   const json = await request.json().catch(() => null);
@@ -36,32 +34,30 @@ export async function PATCH(
   if (op.error) return op.error;
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (parsed.data.title !== undefined) patch.title = parsed.data.title;
-  if (parsed.data.status !== undefined) patch.status = parsed.data.status;
-  if (parsed.data.campaign_id !== undefined) patch.campaign_id = parsed.data.campaign_id;
-  if (parsed.data.funnel_id !== undefined) patch.funnel_id = parsed.data.funnel_id;
-  if (parsed.data.script_markdown !== undefined) patch.script_markdown = parsed.data.script_markdown;
+  if (parsed.data.name !== undefined) patch.name = parsed.data.name;
+  if (parsed.data.subject !== undefined) patch.subject = parsed.data.subject;
+  if (parsed.data.body_markdown !== undefined) patch.body_markdown = parsed.data.body_markdown;
 
   const { data, error } = await op.supabase
-    .from("content_assets" as never)
+    .from("email_templates" as never)
     .update(patch as never)
-    .eq("id", assetId)
+    .eq("id", templateId)
     .eq("organization_id", parsed.data.organizationId)
-    .select("id,title,status,campaign_id,funnel_id,updated_at")
+    .select("id,name,subject,body_markdown,created_at,updated_at")
     .maybeSingle();
 
   if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
-  if (!data) return NextResponse.json({ ok: false, message: "Asset not found" }, { status: 404 });
-  return NextResponse.json({ ok: true, asset: data });
+  if (!data) return NextResponse.json({ ok: false, message: "Template not found" }, { status: 404 });
+  return NextResponse.json({ ok: true, template: data });
 }
 
 export async function DELETE(
   request: Request,
-  ctx: { params: Promise<{ assetId: string }> },
+  ctx: { params: Promise<{ templateId: string }> },
 ) {
-  const { assetId } = await ctx.params;
-  if (!z.string().uuid().safeParse(assetId).success) {
-    return NextResponse.json({ ok: false, message: "Invalid assetId" }, { status: 400 });
+  const { templateId } = await ctx.params;
+  if (!z.string().uuid().safeParse(templateId).success) {
+    return NextResponse.json({ ok: false, message: "Invalid templateId" }, { status: 400 });
   }
 
   const json = await request.json().catch(() => null);
@@ -74,11 +70,12 @@ export async function DELETE(
   if (op.error) return op.error;
 
   const { error } = await op.supabase
-    .from("content_assets" as never)
+    .from("email_templates" as never)
     .delete()
-    .eq("id", assetId)
+    .eq("id", templateId)
     .eq("organization_id", parsed.data.organizationId);
 
   if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+
