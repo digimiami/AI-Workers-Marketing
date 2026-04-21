@@ -32,7 +32,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const admin = createSupabaseAdminClient();
+  let admin;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch (e) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: e instanceof Error ? e.message : "Supabase not configured",
+      },
+      { status: 503 },
+    );
+  }
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const ua = request.headers.get("user-agent");

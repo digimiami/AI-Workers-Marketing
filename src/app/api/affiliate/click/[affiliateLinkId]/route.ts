@@ -29,7 +29,15 @@ export async function GET(
     if (k.startsWith("utm_")) utm[k] = v;
   }
 
-  const admin = createSupabaseAdminClient();
+  let admin;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, message: e instanceof Error ? e.message : "Supabase not configured" },
+      { status: 503 },
+    );
+  }
   const { data: link, error } = await admin
     .from("affiliate_links" as any)
     .select("id, organization_id, campaign_id, destination_url, utm_defaults, is_active")

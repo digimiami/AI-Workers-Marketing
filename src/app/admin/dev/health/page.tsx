@@ -1,0 +1,470 @@
+import { redirect } from "next/navigation";
+
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
+import { describeOpenClawBackend } from "@/lib/openclaw/factory";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireUser } from "@/services/auth/authService";
+import { assertOrgOperator } from "@/services/org/assertOrgAccess";
+import { env } from "@/lib/env";
+
+type CountRow = { label: string; value: number | null; note?: string | null };
+
+async function safeCount(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  table: string,
+  orgId: string,
+) {
+  const { count, error } = await supabase
+    .from(table as never)
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", orgId);
+  return { count: error ? null : (count ?? 0), error: error?.message ?? null };
+}
+
+export default async function AdminDevHealthPage() {
+  const user = await requireUser();
+  const orgId = await getCurrentOrgIdFromCookie();
+  if (!orgId) redirect("/admin/onboarding");
+
+  const supabase = await createSupabaseServerClient();
+  try {
+    await assertOrgOperator(supabase, user.id, orgId);
+  } catch {
+    redirect("/admin");
+  }
+
+  // Active org details (best-effort)
+  const { data: orgRow } = await supabase
+    .from("organizations" as never)
+    .select("id,name,slug,created_at")
+    .eq("id", orgId)
+    .maybeSingle();
+
+  // DB health: simple query
+  const dbHealth = await (async () => {
+    try {
+      const { error } = await supabase
+        .from("organizations" as never)
+        .select("id", { head: true })
+        .limit(1);
+      if (error) return { ok: false, message: error.message };
+      return { ok: true, message: "OK" };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Unknown error" };
+    }
+  })();
+
+  // Counts
+  const [
+    campaigns,
+    funnels,
+    leads,
+    contentAssets,
+    sequences,
+    workers,
+    runs,
+    approvals,
+    analyticsEvents,
+    auditLogs,
+    agentLogs,
+    emailLogs,
+  ] = await Promise.all([
+    safeCount(supabase, "campaigns", orgId),
+    safeCount(supabase, "funnels", orgId),
+    safeCount(supabase, "leads", orgId),
+    safeCount(supabase, "content_assets", orgId),
+    safeCount(supabase, "email_sequences", orgId),
+    safeCount(supabase, "agents", orgId),
+    safeCount(supabase, "agent_runs", orgId),
+    safeCount(supabase, "approvals", orgId),
+    safeCount(supabase, "analytics_events", orgId),
+    safeCount(supabase, "audit_logs", orgId),
+    safeCount(supabase, "agent_logs", orgId),
+    safeCount(supabase, "email_logs", orgId),
+  ]);
+
+  const counts: CountRow[] = [
+    { label: "Campaigns", value: campaigns.count, note: campaigns.error },
+    { label: "Funnels", value: funnels.count, note: funnels.error },
+    { label: "Leads", value: leads.count, note: leads.error },
+    { label: "Content assets", value: contentAssets.count, note: contentAssets.error },
+    { label: "Email sequences", value: sequences.count, note: sequences.error },
+    { label: "Workers (agents)", value: workers.count, note: workers.error },
+    { label: "Agent runs", value: runs.count, note: runs.error },
+    { label: "Approvals", value: approvals.count, note: approvals.error },
+    { label: "Analytics events", value: analyticsEvents.count, note: analyticsEvents.error },
+    { label: "Audit logs", value: auditLogs.count, note: auditLogs.error },
+    { label: "Agent logs", value: agentLogs.count, note: agentLogs.error },
+    { label: "Email logs", value: emailLogs.count, note: emailLogs.error },
+  ];
+
+  // Latest audit logs
+  const { data: latestAudit } = await supabase
+    .from("audit_logs" as never)
+    .select("id,action,entity_type,entity_id,actor_user_id,created_at,metadata")
+    .eq("organization_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  // Latest agent runs
+  const { data: latestRuns } = await supabase
+    .from("agent_runs" as never)
+    .select("id,status,agent_id,campaign_id,output_summary,error_message,created_at,started_at,finished_at,agents(key,name)")
+    .eq("organization_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  // Latest analytics events
+  const { data: latestEvents } = await supabase
+    .from("analytics_events" as never)
+    .select("id,event_name,source,session_id,created_at,campaign_id,lead_id")
+    .eq("organization_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  // Provider statuses
+  const openclawBackend = describeOpenClawBackend();
+  const providers = {
+    openclaw: {
+      active: openclawBackend.active,
+      httpConfigured: openclawBackend.httpConfigured,
+    },
+    resend: {
+      configured: Boolean(env.server.RESEND_API_KEY && env.server.RESEND_FROM_EMAIL),
+    },
+    posthog: {
+      configured: Boolean(env.client.NEXT_PUBLIC_POSTHOG_API_KEY && env.client.NEXT_PUBLIC_POSTHOG_HOST),
+    },
+  };
+
+  // “System errors” (best-effort): show latest failed runs + failed email logs.
+  const { data: failedRuns } = await supabase
+    .from("agent_runs" as never)
+    .select("id,status,error_message,created_at,agents(key,name)")
+    .eq("organization_id", orgId)
+    .eq("status", "failed")
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  const { data: failedEmails } = await supabase
+    .from("email_logs" as never)
+    .select("id,to_email,subject,status,error_message,created_at")
+    .eq("organization_id", orgId)
+    .eq("status", "failed")
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Diagnostics · Health</h1>
+        <p className="text-sm text-muted-foreground">
+          Internal admin-only debugging view. Not linked in navigation.
+        </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Auth</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">User:</span>{" "}
+              <span className="font-mono text-xs">{user.email ?? user.id}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">User ID:</span>{" "}
+              <span className="font-mono text-xs">{user.id}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Active organization</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">Org ID:</span>{" "}
+              <span className="font-mono text-xs">{orgId}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Name:</span>{" "}
+              <span>{(orgRow as any)?.name ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Slug:</span>{" "}
+              <span className="font-mono text-xs">{(orgRow as any)?.slug ?? "—"}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">DB</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Connection:</span>
+              <Badge variant={dbHealth.ok ? "secondary" : "destructive"}>
+                {dbHealth.ok ? "OK" : "ERROR"}
+              </Badge>
+            </div>
+            <div className="text-xs text-muted-foreground">{dbHealth.message}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Counts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-3">
+            {counts.map((c) => (
+              <div key={c.label} className="rounded-lg border border-border/60 p-3">
+                <div className="text-sm font-medium">{c.label}</div>
+                <div className="mt-1 text-2xl font-semibold tabular-nums">
+                  {c.value === null ? "—" : c.value}
+                </div>
+                {c.note ? <div className="mt-1 text-xs text-destructive">{c.note}</div> : null}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Latest audit logs (10)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Entity</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(latestAudit ?? []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                      No audit logs.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  (latestAudit ?? []).map((a: any) => (
+                    <TableRow key={a.id}>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(a.created_at).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{a.action}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {(a.entity_type ?? "—") as string}
+                        {a.entity_id ? ` · ${String(a.entity_id).slice(0, 8)}…` : ""}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Latest agent runs (10)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Agent</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(latestRuns ?? []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                      No runs.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  (latestRuns ?? []).map((r: any) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(r.created_at).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {r.agents?.name ?? "—"}
+                        <div className="text-xs text-muted-foreground">{r.agents?.key ?? ""}</div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{r.status}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Latest analytics events (10)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>When</TableHead>
+                <TableHead>Event</TableHead>
+                <TableHead>Source</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(latestEvents ?? []).length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                    No analytics events.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                (latestEvents ?? []).map((e: any) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(e.created_at).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-sm font-medium">{e.event_name}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{e.source}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Provider status</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">OpenClaw:</span>
+            <Badge variant="secondary">{providers.openclaw.active}</Badge>
+            <span className="text-muted-foreground">
+              {providers.openclaw.httpConfigured ? "HTTP configured" : "stub mode"}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">Resend:</span>
+            <Badge variant={providers.resend.configured ? "secondary" : "destructive"}>
+              {providers.resend.configured ? "configured" : "not configured"}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">PostHog:</span>
+            <Badge variant={providers.posthog.configured ? "secondary" : "destructive"}>
+              {providers.posthog.configured ? "configured" : "not configured"}
+            </Badge>
+          </div>
+          <Separator className="opacity-60" />
+          <div className="text-xs text-muted-foreground">
+            Note: provider “live/stub” does not imply DB availability; DB health is shown above.
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Latest failed runs (10)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Agent</TableHead>
+                  <TableHead>Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(failedRuns ?? []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                      No failed runs.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  (failedRuns ?? []).map((r: any) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(r.created_at).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {r.agents?.name ?? "—"}
+                        <div className="text-xs text-muted-foreground">{r.agents?.key ?? ""}</div>
+                      </TableCell>
+                      <TableCell className="text-xs text-destructive">{r.error_message ?? "—"}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Latest failed emails (10)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>To</TableHead>
+                  <TableHead>Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(failedEmails ?? []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                      No failed emails.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  (failedEmails ?? []).map((e: any) => (
+                    <TableRow key={e.id}>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(e.created_at).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{e.to_email}</TableCell>
+                      <TableCell className="text-xs text-destructive">{e.error_message ?? "—"}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+

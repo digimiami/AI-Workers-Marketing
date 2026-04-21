@@ -34,7 +34,18 @@ export async function POST(request: Request) {
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
 
-  const admin = createSupabaseAdminClient();
+  let admin;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch (e) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: e instanceof Error ? e.message : "Supabase not configured",
+      },
+      { status: 503 },
+    );
+  }
   const { error } = await admin.from("analytics_events" as any).insert({
     organization_id: parsed.data.organizationId ?? null,
     campaign_id: parsed.data.campaignId ?? null,

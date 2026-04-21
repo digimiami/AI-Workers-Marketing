@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -29,6 +30,9 @@ const statusPresets = ["new", "contacted", "qualified", "converted", "lost"] as 
 export function LeadsClient({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
   const [scoreDraft, setScoreDraft] = React.useState<Record<string, string>>({});
+  const [enrollOpen, setEnrollOpen] = React.useState(false);
+  const [enrollLeadId, setEnrollLeadId] = React.useState<string>("");
+  const [enrollSequenceId, setEnrollSequenceId] = React.useState<string>("");
 
   const leadsQuery = useQuery({
     queryKey: ["leads", organizationId],
@@ -38,6 +42,42 @@ export function LeadsClient({ organizationId }: { organizationId: string }) {
       const j = (await res.json()) as { ok: boolean; leads: LeadRow[] };
       return j.leads ?? [];
     },
+  });
+
+  const sequencesQuery = useQuery({
+    queryKey: ["email-sequences", organizationId],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/email/sequences?organizationId=${organizationId}`);
+      if (!res.ok) throw new Error(await res.text());
+      const j = (await res.json()) as { ok: boolean; sequences: { id: string; name: string; is_active: boolean }[] };
+      return j.sequences ?? [];
+    },
+  });
+
+  const enrollMutation = useMutation({
+    mutationFn: async () => {
+      if (!enrollLeadId) throw new Error("Select a lead");
+      if (!enrollSequenceId) throw new Error("Select a sequence");
+      const res = await fetch("/api/admin/email/enrollments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          leadId: enrollLeadId,
+          sequenceId: enrollSequenceId,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as { ok: boolean; queuedCount?: number };
+    },
+    onSuccess: async (j) => {
+      toast.success(`Lead enrolled. Queued ${j.queuedCount ?? 0} email(s).`);
+      setEnrollOpen(false);
+      setEnrollLeadId("");
+      setEnrollSequenceId("");
+      await qc.invalidateQueries({ queryKey: ["email-logs", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Enroll failed"),
   });
 
   const patchMutation = useMutation({
@@ -62,6 +102,7 @@ export function LeadsClient({ organizationId }: { organizationId: string }) {
   });
 
   const leads = leadsQuery.data ?? [];
+  const sequences = sequencesQuery.data ?? [];
 
   return (
     <div className="space-y-6">
@@ -90,6 +131,7 @@ export function LeadsClient({ organizationId }: { organizationId: string }) {
                   <TableHead>Campaign</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Score</TableHead>
+                  <TableHead>Sequences</TableHead>
                   <TableHead>Created</TableHead>
                 </TableRow>
               </TableHeader>
@@ -143,6 +185,55 @@ export function LeadsClient({ organizationId }: { organizationId: string }) {
                           Set
                         </Button>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Dialog open={enrollOpen && enrollLeadId === l.id} onOpenChange={(o) => {
+                        setEnrollOpen(o);
+                        if (o) {
+                          setEnrollLeadId(l.id);
+                          setEnrollSequenceId(sequences[0]?.id ?? "");
+                        } else {
+                          setEnrollLeadId("");
+                          setEnrollSequenceId("");
+                        }
+                      }}>
+                        <DialogTrigger render={
+                          <Button size="sm" variant="outline" disabled={sequencesQuery.isLoading || sequences.length === 0}>
+                            Enroll
+                          </Button>
+                        } />
+                        <DialogContent className="max-w-lg">
+                          <DialogHeader>
+                            <DialogTitle>Enroll lead into sequence</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-3">
+                            <div className="text-sm text-muted-foreground">
+                              Lead: <span className="font-mono text-xs">{l.email}</span>
+                            </div>
+                            <div className="space-y-2">
+                              <span className="text-sm font-medium">Sequence</span>
+                              <Select value={enrollSequenceId} onValueChange={(v) => setEnrollSequenceId(typeof v === "string" ? v : "")}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select sequence" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {sequences.map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>
+                                      {s.name}{s.is_active ? "" : " (inactive)"}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <Button className="w-full" disabled={enrollMutation.isPending} onClick={() => enrollMutation.mutate()}>
+                              {enrollMutation.isPending ? "Enrolling…" : "Enroll + queue logs"}
+                            </Button>
+                            <p className="text-xs text-muted-foreground">
+                              Enrollment will fail if any sequence step is missing a template.
+                            </p>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(l.created_at).toLocaleString()}

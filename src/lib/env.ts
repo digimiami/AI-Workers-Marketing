@@ -54,13 +54,16 @@ function withOptionalBuildPlaceholders(raw: NodeJS.ProcessEnv): NodeJS.ProcessEn
     raw.CI === "true";
 
   const duringNpmBuild = raw.npm_lifecycle_event === "build";
+  const duringDev = raw.npm_lifecycle_event === "dev";
   const supabaseMissing =
     !raw.SUPABASE_URL ||
     !raw.SUPABASE_ANON_KEY ||
     !raw.NEXT_PUBLIC_SUPABASE_URL ||
     !raw.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  const usePlaceholders = skip || (duringNpmBuild && supabaseMissing);
+  // In dev, allow the app to boot without Supabase configured so routes can
+  // return a clear 503 instead of crashing at import-time.
+  const usePlaceholders = skip || ((duringNpmBuild || duringDev) && supabaseMissing);
   if (!usePlaceholders) return raw;
 
   return {
@@ -95,4 +98,13 @@ export const env = (() => {
     client: clientParsed.data,
   } as const;
 })();
+
+export function isSupabaseConfigured() {
+  return (
+    env.server.SUPABASE_URL !== PLACEHOLDER_SUPABASE_URL &&
+    env.server.SUPABASE_ANON_KEY !== PLACEHOLDER_SUPABASE_ANON_KEY &&
+    env.client.NEXT_PUBLIC_SUPABASE_URL !== PLACEHOLDER_SUPABASE_URL &&
+    env.client.NEXT_PUBLIC_SUPABASE_ANON_KEY !== PLACEHOLDER_SUPABASE_ANON_KEY
+  );
+}
 
