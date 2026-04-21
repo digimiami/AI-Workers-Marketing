@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
+import { writeAuditLog } from "@/services/audit/auditService";
 
 const patchBody = z.object({
   organizationId: z.string().uuid(),
@@ -48,6 +49,16 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ ok: false, message: "Lead not found" }, { status: 404 });
+
+  await writeAuditLog({
+    organizationId: parsed.data.organizationId,
+    actorUserId: op.user.id,
+    action: "lead.updated",
+    entityType: "lead",
+    entityId: leadId,
+    metadata: { op: "updated", fields: Object.keys(patch).filter((k) => k !== "updated_at") },
+  });
+
   return NextResponse.json({ ok: true, lead: data });
 }
 
@@ -76,5 +87,15 @@ export async function DELETE(
     .eq("organization_id", parsed.data.organizationId);
 
   if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+
+  await writeAuditLog({
+    organizationId: parsed.data.organizationId,
+    actorUserId: op.user.id,
+    action: "lead.deleted",
+    entityType: "lead",
+    entityId: leadId,
+    metadata: { op: "deleted" },
+  });
+
   return NextResponse.json({ ok: true });
 }

@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 
 const FunnelStatus = z.enum(["draft", "active", "paused", "archived"]);
+const StepType = z.enum(["landing", "bridge", "form", "cta", "thank_you", "email_trigger", "other"]);
 
 export type FunnelRow = {
   id: string;
@@ -26,11 +27,31 @@ export type FunnelRow = {
   updated_at: string;
 };
 
+type FunnelStepRow = {
+  id: string;
+  funnel_id: string;
+  step_index: number;
+  name: string;
+  step_type: z.infer<typeof StepType>;
+  slug: string;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export function FunnelsClient({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [campaignId, setCampaignId] = React.useState<string>("");
+  const [stepsOpen, setStepsOpen] = React.useState(false);
+  const [activeFunnel, setActiveFunnel] = React.useState<FunnelRow | null>(null);
+  const [newStep, setNewStep] = React.useState({
+    name: "",
+    step_type: "landing" as z.infer<typeof StepType>,
+    slug: "",
+    is_public: true,
+  });
 
   const campaignsQuery = useQuery({
     queryKey: ["campaigns", organizationId],
@@ -94,8 +115,110 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Update failed"),
   });
 
+  const stepsQuery = useQuery({
+    queryKey: ["funnel-steps", organizationId, activeFunnel?.id],
+    enabled: Boolean(activeFunnel?.id),
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/admin/funnels/${activeFunnel?.id}/steps?organizationId=${organizationId}`,
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const j = (await res.json()) as { ok: boolean; steps: FunnelStepRow[] };
+      return j.steps ?? [];
+    },
+  });
+
+  const createStep = useMutation({
+    mutationFn: async () => {
+      if (!activeFunnel) throw new Error("No funnel selected");
+      const slug = newStep.slug.trim();
+      const res = await fetch("/api/admin/funnel-steps", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          funnel_id: activeFunnel.id,
+          name: newStep.name.trim(),
+          step_type: StepType.parse(newStep.step_type),
+          slug,
+          is_public: newStep.is_public,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Step created");
+      setNewStep({ name: "", step_type: "landing", slug: "", is_public: true });
+      await qc.invalidateQueries({ queryKey: ["funnel-steps", organizationId, activeFunnel?.id] });
+      await qc.invalidateQueries({ queryKey: ["funnels", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Create failed"),
+  });
+
+  const patchStep = useMutation({
+    mutationFn: async (vars: { stepId: string; name?: string; step_type?: string; slug?: string; is_public?: boolean }) => {
+      const payload: Record<string, unknown> = { organizationId };
+      if (vars.name !== undefined) payload.name = vars.name;
+      if (vars.step_type !== undefined) payload.step_type = vars.step_type;
+      if (vars.slug !== undefined) payload.slug = vars.slug;
+      if (vars.is_public !== undefined) payload.is_public = vars.is_public;
+
+      const res = await fetch(`/api/admin/funnel-steps/${vars.stepId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Step updated");
+      await qc.invalidateQueries({ queryKey: ["funnel-steps", organizationId, activeFunnel?.id] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Update failed"),
+  });
+
+  const deleteStep = useMutation({
+    mutationFn: async (vars: { stepId: string }) => {
+      const res = await fetch(`/api/admin/funnel-steps/${vars.stepId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Step deleted");
+      await qc.invalidateQueries({ queryKey: ["funnel-steps", organizationId, activeFunnel?.id] });
+      await qc.invalidateQueries({ queryKey: ["funnels", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
+  });
+
+  const reorderSteps = useMutation({
+    mutationFn: async (orderedIds: string[]) => {
+      if (!activeFunnel) throw new Error("No funnel selected");
+      const res = await fetch("/api/admin/funnel-steps/reorder", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          funnel_id: activeFunnel.id,
+          ordered_step_ids: orderedIds,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Steps reordered");
+      await qc.invalidateQueries({ queryKey: ["funnel-steps", organizationId, activeFunnel?.id] });
+      await qc.invalidateQueries({ queryKey: ["funnels", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Reorder failed"),
+  });
+
   const campaigns = campaignsQuery.data ?? [];
   const funnels = funnelsQuery.data ?? [];
+  const steps = stepsQuery.data ?? [];
 
   return (
     <div className="space-y-6">
@@ -103,7 +226,7 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Funnels</h1>
           <p className="text-sm text-muted-foreground">
-            Funnels linked to campaigns; step editors ship in a follow-up.
+            Funnels linked to campaigns with editable funnel steps.
           </p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
@@ -176,11 +299,23 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
               </TableHeader>
               <TableBody>
                 {funnels.map((f) => (
-                  <TableRow key={f.id}>
-                    <TableCell className="font-medium">{f.name}</TableCell>
+                  <TableRow
+                    key={f.id}
+                    role="button"
+                    onClick={() => {
+                      setActiveFunnel(f);
+                      setStepsOpen(true);
+                    }}
+                  >
+                    <TableCell className="font-medium">
+                      <div className="space-y-0.5">
+                        <div>{f.name}</div>
+                        <div className="text-xs text-muted-foreground">Click to edit steps</div>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{f.campaign_name ?? "—"}</TableCell>
                     <TableCell>{f.step_count}</TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <Select
                         value={f.status}
                         onValueChange={(v) => {
@@ -210,6 +345,208 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={stepsOpen}
+        onOpenChange={(v) => {
+          setStepsOpen(v);
+          if (!v) setActiveFunnel(null);
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Funnel steps {activeFunnel ? `· ${activeFunnel.name}` : ""}</DialogTitle>
+          </DialogHeader>
+
+          {!activeFunnel ? (
+            <p className="text-sm text-muted-foreground">No funnel selected.</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-[1fr_180px_1fr_140px]">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Name</label>
+                  <Input
+                    value={newStep.name}
+                    onChange={(e) => setNewStep((s) => ({ ...s, name: e.target.value }))}
+                    placeholder="Landing page"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Type</label>
+                  <Select
+                    value={newStep.step_type}
+                    onValueChange={(v) => setNewStep((s) => ({ ...s, step_type: StepType.parse(v) }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(StepType.options as string[]).map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Slug</label>
+                  <Input
+                    value={newStep.slug}
+                    onChange={(e) => setNewStep((s) => ({ ...s, slug: e.target.value }))}
+                    placeholder="landing"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    className="w-full"
+                    onClick={() => createStep.mutate()}
+                    disabled={createStep.isPending || newStep.name.trim().length < 1 || newStep.slug.trim().length < 1}
+                  >
+                    {createStep.isPending ? "Creating…" : "Add step"}
+                  </Button>
+                </div>
+              </div>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Steps</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {stepsQuery.isLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading…</p>
+                  ) : stepsQuery.isError ? (
+                    <p className="text-sm text-destructive">Failed to load steps.</p>
+                  ) : steps.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No steps yet.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>#</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Slug</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {steps.map((s, idx) => (
+                          <TableRow key={s.id}>
+                            <TableCell className="font-mono text-xs">{s.step_index}</TableCell>
+                            <TableCell className="font-medium">
+                              <Input
+                                className="h-8"
+                                defaultValue={s.name}
+                                onBlur={(e) => {
+                                  const v = e.target.value.trim();
+                                  if (v && v !== s.name) patchStep.mutate({ stepId: s.id, name: v });
+                                  else e.target.value = s.name;
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Select
+                                value={s.step_type}
+                                onValueChange={(v) => patchStep.mutate({ stepId: s.id, step_type: StepType.parse(v) })}
+                              >
+                                <SelectTrigger className="h-8 w-[150px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(StepType.options as string[]).map((t) => (
+                                    <SelectItem key={t} value={t}>
+                                      {t}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              <Input
+                                className="h-8"
+                                defaultValue={s.slug}
+                                onBlur={(e) => {
+                                  const v = e.target.value.trim();
+                                  if (v && v !== s.slug) patchStep.mutate({ stepId: s.id, slug: v });
+                                  else e.target.value = s.slug;
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell className="text-right space-x-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={idx === 0 || reorderSteps.isPending}
+                                onClick={() => {
+                                  const order = steps.map((x) => x.id);
+                                  const tmp = order[idx - 1];
+                                  order[idx - 1] = order[idx];
+                                  order[idx] = tmp;
+                                  reorderSteps.mutate(order);
+                                }}
+                              >
+                                Up
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={idx === steps.length - 1 || reorderSteps.isPending}
+                                onClick={() => {
+                                  const order = steps.map((x) => x.id);
+                                  const tmp = order[idx + 1];
+                                  order[idx + 1] = order[idx];
+                                  order[idx] = tmp;
+                                  reorderSteps.mutate(order);
+                                }}
+                              >
+                                Down
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={deleteStep.isPending}
+                                onClick={() => deleteStep.mutate({ stepId: s.id })}
+                              >
+                                Delete
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              {steps.length > 0 ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Preview</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ol className="space-y-2">
+                      {steps.map((s) => (
+                        <li key={s.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3">
+                          <div className="flex items-center gap-3">
+                            <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs">{s.step_index}</span>
+                            <div>
+                              <div className="text-sm font-medium">{s.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {s.step_type} · /{s.slug}
+                              </div>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </CardContent>
+                </Card>
+              ) : null}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

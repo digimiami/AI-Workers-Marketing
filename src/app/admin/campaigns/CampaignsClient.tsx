@@ -24,6 +24,10 @@ export type Campaign = {
   target_audience: string | null;
   description: string | null;
   created_at: string;
+  funnel_count?: number;
+  lead_count?: number;
+  content_asset_count?: number;
+  analytics_event_count?: number;
 };
 
 const createSchema = z.object({
@@ -55,6 +59,9 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
   const qc = useQueryClient();
   const [open, setOpen] = React.useState(false);
   const [form, setForm] = React.useState<CampaignFormState>(emptyForm);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [active, setActive] = React.useState<Campaign | null>(null);
+  const [edit, setEdit] = React.useState<CampaignFormState>(emptyForm);
 
   const campaignsQuery = useQuery({
     queryKey: ["campaigns", organizationId],
@@ -89,6 +96,60 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
       await qc.invalidateQueries({ queryKey: ["campaigns", organizationId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to create campaign"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!active) throw new Error("No campaign selected");
+      const parsed = createSchema
+        .omit({ organizationId: true })
+        .partial({ status: true, type: true })
+        .parse({
+          name: edit.name,
+          type: edit.type,
+          status: edit.status,
+          targetAudience: edit.targetAudience || undefined,
+          description: edit.description || undefined,
+        });
+
+      const res = await fetch(`/api/admin/campaigns/${active.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          name: parsed.name,
+          type: parsed.type,
+          status: parsed.status,
+          targetAudience: parsed.targetAudience ?? null,
+          description: parsed.description ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Campaign updated");
+      await qc.invalidateQueries({ queryKey: ["campaigns", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Update failed"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!active) throw new Error("No campaign selected");
+      const res = await fetch(`/api/admin/campaigns/${active.id}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Campaign deleted");
+      setEditOpen(false);
+      setActive(null);
+      await qc.invalidateQueries({ queryKey: ["campaigns", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
   return (
@@ -224,15 +285,37 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Funnels</TableHead>
+                  <TableHead>Leads</TableHead>
+                  <TableHead>Content</TableHead>
+                  <TableHead>Events</TableHead>
                   <TableHead className="text-right">Created</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {campaigns.map((c) => (
-                  <TableRow key={c.id}>
+                  <TableRow
+                    key={c.id}
+                    role="button"
+                    onClick={() => {
+                      setActive(c);
+                      setEdit({
+                        name: c.name,
+                        type: c.type,
+                        status: c.status,
+                        targetAudience: c.target_audience ?? "",
+                        description: c.description ?? "",
+                      });
+                      setEditOpen(true);
+                    }}
+                  >
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell className="text-muted-foreground">{c.type}</TableCell>
                     <TableCell className="text-muted-foreground">{c.status}</TableCell>
+                    <TableCell>{c.funnel_count ?? 0}</TableCell>
+                    <TableCell>{c.lead_count ?? 0}</TableCell>
+                    <TableCell>{c.content_asset_count ?? 0}</TableCell>
+                    <TableCell>{c.analytics_event_count ?? 0}</TableCell>
                     <TableCell className="text-right text-muted-foreground">
                       {new Date(c.created_at).toLocaleDateString()}
                     </TableCell>
@@ -243,6 +326,89 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={editOpen}
+        onOpenChange={(v) => {
+          setEditOpen(v);
+          if (!v) setActive(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit campaign</DialogTitle>
+          </DialogHeader>
+          {!active ? (
+            <p className="text-sm text-muted-foreground">No campaign selected.</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Name</label>
+                <Input value={edit.name} onChange={(e) => setEdit((f) => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Type</label>
+                  <Select value={edit.type} onValueChange={(v) => setEdit((f) => ({ ...f, type: CampaignType.parse(v) }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="affiliate">Affiliate</SelectItem>
+                      <SelectItem value="lead_gen">Lead gen</SelectItem>
+                      <SelectItem value="internal_test">Internal test</SelectItem>
+                      <SelectItem value="client">Client</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Status</label>
+                  <Select value={edit.status} onValueChange={(v) => setEdit((f) => ({ ...f, status: CampaignStatus.parse(v) }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="paused">Paused</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Target audience</label>
+                <Input value={edit.targetAudience} onChange={(e) => setEdit((f) => ({ ...f, targetAudience: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Description</label>
+                <Input value={edit.description} onChange={(e) => setEdit((f) => ({ ...f, description: e.target.value }))} />
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" disabled={updateMutation.isPending} onClick={() => updateMutation.mutate()}>
+                  {updateMutation.isPending ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => {
+                    const ok = window.confirm(
+                      "Delete this campaign? This is only allowed if there are no linked funnels/leads/content assets.",
+                    );
+                    if (!ok) return;
+                    deleteMutation.mutate();
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tip: deletion is blocked if there are linked funnels, leads, or content assets.
+              </p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -8,6 +8,8 @@ export type AuditAction =
   | "campaign.updated"
   | "funnel.updated"
   | "lead.captured"
+  | "lead.updated"
+  | "lead.deleted"
   | "affiliate.clicked"
   | "agent.run"
   | "approval.decision"

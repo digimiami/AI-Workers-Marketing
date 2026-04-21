@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
+import { writeAuditLog } from "@/services/audit/auditService";
 
 const patchBody = z.object({
   organizationId: z.string().uuid(),
@@ -52,6 +53,16 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ ok: false, message: "Campaign not found" }, { status: 404 });
+
+  await writeAuditLog({
+    organizationId: parsed.data.organizationId,
+    actorUserId: op.user.id,
+    action: "campaign.updated",
+    entityType: "campaign",
+    entityId: campaignId,
+    metadata: { fields: Object.keys(patch).filter((k) => k !== "updated_at") },
+  });
+
   return NextResponse.json({ ok: true, campaign: data });
 }
 
@@ -73,6 +84,39 @@ export async function DELETE(
   const op = await withOrgOperator(parsed.data.organizationId);
   if (op.error) return op.error;
 
+  // Dependency checks: prevent deleting a campaign that still has linked records.
+  const [funnels, leads, assets] = await Promise.all([
+    op.supabase
+      .from("funnels" as never)
+      .select("id")
+      .eq("organization_id", parsed.data.organizationId)
+      .eq("campaign_id", campaignId)
+      .limit(1),
+    op.supabase
+      .from("leads" as never)
+      .select("id")
+      .eq("organization_id", parsed.data.organizationId)
+      .eq("campaign_id", campaignId)
+      .limit(1),
+    op.supabase
+      .from("content_assets" as never)
+      .select("id")
+      .eq("organization_id", parsed.data.organizationId)
+      .eq("campaign_id", campaignId)
+      .limit(1),
+  ]);
+
+  if ((funnels.data?.length ?? 0) > 0 || (leads.data?.length ?? 0) > 0 || (assets.data?.length ?? 0) > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          "Campaign has linked funnels/leads/content. Unlink or delete dependencies before deleting the campaign.",
+      },
+      { status: 409 },
+    );
+  }
+
   const { error } = await op.supabase
     .from("campaigns" as never)
     .delete()
@@ -80,6 +124,16 @@ export async function DELETE(
     .eq("organization_id", parsed.data.organizationId);
 
   if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+
+  await writeAuditLog({
+    organizationId: parsed.data.organizationId,
+    actorUserId: op.user.id,
+    action: "campaign.updated",
+    entityType: "campaign",
+    entityId: campaignId,
+    metadata: { op: "deleted" },
+  });
+
   return NextResponse.json({ ok: true });
 }
 
