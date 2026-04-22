@@ -9,15 +9,24 @@ import { listSchedules, upsertSchedule } from "@/services/openclaw/orchestration
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const organizationId = url.searchParams.get("organizationId");
+  const campaignId = url.searchParams.get("campaignId");
   const parsed = z.string().uuid().safeParse(organizationId);
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: "organizationId required" }, { status: 400 });
+  }
+  const parsedCampaign = campaignId ? z.string().uuid().safeParse(campaignId) : null;
+  if (campaignId && !parsedCampaign?.success) {
+    return NextResponse.json({ ok: false, message: "Invalid campaignId" }, { status: 400 });
   }
 
   const ctx = await withOrgMember(parsed.data);
   if (ctx.error) return ctx.error;
 
-  const schedules = await listSchedules(ctx.supabase, parsed.data);
+  const schedules = await listSchedules(
+    ctx.supabase,
+    parsed.data,
+    parsedCampaign?.success ? parsedCampaign.data : undefined,
+  );
   return NextResponse.json({ ok: true, schedules });
 }
 

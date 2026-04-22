@@ -130,6 +130,19 @@ export default async function AdminDevHealthPage() {
     .order("created_at", { ascending: false })
     .limit(10);
 
+  const { count: pendingApprovalsCount } = await supabase
+    .from("approvals" as never)
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", orgId)
+    .eq("status", "pending");
+
+  const { data: latestSchedules } = await supabase
+    .from("agent_scheduled_tasks" as never)
+    .select("id,name,enabled,next_run_at,last_run_at,failure_count,backoff_until,last_error,agents(key,name)")
+    .eq("organization_id", orgId)
+    .order("updated_at", { ascending: false })
+    .limit(10);
+
   // Provider statuses
   const openclawBackend = describeOpenClawBackend();
   const providers = {
@@ -227,6 +240,25 @@ export default async function AdminDevHealthPage() {
               </Badge>
             </div>
             <div className="text-xs text-muted-foreground">{dbHealth.message}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Approvals</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Pending approvals</span>
+              <Badge variant={Number(pendingApprovalsCount ?? 0) > 0 ? "destructive" : "secondary"}>
+                {pendingApprovalsCount ?? 0}
+              </Badge>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              High-risk actions should remain gated; this is a quick “backpressure” signal.
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -331,6 +363,53 @@ export default async function AdminDevHealthPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Latest schedules (10)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Enabled</TableHead>
+                <TableHead>Next</TableHead>
+                <TableHead>Backoff</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(latestSchedules ?? []).length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                    No schedules.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                (latestSchedules ?? []).map((s: any) => (
+                  <TableRow key={s.id}>
+                    <TableCell className="text-sm">
+                      {s.name}
+                      <div className="text-xs text-muted-foreground">{s.agents?.key ?? ""}</div>
+                      {s.last_error ? (
+                        <div className="mt-1 text-xs text-destructive">{String(s.last_error).slice(0, 180)}</div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-sm">{s.enabled ? "yes" : "no"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {s.next_run_at ? new Date(s.next_run_at).toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {s.backoff_until ? new Date(s.backoff_until).toLocaleString() : "—"}
+                      {Number(s.failure_count ?? 0) > 0 ? ` · fails=${s.failure_count}` : ""}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-2">

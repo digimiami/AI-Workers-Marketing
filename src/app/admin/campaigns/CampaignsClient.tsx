@@ -317,7 +317,19 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
                     <TableCell>{c.content_asset_count ?? 0}</TableCell>
                     <TableCell>{c.analytics_event_count ?? 0}</TableCell>
                     <TableCell className="text-right text-muted-foreground">
-                      {new Date(c.created_at).toLocaleDateString()}
+                      <div className="flex items-center justify-end gap-2">
+                        <span>{new Date(c.created_at).toLocaleDateString()}</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.location.href = `/admin/campaigns/${c.id}/automation`;
+                          }}
+                        >
+                          Automation
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

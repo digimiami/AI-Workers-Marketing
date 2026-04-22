@@ -894,11 +894,16 @@ export async function removeCampaignAgent(
   if (error) throw new Error(error.message);
 }
 
-export async function listSchedules(db: Db, organizationId: string) {
+export async function listSchedules(
+  db: Db,
+  organizationId: string,
+  campaignId?: string,
+) {
   const { data, error } = await db
     .from("agent_scheduled_tasks" as never)
     .select("*, agents(key,name)")
     .eq("organization_id", organizationId)
+    .match(campaignId ? ({ campaign_id: campaignId } as any) : {})
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
