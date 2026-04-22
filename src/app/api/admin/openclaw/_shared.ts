@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireUser } from "@/services/auth/authService";
+import { getAuthedUser } from "@/services/auth/authService";
 import { assertOrgMember, assertOrgOperator } from "@/services/org/assertOrgAccess";
 
 export const orgIdQuery = z.object({
@@ -11,8 +11,11 @@ export const orgIdQuery = z.object({
 });
 
 export async function withOrgMember(organizationId: string) {
-  const user = await requireUser();
   const supabase = await createSupabaseServerClient();
+  const { user, error: authError } = await getAuthedUser();
+  if (authError || !user) {
+    return { error: NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 }) };
+  }
   try {
     await assertOrgMember(supabase, user.id, organizationId);
   } catch {
@@ -22,8 +25,11 @@ export async function withOrgMember(organizationId: string) {
 }
 
 export async function withOrgOperator(organizationId: string) {
-  const user = await requireUser();
   const supabase = await createSupabaseServerClient();
+  const { user, error: authError } = await getAuthedUser();
+  if (authError || !user) {
+    return { error: NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 }) };
+  }
   try {
     await assertOrgOperator(supabase, user.id, organizationId);
   } catch {
