@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
 import { describeOpenClawBackend } from "@/lib/openclaw/factory";
+import { TOOLS } from "@/lib/openclaw/tools/tools";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireUser } from "@/services/auth/authService";
 import { assertOrgOperator } from "@/services/org/assertOrgAccess";
@@ -72,6 +73,7 @@ export default async function AdminDevHealthPage() {
     auditLogs,
     agentLogs,
     emailLogs,
+    toolCalls,
   ] = await Promise.all([
     safeCount(supabase, "campaigns", orgId),
     safeCount(supabase, "funnels", orgId),
@@ -85,6 +87,7 @@ export default async function AdminDevHealthPage() {
     safeCount(supabase, "audit_logs", orgId),
     safeCount(supabase, "agent_logs", orgId),
     safeCount(supabase, "email_logs", orgId),
+    safeCount(supabase, "openclaw_tool_calls", orgId),
   ]);
 
   const counts: CountRow[] = [
@@ -100,6 +103,7 @@ export default async function AdminDevHealthPage() {
     { label: "Audit logs", value: auditLogs.count, note: auditLogs.error },
     { label: "Agent logs", value: agentLogs.count, note: agentLogs.error },
     { label: "Email logs", value: emailLogs.count, note: emailLogs.error },
+    { label: "OpenClaw tool calls", value: toolCalls.count, note: toolCalls.error },
   ];
 
   // Latest audit logs
@@ -140,6 +144,13 @@ export default async function AdminDevHealthPage() {
       configured: Boolean(env.client.NEXT_PUBLIC_POSTHOG_API_KEY && env.client.NEXT_PUBLIC_POSTHOG_HOST),
     },
   };
+
+  const { data: latestToolCalls } = await supabase
+    .from("openclaw_tool_calls" as never)
+    .select("id,tool_name,ok,error_code,created_at,trace_id")
+    .eq("organization_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(10);
 
   // “System errors” (best-effort): show latest failed runs + failed email logs.
   const { data: failedRuns } = await supabase
@@ -385,6 +396,49 @@ export default async function AdminDevHealthPage() {
           <div className="text-xs text-muted-foreground">
             Note: provider “live/stub” does not imply DB availability; DB health is shown above.
           </div>
+          <Separator className="opacity-60" />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">OpenClaw tools registered:</span>
+            <Badge variant="secondary">{TOOLS.length}</Badge>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Latest OpenClaw tool calls (10)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>When</TableHead>
+                <TableHead>Tool</TableHead>
+                <TableHead>OK</TableHead>
+                <TableHead>Error</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(latestToolCalls ?? []).length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                    No tool calls.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                (latestToolCalls ?? []).map((t: any) => (
+                  <TableRow key={t.id}>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(t.created_at).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{t.tool_name}</TableCell>
+                    <TableCell className="text-sm">{t.ok ? "yes" : "no"}</TableCell>
+                    <TableCell className="text-xs text-destructive">{t.error_code ?? "—"}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
