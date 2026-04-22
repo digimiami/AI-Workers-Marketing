@@ -764,6 +764,53 @@ export async function decideApproval(
     } as never)
     .eq("id", approvalId);
 
+  // Apply side-effects for deployment/review workflow. This never triggers outbound providers.
+  const approvalType = (row as { approval_type?: string }).approval_type ?? "";
+  const payload = ((row as { payload?: unknown }).payload ?? {}) as Record<string, unknown>;
+  const targetEntityType =
+    (row as { target_entity_type?: string | null }).target_entity_type ??
+    (typeof payload.target_entity_type === "string" ? payload.target_entity_type : null);
+  const targetEntityId =
+    (row as { target_entity_id?: string | null }).target_entity_id ??
+    (typeof payload.target_entity_id === "string" ? payload.target_entity_id : null);
+
+  const nextReviewStatus =
+    decision === "approved" ? "ready_to_deploy" : ("rejected" as const);
+
+  const safeUpdateReviewStatus = async (
+    table: "content_assets" | "email_templates" | "email_sequences" | "affiliate_links",
+    id: string,
+  ) => {
+    await db
+      .from(table as never)
+      .update({ review_status: nextReviewStatus, updated_at: new Date().toISOString() } as never)
+      .eq("organization_id", organizationId)
+      .eq("id", id);
+  };
+
+  if (targetEntityType && targetEntityId) {
+    if (targetEntityType === "content_asset") {
+      await safeUpdateReviewStatus("content_assets", targetEntityId);
+    }
+    if (targetEntityType === "email_template") {
+      await safeUpdateReviewStatus("email_templates", targetEntityId);
+    }
+    if (targetEntityType === "email_sequence") {
+      await safeUpdateReviewStatus("email_sequences", targetEntityId);
+    }
+    if (targetEntityType === "affiliate_link") {
+      await safeUpdateReviewStatus("affiliate_links", targetEntityId);
+      // If explicitly approving activation, enable the link (still no outbound execution).
+      if (decision === "approved" && approvalType === "affiliate_cta_activation") {
+        await db
+          .from("affiliate_links" as never)
+          .update({ is_active: true, updated_at: new Date().toISOString() } as never)
+          .eq("organization_id", organizationId)
+          .eq("id", targetEntityId);
+      }
+    }
+  }
+
   const runId = (row as { agent_run_id?: string | null }).agent_run_id;
   if (runId) {
     await db
@@ -783,7 +830,13 @@ export async function decideApproval(
     action: "approval.decision",
     entityType: "approval",
     entityId: approvalId,
-    metadata: { decision },
+    metadata: {
+      decision,
+      approval_type: approvalType,
+      target_entity_type: targetEntityType,
+      target_entity_id: targetEntityId,
+      next_review_status: targetEntityType && targetEntityId ? nextReviewStatus : null,
+    },
   });
 }
 

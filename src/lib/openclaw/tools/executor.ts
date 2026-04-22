@@ -89,6 +89,14 @@ async function maybeGateWithApproval(params: {
       reason_required: true,
       requested_by_user_id: params.ctx.actor.type === "user" ? params.ctx.actor.userId : params.ctx.actor.userId ?? null,
       agent_run_id: params.ctx.runId ?? null,
+      target_entity_type:
+        typeof (params.payload as any)?.target_entity_type === "string"
+          ? ((params.payload as any).target_entity_type as string)
+          : null,
+      target_entity_id:
+        typeof (params.payload as any)?.target_entity_id === "string"
+          ? ((params.payload as any).target_entity_id as string)
+          : null,
       payload: {
         tool: params.toolName,
         trace_id: params.ctx.traceId,
@@ -180,11 +188,28 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
   // Approval gating for high-risk tools
   let approvalId: string | null = null;
   if (tool.highRisk && env.approval_mode !== "disabled") {
+    const approvalType =
+      env.tool_name === "change_content_status"
+        ? "content_publishing"
+        : env.tool_name === "queue_test_email"
+          ? "email_sending"
+          : env.tool_name === "create_tracking_link"
+            ? "affiliate_cta_activation"
+            : "high_risk_copy";
+
     const gated = await maybeGateWithApproval({
       ctx,
       toolName: env.tool_name,
-      approvalType: "openclaw.tool",
-      payload: { input: env.input },
+      approvalType,
+      payload: {
+        input: env.input,
+        ...(env.tool_name === "change_content_status"
+          ? {
+              target_entity_type: "content_asset",
+              target_entity_id: String((env.input as any)?.content_asset_id ?? ""),
+            }
+          : {}),
+      },
     });
     if (gated.gated) {
       approvalId = gated.approvalId;
