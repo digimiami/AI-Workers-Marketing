@@ -33,23 +33,15 @@ export async function createOrganizationAction(formData: FormData) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: org, error } = await supabase
-    .from("organizations" as any)
-    .insert({ name: parsed.data.name, slug: parsed.data.slug } as any)
-    .select("id,name,slug")
-    .single();
+  // Organization creation requires a bootstrap path under RLS.
+  // Use a SECURITY DEFINER RPC that also inserts the creator as org admin.
+  const { data: org, error } = await supabase.rpc("create_organization_with_owner" as any, {
+    org_name: parsed.data.name,
+    org_slug: parsed.data.slug,
+  } as any);
 
   if (error) redirectOnboardingError(error.message);
-
-  const { error: memberErr } = await supabase
-    .from("organization_members" as any)
-    .insert({
-      organization_id: (org as any).id,
-      user_id: user.id,
-      role: "admin",
-    } as any);
-
-  if (memberErr) redirectOnboardingError(memberErr.message);
+  if (!org) redirectOnboardingError("Failed to create organization.");
 
   await setCurrentOrgIdCookie((org as any).id);
   redirect("/admin");
