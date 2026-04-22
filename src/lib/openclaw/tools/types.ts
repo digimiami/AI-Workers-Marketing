@@ -7,6 +7,7 @@ export type OpenClawRoleMode =
   | "content_strategist"
   | "lead_nurture_worker"
   | "analyst"
+  | "analyst_worker"
   | "supervisor";
 
 export type OpenClawApprovalMode = "disabled" | "auto" | "enforced";

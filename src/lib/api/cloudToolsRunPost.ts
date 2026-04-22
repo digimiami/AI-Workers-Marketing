@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { z } from "zod";
 
+import { normalizeToolRunEnvelopeInput } from "@/lib/openclaw/tools/schemas";
 import { executeOpenClawTool } from "@/lib/openclaw/tools/executor";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -40,7 +41,7 @@ export async function handleCloudToolsRunPost(request: Request): Promise<Respons
     return jsonErr("trace_invalid", "VALIDATION_ERROR", "JSON object body required", 400);
   }
 
-  let resolvedBody: Record<string, unknown> = { ...(json as Record<string, unknown>) };
+  let resolvedBody = normalizeToolRunEnvelopeInput(json) as Record<string, unknown>;
 
   const legacyOk = verifyLegacyOpenClawApiKey(bearerSecret);
   if (legacyOk) {
@@ -60,11 +61,11 @@ export async function handleCloudToolsRunPost(request: Request): Promise<Respons
         403,
       );
     }
-    resolvedBody = {
+    resolvedBody = normalizeToolRunEnvelopeInput({
       ...resolvedBody,
       organization_id: row.organization_id,
       actor: { type: "user", user_id: row.actor_user_id },
-    };
+    }) as Record<string, unknown>;
     await touchCloudApiTokenUsed(admin, row.id);
   }
 

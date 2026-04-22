@@ -84,6 +84,13 @@ export const ROLE_ALLOWED_TOOLS: Record<OpenClawRoleMode, string[]> = {
     "get_campaign_metrics",
     "log_analytics_event",
   ],
+  analyst_worker: [
+    "list_campaigns",
+    "get_campaign",
+    "list_content_assets",
+    "get_campaign_metrics",
+    "log_analytics_event",
+  ],
   supervisor: ["*"],
 };
 

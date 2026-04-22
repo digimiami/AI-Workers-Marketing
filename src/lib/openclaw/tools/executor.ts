@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/services/audit/auditService";
 import { assertOrgOperator } from "@/services/org/assertOrgAccess";
-import { toolRunEnvelopeSchema } from "@/lib/openclaw/tools/schemas";
+import { normalizeToolRunEnvelopeInput, toolRunEnvelopeSchema } from "@/lib/openclaw/tools/schemas";
 import { isToolAllowedForRole } from "@/lib/openclaw/tools/roleMatrix";
 import type { OpenClawToolContext, OpenClawToolError, OpenClawToolResult } from "@/lib/openclaw/tools/types";
 import { getToolByName } from "@/lib/openclaw/tools/tools";
@@ -114,7 +114,7 @@ async function maybeGateWithApproval(params: {
 }
 
 export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToolResult<unknown>> {
-  const parsed = toolRunEnvelopeSchema.safeParse(rawBody);
+  const parsed = toolRunEnvelopeSchema.safeParse(normalizeToolRunEnvelopeInput(rawBody));
   if (!parsed.success) {
     const traceId = "trace_invalid";
     return err(traceId, "VALIDATION_ERROR", "Invalid tool run envelope");
