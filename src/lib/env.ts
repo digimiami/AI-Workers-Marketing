@@ -27,6 +27,9 @@ const serverSchema = z.object({
 
   // Cron (Vercel / external)
   CRON_SECRET: z.string().min(8).optional(),
+
+  /** When "1", workspace provisioning may seed demo lead/analytics in development only. */
+  WORKSPACE_DEV_SEED: z.string().optional(),
 });
 
 const clientSchema = z.object({

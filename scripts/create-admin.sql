@@ -12,11 +12,11 @@
 do $$
 declare
   v_email text := 'digimiami@gmail.com';
-  v_user_id uuid := '00000000-0000-0000-0000-000000000000'; -- TODO: paste auth.users.id
+  v_user_id uuid := '58475e33-50e4-440a-a874-107d34b01795'; -- TODO: paste auth.users.id
   v_org_name text := 'AiWorkers.vip';
   v_org_id uuid;
 begin
-  if v_user_id = '00000000-0000-0000-0000-000000000000'::uuid then
+  if v_user_id = '58475e33-50e4-440a-a874-107d34b01795'::uuid then
     raise exception 'Set v_user_id to the auth.users.id for %', v_email;
   end if;
 

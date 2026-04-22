@@ -24,6 +24,7 @@ export const ROLE_ALLOWED_TOOLS: Record<OpenClawRoleMode, string[]> = {
     "add_email_sequence_step",
     "enroll_lead_in_sequence",
     "create_tracking_link",
+    "log_analytics_event",
     "create_agent_run",
     "append_agent_run_log",
     "complete_agent_run",

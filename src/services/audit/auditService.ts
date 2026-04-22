@@ -21,7 +21,9 @@ export type AuditAction =
   | "agent.run"
   | "approval.decision"
   | "settings.updated"
-  | "email.sent";
+  | "email.sent"
+  | "workspace.provisioned"
+  | "workspace.provision_failed";
 
 export type AuditWriteInput = {
   organizationId?: string | null;

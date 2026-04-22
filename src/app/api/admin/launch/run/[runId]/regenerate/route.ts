@@ -8,7 +8,8 @@ import { executeOpenClawTool } from "@/lib/openclaw/tools/executor";
 
 const bodySchema = z.object({
   organizationId: z.string().uuid(),
-  section: z.enum(["campaign", "funnel", "content", "email", "tracking", "review"]),
+  /** Section key from launcher UI (workspace adds extra sections). */
+  section: z.string().min(1).max(40),
 });
 
 export async function POST(
@@ -41,6 +42,9 @@ export async function POST(
   if (!run) return NextResponse.json({ ok: false, message: "Run not found" }, { status: 404 });
 
   const traceId = String((run as any).input?.trace_id ?? "");
+  const ws = (run as any).input?.workspace as Record<string, unknown> | undefined;
+  const affiliateLink = String(ws?.affiliate_link ?? (run as any).input?.affiliate_link ?? "https://example.com");
+  const trafficSource = String(ws?.traffic_source ?? (run as any).input?.traffic_source ?? "web");
   const agentId = String((run as any).agent_id ?? "");
   const campaignId = (run as any).campaign_id as string | null;
 
@@ -82,7 +86,7 @@ export async function POST(
     const created = await callTool("create_content_asset", {
       organizationId: parsed.data.organizationId,
       title: `Content batch (regen) · ${new Date().toISOString()}`.slice(0, 120),
-      platform: String((run as any).input?.traffic_source ?? "web"),
+      platform: trafficSource,
       status: "draft",
       campaign_id: campaignId,
       funnel_id: (current.funnel?.id ?? null) as string | null,
@@ -108,7 +112,7 @@ export async function POST(
   if (parsed.data.section === "tracking") {
     const link = await callTool("create_tracking_link", {
       organizationId: parsed.data.organizationId,
-      destination_url: String((run as any).input?.affiliate_link ?? ""),
+      destination_url: affiliateLink,
       label: `Regen link · ${new Date().toISOString()}`.slice(0, 120),
       campaign_id: campaignId,
       utm_defaults: { utm_source: "regen", utm_campaign: "launcher" },
