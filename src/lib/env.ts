@@ -48,6 +48,9 @@ const PLACEHOLDER_SUPABASE_ANON_KEY =
   "00000000000000000000000000000000"; // 32 chars — replace in .env
 
 function withOptionalBuildPlaceholders(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const isBrowser =
+    // eslint-disable-next-line no-restricted-globals
+    typeof window !== "undefined";
   const skip =
     raw.SKIP_ENV_VALIDATION === "true" ||
     raw.SKIP_ENV_VALIDATION === "1" ||
@@ -63,7 +66,9 @@ function withOptionalBuildPlaceholders(raw: NodeJS.ProcessEnv): NodeJS.ProcessEn
 
   // In dev, allow the app to boot without Supabase configured so routes can
   // return a clear 503 instead of crashing at import-time.
-  const usePlaceholders = skip || ((duringNpmBuild || duringDev) && supabaseMissing);
+  // In the browser bundle, server-only env vars are never present; always use placeholders there.
+  const usePlaceholders =
+    isBrowser || skip || ((duringNpmBuild || duringDev) && supabaseMissing);
   if (!usePlaceholders) return raw;
 
   return {
