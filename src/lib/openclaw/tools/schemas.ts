@@ -5,9 +5,10 @@ export const toolRunEnvelopeSchema = z.object({
   trace_id: z.string().min(8).max(120),
   role_mode: z.enum([
     "campaign_launcher",
-    "content_operator",
+    "offer_analyst",
     "funnel_architect",
-    "lead_nurture_operator",
+    "content_strategist",
+    "lead_nurture_worker",
     "analyst",
     "supervisor",
   ]),

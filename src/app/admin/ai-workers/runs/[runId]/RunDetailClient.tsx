@@ -82,6 +82,21 @@ export function RunDetailClient({
     },
   });
 
+  const toolCallsQuery = useQuery({
+    queryKey: ["openclaw-run-tool-calls", organizationId, runId],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/admin/openclaw/runs/${runId}/tool-calls?organizationId=${organizationId}`,
+      );
+      if (!res.ok) throw new Error(await readApiError(res));
+      return (await res.json()) as {
+        ok: boolean;
+        traceId?: string;
+        toolCalls: Record<string, unknown>[];
+      };
+    },
+  });
+
   const approveMut = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/admin/openclaw/runs/${runId}/approve`, {
@@ -305,6 +320,7 @@ export function RunDetailClient({
         <TabsList>
           <TabsTrigger value="outputs">Structured outputs</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="tools">Tool calls</TabsTrigger>
           <TabsTrigger value="input">Input JSON</TabsTrigger>
         </TabsList>
         <TabsContent value="outputs" className="mt-4">
@@ -327,6 +343,21 @@ export function RunDetailClient({
                   <div>{String(l.message)}</div>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="tools" className="mt-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="mb-3 text-xs text-muted-foreground">
+                Trace:{" "}
+                <span className="font-mono">
+                  {toolCallsQuery.data?.traceId ?? String((run as any)?.input?.trace_id ?? "—")}
+                </span>
+              </div>
+              <pre className="text-xs overflow-auto max-h-[480px] bg-muted/40 rounded-lg p-4">
+                {JSON.stringify(toolCallsQuery.data?.toolCalls ?? [], null, 2)}
+              </pre>
             </CardContent>
           </Card>
         </TabsContent>

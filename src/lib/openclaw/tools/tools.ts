@@ -384,7 +384,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Create a content asset record.",
     input: TOOL_SCHEMAS.createContentIn,
     output: TOOL_SCHEMAS.contentOut,
-    allowedRoles: ["campaign_launcher", "content_operator", "supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "supervisor"],
     async handler(_ctx, input) {
       if (input.campaign_id) await requireCampaignOrgMatch(input.organizationId, input.campaign_id);
       if (input.funnel_id) await requireFunnelOrgMatch(input.organizationId, input.funnel_id);
@@ -423,7 +423,7 @@ export const TOOLS: AnyToolDef[] = [
       metadata: z.record(z.string(), z.unknown()).optional(),
     }),
     output: TOOL_SCHEMAS.contentOut,
-    allowedRoles: ["campaign_launcher", "content_operator", "supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "supervisor"],
     async handler(_ctx, input) {
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (input.title !== undefined) patch.title = input.title;
@@ -457,7 +457,7 @@ export const TOOLS: AnyToolDef[] = [
     output: z.object({
       assets: z.array(z.object({ id, title: z.string(), status: z.string(), platform: z.string().nullable().optional() })),
     }),
-    allowedRoles: ["campaign_launcher", "content_operator", "analyst", "supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "analyst", "supervisor"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
       let q = admin
@@ -480,7 +480,7 @@ export const TOOLS: AnyToolDef[] = [
       status: z.string().min(1),
     }),
     output: z.object({ ok: z.boolean(), content_asset_id: id, status: z.string() }),
-    allowedRoles: ["campaign_launcher", "content_operator", "supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "supervisor"],
     highRisk: true,
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
@@ -498,7 +498,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Create an email template.",
     input: TOOL_SCHEMAS.createEmailTemplateIn,
     output: TOOL_SCHEMAS.emailTemplateOut,
-    allowedRoles: ["campaign_launcher", "content_operator", "lead_nurture_operator", "supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "supervisor"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
       const { data, error } = await admin
@@ -528,7 +528,7 @@ export const TOOLS: AnyToolDef[] = [
       status: z.string().optional(),
     }),
     output: TOOL_SCHEMAS.emailTemplateOut,
-    allowedRoles: ["campaign_launcher", "content_operator", "lead_nurture_operator", "supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "supervisor"],
     async handler(_ctx, input) {
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (input.name !== undefined) patch.name = input.name;
@@ -552,7 +552,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Create an email sequence.",
     input: TOOL_SCHEMAS.createEmailSequenceIn,
     output: TOOL_SCHEMAS.emailSequenceOut,
-    allowedRoles: ["campaign_launcher", "lead_nurture_operator", "supervisor"],
+    allowedRoles: ["campaign_launcher", "lead_nurture_worker", "supervisor"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
       const { data, error } = await admin
@@ -574,7 +574,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Append an email sequence step (requires valid template).",
     input: TOOL_SCHEMAS.addEmailStepIn,
     output: TOOL_SCHEMAS.emailStepOut,
-    allowedRoles: ["campaign_launcher", "lead_nurture_operator", "supervisor"],
+    allowedRoles: ["campaign_launcher", "lead_nurture_worker", "supervisor"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
       const { data: seq } = await admin
@@ -621,7 +621,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Create a lead record.",
     input: TOOL_SCHEMAS.createLeadIn,
     output: TOOL_SCHEMAS.leadOut,
-    allowedRoles: ["lead_nurture_operator", "campaign_launcher", "supervisor"],
+    allowedRoles: ["lead_nurture_worker", "campaign_launcher", "supervisor"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
       const { data, error } = await admin
@@ -648,7 +648,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Update lead status/stage.",
     input: z.object({ organizationId: id, lead_id: id, status: z.string().min(1) }),
     output: z.object({ ok: z.boolean(), lead_id: id, status: z.string() }),
-    allowedRoles: ["lead_nurture_operator", "supervisor"],
+    allowedRoles: ["lead_nurture_worker", "supervisor"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
       const { error } = await admin
@@ -665,7 +665,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Update lead score 0-100.",
     input: z.object({ organizationId: id, lead_id: id, score: z.number().int().min(0).max(100) }),
     output: z.object({ ok: z.boolean(), lead_id: id, score: z.number().int() }),
-    allowedRoles: ["lead_nurture_operator", "supervisor"],
+    allowedRoles: ["lead_nurture_worker", "supervisor"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
       const { error } = await admin
@@ -684,7 +684,7 @@ export const TOOLS: AnyToolDef[] = [
     output: z.object({
       leads: z.array(z.object({ id, email: z.string().nullable(), status: z.string().nullable().optional(), score: z.number().int().nullable().optional() })),
     }),
-    allowedRoles: ["lead_nurture_operator", "supervisor", "campaign_launcher"],
+    allowedRoles: ["lead_nurture_worker", "supervisor", "campaign_launcher"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
       const { data, error } = await admin
@@ -702,7 +702,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Enroll a lead in an email sequence (queues email logs).",
     input: z.object({ organizationId: id, lead_id: id, sequence_id: id, actor_user_id: id }),
     output: z.object({ ok: z.boolean(), enrollment_id: id.optional(), queued: z.number().int().optional() }),
-    allowedRoles: ["lead_nurture_operator", "campaign_launcher", "supervisor"],
+    allowedRoles: ["lead_nurture_worker", "campaign_launcher", "supervisor"],
     async handler(_ctx, input) {
       // Use existing service via API logic: directly insert enrollment and queue logs (simplified).
       const admin = createSupabaseAdminClient();
@@ -768,7 +768,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Queue a test email send (high-risk; should be approval-gated).",
     input: z.object({ organizationId: id, to_email: z.string().email(), subject: z.string().min(1), body_markdown: z.string().min(1) }),
     output: z.object({ ok: z.boolean() }),
-    allowedRoles: ["lead_nurture_operator", "supervisor"],
+    allowedRoles: ["lead_nurture_worker", "supervisor"],
     highRisk: true,
     async handler(_ctx, _input) {
       // Actual provider send is intentionally not executed here.
@@ -787,7 +787,7 @@ export const TOOLS: AnyToolDef[] = [
       utm_defaults: z.record(z.string(), z.unknown()).optional(),
     }),
     output: z.object({ id, destination_url: z.string(), campaign_id: id.nullable().optional() }),
-    allowedRoles: ["campaign_launcher", "content_operator", "supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "supervisor"],
     async handler(_ctx, input) {
       if (input.campaign_id) await requireCampaignOrgMatch(input.organizationId, input.campaign_id);
       const admin = createSupabaseAdminClient();
@@ -868,7 +868,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Get org settings (sanitized).",
     input: z.object({ organizationId: id }),
     output: z.object({ settings: z.array(z.object({ key: z.string(), value: z.record(z.string(), z.unknown()) })) }),
-    allowedRoles: ["campaign_launcher", "content_operator", "lead_nurture_operator", "analyst", "supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "analyst", "supervisor"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
       const { data, error } = await admin
@@ -998,7 +998,7 @@ export const TOOLS: AnyToolDef[] = [
     description: "Create an approval queue item.",
     input: TOOL_SCHEMAS.createApprovalIn,
     output: TOOL_SCHEMAS.approvalOut,
-    allowedRoles: ["campaign_launcher", "content_operator", "lead_nurture_operator", "supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "supervisor"],
     highRisk: true,
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();

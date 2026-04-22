@@ -336,6 +336,9 @@ export async function executePendingRun(
     runId: params.runId,
     organizationId: params.organizationId,
     campaignId: (run as { campaign_id: string | null }).campaign_id,
+    actorUserId: params.actorUserId,
+    traceId:
+      String(((run as { input?: any }).input as any)?.trace_id ?? "") || `trace_${params.runId}`,
     agentKey: agent.key,
     agentName: agent.name,
     systemPrompt,

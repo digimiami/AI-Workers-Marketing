@@ -36,6 +36,10 @@ export type ExecuteContext = {
   runId: string;
   organizationId: string;
   campaignId: string | null;
+  /** Authenticated user that initiated the run (for tool execution + approvals) */
+  actorUserId: string;
+  /** Trace id for correlating internal tool calls */
+  traceId: string;
   agentKey: string;
   agentName: string;
   systemPrompt: string;
