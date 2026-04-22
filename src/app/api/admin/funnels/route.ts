@@ -24,11 +24,11 @@ export async function GET(request: Request) {
   const ctx = await withOrgMember(parsed.data);
   if (ctx.error) return ctx.error;
 
+  // Avoid PostgREST embedded selects here because production DBs might not yet
+  // have the expected FK relationships, which causes hard 500s.
   const { data, error } = await ctx.supabase
     .from("funnels" as never)
-    .select(
-      "id,name,status,campaign_id,metadata,created_at,updated_at,campaigns(name),funnel_steps(id)",
-    )
+    .select("id,name,status,campaign_id,metadata,created_at,updated_at")
     .eq("organization_id", parsed.data)
     .order("created_at", { ascending: false })
     .limit(200);
@@ -40,21 +40,62 @@ export async function GET(request: Request) {
     name: string;
     status: string;
     campaign_id: string | null;
-    metadata: Record<string, unknown>;
+    metadata: Record<string, unknown> | null;
     created_at: string;
     updated_at: string;
-    campaigns: { name: string } | null;
-    funnel_steps: { id: string }[] | null;
   }[];
+
+  const campaignIds = Array.from(
+    new Set(rows.map((r) => r.campaign_id).filter(Boolean) as string[]),
+  );
+
+  const [campaignsRes, stepsRes] = await Promise.all([
+    campaignIds.length === 0
+      ? Promise.resolve({ data: [] as any[], error: null as any })
+      : ctx.supabase
+          .from("campaigns" as never)
+          .select("id,name")
+          .eq("organization_id", parsed.data)
+          .in("id", campaignIds)
+          .limit(500),
+    ctx.supabase
+      .from("funnel_steps" as never)
+      .select("funnel_id")
+      .eq("organization_id", parsed.data)
+      .in(
+        "funnel_id",
+        rows.map((r) => r.id),
+      )
+      .limit(5000),
+  ]);
+
+  if (campaignsRes.error) {
+    return NextResponse.json({ ok: false, message: campaignsRes.error.message }, { status: 500 });
+  }
+  if (stepsRes.error) {
+    return NextResponse.json({ ok: false, message: stepsRes.error.message }, { status: 500 });
+  }
+
+  const campaignNameById = new Map<string, string>();
+  for (const c of (campaignsRes.data ?? []) as any[]) {
+    if (c?.id && c?.name) campaignNameById.set(String(c.id), String(c.name));
+  }
+
+  const stepCountByFunnelId = new Map<string, number>();
+  for (const s of (stepsRes.data ?? []) as any[]) {
+    const id = String(s.funnel_id ?? "");
+    if (!id) continue;
+    stepCountByFunnelId.set(id, (stepCountByFunnelId.get(id) ?? 0) + 1);
+  }
 
   const funnels = rows.map((r) => ({
     id: r.id,
     name: r.name,
     status: r.status,
     campaign_id: r.campaign_id,
-    campaign_name: r.campaigns?.name ?? null,
-    step_count: r.funnel_steps?.length ?? 0,
-    metadata: r.metadata,
+    campaign_name: r.campaign_id ? campaignNameById.get(r.campaign_id) ?? null : null,
+    step_count: stepCountByFunnelId.get(r.id) ?? 0,
+    metadata: r.metadata ?? {},
     created_at: r.created_at,
     updated_at: r.updated_at,
   }));
