@@ -38,6 +38,8 @@ export type OpenClawToolError = {
     | "NOT_IMPLEMENTED"
     | "INTERNAL_ERROR";
   message: string;
+  /** Machine-readable validation or context (e.g. Zod flatten). */
+  details?: unknown;
 };
 
 export type OpenClawToolResult<T> =

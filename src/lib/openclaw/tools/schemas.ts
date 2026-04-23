@@ -66,7 +66,10 @@ export const toolRunEnvelopeSchema = z.object({
   agent_id: z.string().uuid().nullish(),
   run_id: z.string().uuid().nullish(),
   tool_name: z.string().min(1).max(120),
-  input: z.record(z.string(), z.unknown()).default({}),
+  input: z.preprocess(
+    (v) => (v === null || v === undefined ? {} : v),
+    z.record(z.string(), z.unknown()),
+  ),
 });
 
 export const toolResponseSchema = z.object({

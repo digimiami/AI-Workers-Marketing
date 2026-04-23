@@ -8,8 +8,15 @@ import { isToolAllowedForRole } from "@/lib/openclaw/tools/roleMatrix";
 import type { OpenClawToolContext, OpenClawToolError, OpenClawToolResult } from "@/lib/openclaw/tools/types";
 import { getToolByName } from "@/lib/openclaw/tools/tools";
 
-function err(traceId: string, code: OpenClawToolError["code"], message: string): OpenClawToolResult<never> {
-  return { success: false, trace_id: traceId, error: { code, message } };
+function err(
+  traceId: string,
+  code: OpenClawToolError["code"],
+  message: string,
+  details?: unknown,
+): OpenClawToolResult<never> {
+  const error: OpenClawToolError = { code, message };
+  if (details !== undefined) error.details = details;
+  return { success: false, trace_id: traceId, error };
 }
 
 function ok<T>(traceId: string, data: T): OpenClawToolResult<T> {
@@ -117,7 +124,10 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
   const parsed = toolRunEnvelopeSchema.safeParse(normalizeToolRunEnvelopeInput(rawBody));
   if (!parsed.success) {
     const traceId = "trace_invalid";
-    return err(traceId, "VALIDATION_ERROR", "Invalid tool run envelope");
+    return err(traceId, "VALIDATION_ERROR", "Invalid tool run envelope", {
+      zod: parsed.error.flatten(),
+      hint: "Required: organization_id (UUID), trace_id (8–120 chars), role_mode, tool_name, actor { type, user_id } for legacy key auth. DB tokens override actor. CamelCase aliases accepted (organizationId, traceId, …).",
+    });
   }
 
   const env = parsed.data;
@@ -182,7 +192,10 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
       input: env.input,
       output: {},
     });
-    return err(traceId, "VALIDATION_ERROR", "Invalid tool input");
+    return err(traceId, "VALIDATION_ERROR", "Invalid tool input", {
+      zod: inputParsed.error.flatten(),
+      tool_name: env.tool_name,
+    });
   }
 
   // Approval gating for high-risk tools
