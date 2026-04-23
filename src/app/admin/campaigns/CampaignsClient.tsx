@@ -62,11 +62,41 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
   const [editOpen, setEditOpen] = React.useState(false);
   const [active, setActive] = React.useState<Campaign | null>(null);
   const [edit, setEdit] = React.useState<CampaignFormState>(emptyForm);
+  const [orgId, setOrgId] = React.useState(organizationId);
+
+  const orgsQuery = useQuery({
+    queryKey: ["my-organizations"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/organizations");
+      if (!res.ok) throw new Error(await res.text());
+      const j = (await res.json()) as {
+        ok: boolean;
+        organizations: Array<{ id: string; name: string; role: string }>;
+      };
+      return j.organizations ?? [];
+    },
+  });
+
+  const switchOrg = useMutation({
+    mutationFn: async (nextOrgId: string) => {
+      const res = await fetch("/api/admin/organizations/switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId: nextOrgId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: () => {
+      toast.success("Organization switched");
+      window.location.reload();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Switch failed"),
+  });
 
   const campaignsQuery = useQuery({
-    queryKey: ["campaigns", organizationId],
+    queryKey: ["campaigns", orgId],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/campaigns?organizationId=${organizationId}`);
+      const res = await fetch(`/api/admin/campaigns?organizationId=${orgId}`);
       if (!res.ok) throw new Error(await res.text());
       const json = (await res.json()) as { ok: boolean; campaigns: Campaign[] };
       return json.campaigns ?? [];
@@ -161,6 +191,30 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
             Create campaigns, attach funnels and workers, and track performance.
           </p>
         </div>
+
+        <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <div className="min-w-[260px]">
+            <div className="text-xs font-medium text-muted-foreground mb-1">Organization</div>
+            <Select
+              value={orgId}
+              onValueChange={(v) => {
+                const next = v ?? "";
+                setOrgId(next);
+                if (next) switchOrg.mutate(next);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select organization" />
+              </SelectTrigger>
+              <SelectContent>
+                {(orgsQuery.data ?? []).map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.name} ({o.role})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger render={<Button>Create campaign</Button>} />
@@ -261,6 +315,7 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -328,6 +383,16 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
                           }}
                         >
                           Automation
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.location.href = `/admin/campaigns/${c.id}`;
+                          }}
+                        >
+                          Details
                         </Button>
                       </div>
                     </TableCell>
