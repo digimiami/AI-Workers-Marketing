@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 
 type SettingRow = { key: string; value: Record<string, unknown>; updated_at: string };
+type OrgRow = { id: string; name: string; role: string };
 
 function readFeatureFlags(rows: SettingRow[]): FeatureFlags {
   const row = rows.find((r) => r.key === "feature_flags");
@@ -28,6 +29,21 @@ function readFeatureFlags(rows: SettingRow[]): FeatureFlags {
 
 export function SettingsClient({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
+
+  const orgsQuery = useQuery({
+    queryKey: ["my-organizations"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/organizations");
+      if (!res.ok) throw new Error(await res.text());
+      const j = (await res.json()) as { ok: boolean; organizations: OrgRow[] };
+      return j.organizations ?? [];
+    },
+  });
+
+  const currentOrg = React.useMemo(
+    () => (orgsQuery.data ?? []).find((o) => o.id === organizationId) ?? null,
+    [orgsQuery.data, organizationId],
+  );
 
   const settingsQuery = useQuery({
     queryKey: ["settings", organizationId],
@@ -150,6 +166,19 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+            <div className="text-muted-foreground">Organization for this token</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="font-medium">{currentOrg?.name ?? "Current org"}</span>
+              {currentOrg?.role ? (
+                <span className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {currentOrg.role}
+                </span>
+              ) : null}
+              <span className="font-mono text-[10px] text-muted-foreground">{organizationId}</span>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="token-name">Token label</Label>
             <Input
