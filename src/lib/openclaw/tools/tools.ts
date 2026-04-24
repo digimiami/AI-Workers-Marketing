@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { TOOL_SCHEMAS } from "@/lib/openclaw/tools/registry";
 import type { AnyToolDef } from "@/lib/openclaw/tools/registry";
@@ -68,7 +69,8 @@ export const TOOLS: AnyToolDef[] = [
   },
   {
     name: "update_campaign",
-    description: "Update campaign fields.",
+    description:
+      "Update campaign fields. When metadata is provided, it is deep-merged into the existing jsonb metadata (partial updates safe).",
     input: z.object({
       organizationId: id,
       campaign_id: id,
@@ -83,21 +85,32 @@ export const TOOLS: AnyToolDef[] = [
     allowedRoles: ["campaign_launcher", "supervisor"],
     async handler(_ctx, input) {
       await requireCampaignOrgMatch(input.organizationId, input.campaign_id);
+      const admin = createSupabaseAdminClient();
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (input.name !== undefined) patch.name = input.name;
       if (input.status !== undefined) patch.status = input.status;
       if (input.type !== undefined) patch.type = input.type;
       if (input.target_audience !== undefined) patch.target_audience = input.target_audience;
       if (input.description !== undefined) patch.description = input.description;
-      if (input.metadata !== undefined) patch.metadata = input.metadata;
 
-      const admin = createSupabaseAdminClient();
+      if (input.metadata !== undefined) {
+        const { data: row, error: metaErr } = await admin
+          .from("campaigns" as never)
+          .select("metadata")
+          .eq("organization_id", input.organizationId)
+          .eq("id", input.campaign_id)
+          .maybeSingle();
+        if (metaErr) throw new Error(metaErr.message);
+        const prev = asMetadataRecord((row as { metadata?: unknown } | null)?.metadata);
+        patch.metadata = mergeJsonbRecords(prev, input.metadata as Record<string, unknown>);
+      }
+
       const { data, error } = await admin
         .from("campaigns" as never)
         .update(patch as never)
         .eq("organization_id", input.organizationId)
         .eq("id", input.campaign_id)
-        .select("id,name,status,type,organization_id")
+        .select("id,name,status,type,organization_id,metadata")
         .single();
       if (error || !data) throw new Error(error?.message ?? "Failed to update campaign");
       return data as any;

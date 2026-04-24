@@ -21,6 +21,7 @@ const campaignOut = z.object({
   status: z.string(),
   type: z.string(),
   organization_id: id,
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 // Funnels

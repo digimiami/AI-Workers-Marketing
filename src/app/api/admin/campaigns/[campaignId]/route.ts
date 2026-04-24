@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
+import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
 import { writeAuditLog } from "@/services/audit/auditService";
 
 const getQuery = z.object({
@@ -55,8 +56,8 @@ export async function PATCH(
       .eq("organization_id", parsed.data.organizationId)
       .maybeSingle();
     if (existingErr) return NextResponse.json({ ok: false, message: existingErr.message }, { status: 500 });
-    const prev = ((existing as any)?.metadata ?? {}) as Record<string, unknown>;
-    patch.metadata = { ...prev, ...parsed.data.metadata };
+    const prev = asMetadataRecord((existing as { metadata?: unknown } | null)?.metadata);
+    patch.metadata = mergeJsonbRecords(prev, parsed.data.metadata);
   }
 
   const { data, error } = await op.supabase
