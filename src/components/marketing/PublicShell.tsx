@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { buttonVariants } from "@/components/ui/button";
@@ -13,8 +14,9 @@ export function PublicShell({
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-40 border-b border-border/50 glass-panel">
         <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
-          <Link href="/" className="font-display text-lg font-bold tracking-tight text-gradient-fx">
-            AiWorkers.vip
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logo.svg" alt="AiWorkers.vip" width={22} height={22} priority />
+            <span className="font-display text-lg font-bold tracking-tight text-gradient-fx">AiWorkers.vip</span>
           </Link>
           <nav className="hidden md:flex items-center gap-1 text-sm text-muted-foreground">
             {[
@@ -68,8 +70,9 @@ export function PublicShell({
         <div className="mx-auto max-w-6xl px-4 py-10">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="font-display font-bold tracking-tight text-gradient-fx">
-                AiWorkers.vip
+              <div className="flex items-center gap-2 font-display font-bold tracking-tight text-gradient-fx">
+                <Image src="/logo.svg" alt="AiWorkers.vip" width={18} height={18} />
+                <span>AiWorkers.vip</span>
               </div>
               <div className="text-sm text-muted-foreground mt-1">
                 AI workforce for marketing automation.

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 import { signOutAction } from "@/app/login/actions";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
@@ -41,8 +42,9 @@ export default async function AdminLayout({
       <aside className="border-b md:border-b-0 md:border-r border-border/60 glass-panel md:min-h-screen">
         <div className="p-4 md:sticky md:top-0 md:py-6">
           <div className="flex items-center justify-between gap-2">
-            <Link href="/" className="font-display text-sm font-bold tracking-tight text-gradient-fx">
-              AiWorkers
+            <Link href="/" className="flex items-center gap-2">
+              <Image src="/logo.svg" alt="AiWorkers" width={18} height={18} priority />
+              <span className="font-display text-sm font-bold tracking-tight text-gradient-fx">AiWorkers</span>
             </Link>
             <div className="flex items-center gap-0.5">
               <ThemeToggle />

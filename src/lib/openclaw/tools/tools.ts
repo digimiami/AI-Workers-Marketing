@@ -3,6 +3,7 @@ import { z } from "zod";
 import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { TOOL_SCHEMAS } from "@/lib/openclaw/tools/registry";
+import { zapierCallTool, zapierListTools } from "@/services/zapier/zapierMcp";
 import type { AnyToolDef } from "@/lib/openclaw/tools/registry";
 import type { OpenClawToolContext } from "@/lib/openclaw/tools/types";
 
@@ -41,6 +42,34 @@ async function requireFunnelOrgMatch(organizationId: string, funnelId: string) {
 }
 
 export const TOOLS: AnyToolDef[] = [
+  {
+    name: "zapier_mcp_list_tools",
+    description:
+      "List available Zapier MCP tools for the configured Zapier MCP server. Requires ZAPIER_MCP_SERVER_URL and ZAPIER_MCP_SECRET on the server.",
+    input: z.object({}),
+    output: z.object({ tools: z.array(z.any()) }),
+    allowedRoles: ["supervisor"],
+    async handler() {
+      const res = await zapierListTools();
+      return { tools: (res as any)?.tools ?? (res as any) };
+    },
+  },
+  {
+    name: "zapier_mcp_call_tool",
+    description:
+      "Call a Zapier MCP tool by name with arguments. Requires ZAPIER_MCP_SERVER_URL and ZAPIER_MCP_SECRET on the server.",
+    input: z.object({
+      tool_name: z.string().min(1),
+      arguments: z.record(z.string(), z.unknown()).default({}),
+    }),
+    output: z.object({ result: z.any() }),
+    allowedRoles: ["supervisor"],
+    highRisk: true,
+    async handler(_ctx: OpenClawToolContext, input) {
+      const result = await zapierCallTool(input.tool_name, input.arguments);
+      return { result };
+    },
+  },
   {
     name: "create_campaign",
     description: "Create a campaign in the current organization.",

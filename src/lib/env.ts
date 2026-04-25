@@ -31,6 +31,10 @@ const serverSchema = z.object({
   // Platform credentials (encryption)
   PLATFORM_CREDENTIALS_ENCRYPTION_KEY: z.string().min(16).optional(),
 
+  // Zapier MCP (remote Streamable HTTP server)
+  ZAPIER_MCP_SERVER_URL: z.string().url().optional(),
+  ZAPIER_MCP_SECRET: z.string().min(10).optional(),
+
   /** When "1", workspace provisioning may seed demo lead/analytics in development only. */
   WORKSPACE_DEV_SEED: z.string().optional(),
 });
