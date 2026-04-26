@@ -153,34 +153,39 @@ export function LaunchClient({ organizationId }: { organizationId: string }) {
         body.client_service_goal = z.string().min(2).parse(form.client_service_goal.trim());
       }
 
-      const res = await fetch("/api/admin/launch/run", {
+      const res = await fetch("/api/workspace/provision", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          mode,
+          organizationMode: orgChoice === "new" ? "create" : "existing",
+          organizationId: orgChoice === "new" ? undefined : orgChoice === "picker" ? selectedOrgId : organizationId,
+          organizationName: orgChoice === "new" ? newOrgName.trim() : undefined,
+          affiliateLink: mode === "affiliate" ? (body.affiliate_link as string) : undefined,
+          clientWebsite: mode === "client" ? (body.client_offer_url as string) : undefined,
+          businessName: mode === "client" ? (body.client_business_name as string) : undefined,
+          niche,
+          audience,
+          trafficSource: traffic,
+          goal: mode === "affiliate" ? (body.campaign_goal as string) : (body.client_service_goal as string),
+          notes,
+          devSeedDemoData: Boolean(form.dev_seed),
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as {
-        ok: boolean;
-        partial?: boolean;
-        runId: string;
-        traceId: string;
-        organizationId: string;
-        createdNewOrganization?: boolean;
-      };
+      return (await res.json()) as any;
     },
     onSuccess: (j) => {
-      if (j.partial) {
+      if (j.ok) {
+        toast.success(j.createdNewOrganization ? "New org created and workspace provisioned" : "Workspace provisioned");
+      } else {
         toast.warning(
           j.createdNewOrganization
-            ? "New org created, but provisioning stopped with errors (earlier steps were kept)."
-            : "Provisioning stopped with errors — review the run for what succeeded.",
-        );
-      } else {
-        toast.success(
-          j.createdNewOrganization ? "New org created and workspace provisioned" : "Workspace provisioned",
+            ? "New org created, but provisioning finished with errors (earlier steps were kept)."
+            : "Provisioning finished with errors — review the run for what succeeded.",
         );
       }
-      setRunContext({ runId: j.runId, traceId: j.traceId, organizationId: j.organizationId });
+      setRunContext({ runId: j.masterRunId, traceId: j.traceId, organizationId: j.organizationId });
       setActiveSection("organization");
       if (j.createdNewOrganization) {
         qc.invalidateQueries({ queryKey: ["my-organizations"] });
