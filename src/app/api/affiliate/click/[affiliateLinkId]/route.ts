@@ -75,6 +75,14 @@ export async function GET(
     .single();
 
   if (!clickErr) {
+    await admin.from("analytics_events" as any).insert({
+      organization_id: (link as any).organization_id ?? null,
+      event_name: "affiliate_click",
+      source: "api.affiliate.click",
+      campaign_id: (link as any).campaign_id ?? null,
+      metadata: { affiliate_link_id: (link as any).id, click_id: (click as any)?.id ?? null, utm: { ...defaults, ...utm } },
+    } as any);
+
     await writeAuditLog({
       organizationId: (link as any).organization_id ?? null,
       actorUserId: null,

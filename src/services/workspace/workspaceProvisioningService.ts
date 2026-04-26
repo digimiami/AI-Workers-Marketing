@@ -318,7 +318,19 @@ export async function executeWorkspaceProvisioning(params: {
     const stepDefs = [
       { name: "Landing page", step_type: "landing", slug: `${base}-landing` },
       { name: "Bridge page", step_type: "bridge", slug: `${base}-bridge` },
-      { name: "Lead capture", step_type: "form", slug: `${base}-lead` },
+      {
+        name: "Lead capture",
+        step_type: "form",
+        slug: `${base}-lead`,
+        metadata: {
+          lead_capture: {
+            endpoint: "/api/leads/capture",
+            organization_id: organizationId,
+            campaign_id: campaign.id,
+            funnel_id: funnel.id,
+          },
+        },
+      },
       { name: "Primary CTA", step_type: "cta", slug: `${base}-cta` },
       { name: "Thank you", step_type: "thank_you", slug: `${base}-thanks` },
       { name: "Nurture trigger", step_type: "email_trigger", slug: `${base}-nurture` },
@@ -331,6 +343,7 @@ export async function executeWorkspaceProvisioning(params: {
         name: s.name,
         step_type: s.step_type,
         slug: s.slug,
+        metadata: (s as any).metadata ?? {},
       });
       funnel_steps.push({
         id: row.id,
@@ -467,6 +480,22 @@ export async function executeWorkspaceProvisioning(params: {
     });
     review.tracking = { link: { id: link.id, destination_url: link.destination_url } };
     pushProgress(review, "tracking", "ok");
+
+    // Attach CTA click wiring to the CTA funnel step (best-effort).
+    const ctaStepId = (review.funnel_steps ?? []).find((s) => s.step_type === "cta")?.id;
+    if (ctaStepId) {
+      await t("update_funnel_step", {
+        organizationId,
+        step_id: ctaStepId,
+        metadata: {
+          cta: {
+            click_url: `/api/affiliate/click/${link.id}`,
+            affiliate_link_id: link.id,
+            destination_url: link.destination_url,
+          },
+        },
+      });
+    }
 
     // --- Campaign workers ---
     const workerKeys = ["campaign_launcher", "analyst_worker", "content_strategist", "lead_nurture_worker"] as const;

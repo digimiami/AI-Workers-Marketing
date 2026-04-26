@@ -11,6 +11,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireUser } from "@/services/auth/authService";
 import { assertOrgOperator } from "@/services/org/assertOrgAccess";
 import { env } from "@/lib/env";
+import { OPENCLAW_AGENT_REGISTRY } from "@/lib/openclaw/registry";
 
 type CountRow = { label: string; value: number | null; note?: string | null };
 
@@ -121,6 +122,24 @@ export default async function AdminDevHealthPage() {
     .eq("organization_id", orgId)
     .order("created_at", { ascending: false })
     .limit(10);
+
+  // Latest workspace provision run (best-effort): run.input has role_mode=workspace_orchestrator
+  const { data: latestProvision } = await supabase
+    .from("agent_runs" as never)
+    .select("id,status,output_summary,error_message,created_at,started_at,finished_at,agents(key,name),input")
+    .eq("organization_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(25);
+  const latestProvisionRun = (latestProvision ?? []).find((r: any) => String(r?.input?.role_mode ?? "") === "workspace_orchestrator") ?? null;
+
+  // Worker permissions sanity: org agents with empty allowed_tools
+  const { data: agentsPerm } = await supabase
+    .from("agents" as never)
+    .select("id,key,name,allowed_tools")
+    .eq("organization_id", orgId)
+    .order("key", { ascending: true })
+    .limit(200);
+  const emptyAllowedTools = (agentsPerm ?? []).filter((a: any) => !Array.isArray(a.allowed_tools) || a.allowed_tools.length === 0);
 
   // Latest analytics events
   const { data: latestEvents } = await supabase
@@ -240,6 +259,69 @@ export default async function AdminDevHealthPage() {
               </Badge>
             </div>
             <div className="text-xs text-muted-foreground">{dbHealth.message}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">OpenClaw</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Provider mode</span>
+              <Badge variant={providers.openclaw.active === "stub" ? "outline" : "secondary"}>
+                {providers.openclaw.active}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">HTTP configured</span>
+              <Badge variant={providers.openclaw.httpConfigured ? "secondary" : "outline"}>
+                {providers.openclaw.httpConfigured ? "yes" : "no"}
+              </Badge>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Registry workers: {OPENCLAW_AGENT_REGISTRY.length} · Tools: {TOOLS.length}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Worker permissions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Agents with empty tools</span>
+              <Badge variant={emptyAllowedTools.length > 0 ? "destructive" : "secondary"}>
+                {emptyAllowedTools.length}
+              </Badge>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Empty tools means the worker can’t execute any tool-driven changes.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Latest provision run</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Run</span>
+              <span className="font-mono text-xs">{latestProvisionRun ? String((latestProvisionRun as any).id).slice(0, 8) : "—"}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Status</span>
+              <Badge variant={(latestProvisionRun as any)?.status === "failed" ? "destructive" : "secondary"}>
+                {(latestProvisionRun as any)?.status ?? "—"}
+              </Badge>
+            </div>
+            <div className="text-xs text-muted-foreground line-clamp-3">
+              {(latestProvisionRun as any)?.output_summary ?? (latestProvisionRun as any)?.error_message ?? ""}
+            </div>
           </CardContent>
         </Card>
       </div>

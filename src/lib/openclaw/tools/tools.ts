@@ -1043,6 +1043,19 @@ export const TOOLS: AnyToolDef[] = [
     allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "supervisor"],
     highRisk: true,
     async handler(_ctx, input) {
+      const payload = (input.payload ?? {}) as Record<string, unknown>;
+      const target =
+        typeof payload.content_asset_id === "string"
+          ? { type: "content_asset", id: payload.content_asset_id }
+          : typeof payload.template_id === "string"
+            ? { type: "email_template", id: payload.template_id }
+            : typeof payload.sequence_id === "string"
+              ? { type: "email_sequence", id: payload.sequence_id }
+              : typeof payload.link_id === "string"
+                ? { type: "affiliate_link", id: payload.link_id }
+                : typeof payload.funnel_step_id === "string"
+                  ? { type: "funnel_step", id: payload.funnel_step_id }
+                  : null;
       const admin = createSupabaseAdminClient();
       const { data, error } = await admin
         .from("approvals" as never)
@@ -1053,7 +1066,9 @@ export const TOOLS: AnyToolDef[] = [
           approval_type: input.approval_type,
           reason_required: input.reason_required ?? true,
           requested_by_user_id: input.requested_by_user_id ?? null,
-          payload: input.payload ?? {},
+          target_entity_type: target?.type ?? null,
+          target_entity_id: target?.id ?? null,
+          payload,
         } as never)
         .select("id,status,approval_type")
         .single();

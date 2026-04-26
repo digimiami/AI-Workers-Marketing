@@ -21,7 +21,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ campaignId:
 
   const orgId = parsed.data.organizationId;
 
-  const [campaign, funnel, steps, content, templates, sequences, seqSteps, agents, approvals, logs, toolCalls] =
+  const [campaign, funnel, steps, content, templates, sequences, seqSteps, agents, approvals, logs, toolCalls, runs, outputs] =
     await Promise.all([
       ctxOrg.supabase
         .from("campaigns" as never)
@@ -94,6 +94,19 @@ export async function GET(request: Request, ctx: { params: Promise<{ campaignId:
         .eq("organization_id", orgId)
         .order("created_at", { ascending: false })
         .limit(200),
+      ctxOrg.supabase
+        .from("agent_runs" as never)
+        .select("id,status,output_summary,error_message,created_at,started_at,finished_at,agents(key,name)")
+        .eq("organization_id", orgId)
+        .eq("campaign_id", campaignId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      ctxOrg.supabase
+        .from("agent_outputs" as never)
+        .select("id,run_id,output_type,content,created_at")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false })
+        .limit(200),
     ]);
 
   if (campaign.error) return NextResponse.json({ ok: false, message: campaign.error.message }, { status: 500 });
@@ -112,6 +125,8 @@ export async function GET(request: Request, ctx: { params: Promise<{ campaignId:
     approvals: approvals.data ?? [],
     logs: logs.data ?? [],
     tool_calls: toolCalls.data ?? [],
+    agent_runs: runs.data ?? [],
+    agent_outputs: outputs.data ?? [],
   });
 }
 

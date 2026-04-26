@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import crypto from "crypto";
 import { z } from "zod";
 
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
@@ -21,16 +22,6 @@ export async function POST(request: Request) {
   if (orgCtx.error) return orgCtx.error;
 
   const admin = createSupabaseAdminClient();
-  // Find the newest stub run matching the section and execute it; if missing, return 404.
-  const { data: runs, error } = await admin
-    .from("agent_runs" as never)
-    .select("id,input,agents(key)")
-    .eq("organization_id", parsed.data.organizationId)
-    .eq("campaign_id", parsed.data.campaignId)
-    .order("created_at", { ascending: false })
-    .limit(50);
-  if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
-
   const sectionKey =
     parsed.data.section === "content"
       ? "content_strategist"
@@ -42,12 +33,32 @@ export async function POST(request: Request) {
             ? "campaign_launcher"
             : "analyst_worker";
 
-  const match = (runs ?? []).find((r: any) => String(r?.agents?.key ?? "") === sectionKey);
-  if (!match) return NextResponse.json({ ok: false, message: "No matching run found" }, { status: 404 });
+  const { data: agent, error: aErr } = await admin
+    .from("agents" as never)
+    .select("id,key")
+    .eq("organization_id", parsed.data.organizationId)
+    .eq("key", sectionKey)
+    .maybeSingle();
+  if (aErr) return NextResponse.json({ ok: false, message: aErr.message }, { status: 500 });
+  if (!agent) return NextResponse.json({ ok: false, message: "Worker not found for org" }, { status: 404 });
+
+  const traceId = `trace_${crypto.randomUUID()}`;
+  const { data: run, error: rErr } = await admin
+    .from("agent_runs" as never)
+    .insert({
+      organization_id: parsed.data.organizationId,
+      agent_id: (agent as any).id,
+      campaign_id: parsed.data.campaignId,
+      status: "pending",
+      input: { trace_id: traceId, purpose: `workspace_retry_${parsed.data.section}`, section: parsed.data.section, stub: true },
+    } as never)
+    .select("id")
+    .single();
+  if (rErr || !run) return NextResponse.json({ ok: false, message: rErr?.message ?? "Failed to create retry run" }, { status: 500 });
 
   await executePendingRun(admin as any, {
     organizationId: parsed.data.organizationId,
-    runId: (match as any).id,
+    runId: (run as any).id,
     actorUserId: orgCtx.user.id,
   });
 

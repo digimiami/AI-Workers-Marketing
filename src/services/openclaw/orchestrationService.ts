@@ -426,6 +426,8 @@ export async function executePendingRun(
       reason_required: true,
       requested_by_user_id: params.actorUserId,
       agent_run_id: params.runId,
+      target_entity_type: "agent_run",
+      target_entity_id: params.runId,
       payload: {
         summary: result.summary ?? "",
         outputTypes: outputs.map((x) => x.outputType),
@@ -838,6 +840,20 @@ export async function decideApproval(
       next_review_status: targetEntityType && targetEntityId ? nextReviewStatus : null,
     },
   });
+
+  await db.from("analytics_events" as never).insert({
+    organization_id: organizationId,
+    event_name: "approval_decision",
+    source: "admin.approvals.decide",
+    campaign_id: (row as any)?.campaign_id ?? null,
+    metadata: {
+      approval_id: approvalId,
+      decision,
+      approval_type: approvalType,
+      target_entity_type: targetEntityType,
+      target_entity_id: targetEntityId,
+    },
+  } as never);
 }
 
 export async function listCampaignAgents(db: Db, organizationId: string, campaignId: string) {

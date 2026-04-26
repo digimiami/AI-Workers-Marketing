@@ -9,11 +9,13 @@ import { writeAuditLog } from "@/services/audit/auditService";
 const schema = z.object({
   organizationId: z.string().uuid(),
   campaignId: z.string().uuid().optional(),
+  funnelId: z.string().uuid().optional(),
   email: z.string().email(),
   fullName: z.string().min(1).optional(),
   phone: z.string().min(6).optional(),
   sourcePage: z.string().optional(),
   sourceContentAssetId: z.string().uuid().optional(),
+  utm: z.record(z.string(), z.string()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -61,6 +63,8 @@ export async function POST(request: Request) {
         source_content_asset_id: parsed.data.sourceContentAssetId ?? null,
         metadata: {
           ...(parsed.data.metadata ?? {}),
+          utm: parsed.data.utm ?? null,
+          funnel_id: parsed.data.funnelId ?? null,
           user_agent: ua,
           ip_hash: hashIp(ip),
         },
@@ -84,7 +88,19 @@ export async function POST(request: Request) {
     metadata: {
       source_page: parsed.data.sourcePage ?? null,
       source_content_asset_id: parsed.data.sourceContentAssetId ?? null,
+      funnel_id: parsed.data.funnelId ?? null,
+      utm: parsed.data.utm ?? null,
     },
+  } as any);
+
+  await admin.from("analytics_events" as any).insert({
+    organization_id: parsed.data.organizationId,
+    event_name: "lead_submit",
+    source: "api.leads.capture",
+    campaign_id: parsed.data.campaignId ?? null,
+    funnel_id: parsed.data.funnelId ?? null,
+    lead_id: (lead as any).id,
+    metadata: { source_page: parsed.data.sourcePage ?? null, source_content_asset_id: parsed.data.sourceContentAssetId ?? null, utm: parsed.data.utm ?? null },
   } as any);
 
   await writeAuditLog({
@@ -93,7 +109,7 @@ export async function POST(request: Request) {
     action: "lead.captured",
     entityType: "lead",
     entityId: (lead as any).id,
-    metadata: { campaign_id: parsed.data.campaignId ?? null },
+    metadata: { campaign_id: parsed.data.campaignId ?? null, funnel_id: parsed.data.funnelId ?? null },
   });
 
   return NextResponse.json({ ok: true, leadId: (lead as any).id });

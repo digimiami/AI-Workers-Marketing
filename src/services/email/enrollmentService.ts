@@ -89,6 +89,17 @@ export async function enrollLeadInSequence(
     if (logErr) throw new Error(logErr.message);
   }
 
+  if (queued.length > 0) {
+    await db.from("analytics_events" as never).insert({
+      organization_id: params.organizationId,
+      event_name: "email_queued",
+      source: "email.enroll",
+      campaign_id: null,
+      lead_id: params.leadId,
+      metadata: { sequence_id: params.sequenceId, queued: queued.length },
+    } as never);
+  }
+
   await writeAuditLog({
     organizationId: params.organizationId,
     actorUserId: params.actorUserId,
