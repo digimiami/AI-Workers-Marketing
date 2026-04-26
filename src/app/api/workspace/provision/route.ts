@@ -8,6 +8,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getAuthedUser } from "@/services/auth/authService";
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 import { provisionAiWorkersWorkspace, provisionAiWorkersWorkspaceInputSchema } from "@/services/workspace/provisionAiWorkersWorkspace";
+import { getRegistryEntry } from "@/lib/openclaw/registry";
+import { executePendingRun } from "@/services/openclaw/orchestrationService";
 
 const bodySchema = provisionAiWorkersWorkspaceInputSchema;
 
@@ -17,6 +19,8 @@ const newOrgSchema = z.object({
 
 async function upsertLauncherAgent(organizationId: string) {
   const admin = createSupabaseAdminClient();
+  const reg = getRegistryEntry("campaign_launcher");
+  const allowedTools = Array.isArray(reg?.allowedTools) ? reg!.allowedTools : [];
   const { data, error } = await admin
     .from("agents" as never)
     .upsert(
@@ -26,10 +30,10 @@ async function upsertLauncherAgent(organizationId: string) {
         name: "Campaign Launcher",
         description: "Workspace provisioning + campaign drafts via internal tools.",
         status: "enabled",
-        approval_required: false,
-        allowed_tools: [],
-        input_schema: {},
-        output_schema: {},
+        approval_required: Boolean(reg?.defaultApprovalRequired ?? false),
+        allowed_tools: allowedTools,
+        input_schema: reg?.inputSchema ?? {},
+        output_schema: reg?.outputSchema ?? {},
       } as never,
       { onConflict: "organization_id,key" },
     )
@@ -125,6 +129,22 @@ export async function POST(request: Request) {
     traceId,
     input: parsed.data,
   });
+
+  // Execute child worker runs end-to-end (stub or live provider). This makes the workspace “feel alive” immediately.
+  // Runs are created by provisioning service; we execute any pending stubs created there.
+  for (const runId of output.childAgentRunIds ?? []) {
+    try {
+      await executePendingRun(admin as any, { organizationId, runId, actorUserId: user.id });
+    } catch (e) {
+      await insertRunLog({
+        organizationId,
+        runId: masterRunId,
+        level: "error",
+        message: "Child run execution failed",
+        data: { child_run_id: runId, error: e instanceof Error ? e.message : String(e) },
+      });
+    }
+  }
 
   const provisionFailed = output.errors.length > 0;
   await admin

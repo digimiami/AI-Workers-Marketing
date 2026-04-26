@@ -191,6 +191,9 @@ export function LaunchClient({ organizationId }: { organizationId: string }) {
         qc.invalidateQueries({ queryKey: ["my-organizations"] });
         router.refresh();
       }
+      if (j.campaignId) {
+        router.push(`/admin/workspace/review/${j.campaignId}`);
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Launch failed"),
   });

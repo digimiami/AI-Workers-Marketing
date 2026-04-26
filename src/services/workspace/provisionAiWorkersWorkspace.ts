@@ -282,8 +282,8 @@ export async function provisionAiWorkersWorkspace(params: {
     "content_strategist",
     "lead_nurture_worker",
     "analyst_worker",
-    "automation_engineer",
     "opportunity_scout",
+    "publishing_worker",
   ];
 
   const ensured = await ensureCounts({
@@ -349,7 +349,15 @@ export async function provisionAiWorkersWorkspace(params: {
   const existingPurposes = new Set<string>(
     (agentRuns ?? []).map((r: any) => String(r?.input?.purpose ?? "")).filter(Boolean),
   );
-  for (const key of ["offer_analyst", "funnel_architect", "content_strategist", "lead_nurture_worker", "analyst_worker", "automation_engineer", "opportunity_scout"]) {
+  for (const key of [
+    "offer_analyst",
+    "funnel_architect",
+    "content_strategist",
+    "lead_nurture_worker",
+    "analyst_worker",
+    "opportunity_scout",
+    "publishing_worker",
+  ]) {
     const purpose = `post_provision_${key}`;
     if (existingPurposes.has(purpose)) continue;
     const { data: agent } = await admin
