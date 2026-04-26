@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { HomeComparison } from "@/components/marketing/home-comparison";
 import { HomeFinalCta } from "@/components/marketing/home-final-cta";
+import { HomeFlywheel } from "@/components/marketing/home-flywheel";
 import { HomeHero } from "@/components/marketing/home-hero";
 import { HomeProcessPipeline } from "@/components/marketing/home-process-pipeline";
 import { HomeResultsPreview } from "@/components/marketing/home-results-preview";
@@ -114,6 +115,8 @@ export default function Home() {
       </section>
 
       <HomeComparison />
+
+      <HomeFlywheel />
 
       <section className="border-t border-border/50">
         <div className="mkt-page pb-16 pt-12 md:pb-20 md:pt-16">

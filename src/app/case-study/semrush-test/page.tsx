@@ -51,6 +51,24 @@ export default function SemrushCaseStudyPage() {
           Documented learnings live as campaign notes and analyst recommendations in the admin dashboard.
         </Section>
 
+        <Card className="border-border/70 bg-gradient-to-br from-primary/10 via-card/80 to-card/60 backdrop-blur-md dark:border-white/[0.08]">
+          <CardHeader>
+            <CardTitle className="font-display text-lg">The 4-month flywheel</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground space-y-2">
+            <p>
+              This case study is a “Month 1” foundation run: build the Single Brain records (campaign/funnel/content),
+              then connect inputs and scale automation over time.
+            </p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Month 1: Foundation and chaos</li>
+              <li>Month 2: Connect and learn</li>
+              <li>Month 3: Scale and automate</li>
+              <li>Month 4: Optimize and own</li>
+            </ul>
+          </CardContent>
+        </Card>
+
         <Card className="border-border/70 bg-gradient-to-br from-primary/12 via-card/80 to-card/60 backdrop-blur-md dark:border-white/[0.08]">
           <CardHeader>
             <CardTitle className="font-display text-lg">Next step</CardTitle>

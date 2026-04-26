@@ -17,7 +17,7 @@ export default function AiWorkersPage() {
       <PageHero
         eyebrow="AI workforce OS"
         title="Modular workers. Connected execution."
-        description="AiWorkers is an operating system for growth: specialized roles that chain together, shared telemetry, and approval gates where risk is high. You stay the operator—workers do the throughput."
+        description="AiWorkers is your AI marketing workforce, powered by one shared brain: specialized roles that chain together, shared telemetry, and approval gates where risk is high. You stay the operator—workers do the throughput."
         motif={
           <div className="flex size-24 items-center justify-center rounded-3xl border border-primary/30 bg-primary/10 text-primary shadow-lg shadow-primary/20 md:size-28">
             <Cpu className="size-12 md:size-14" aria-hidden />

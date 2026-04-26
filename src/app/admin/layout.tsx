@@ -15,6 +15,7 @@ const nav = [
   { href: "/admin/leads", label: "Leads" },
   { href: "/admin/content", label: "Content" },
   { href: "/admin/email", label: "Email Sequences" },
+  { href: "/admin/data-sources", label: "Data Sources" },
   { href: "/admin/ai-workers", label: "AI Workers" },
   { href: "/admin/ai-workers/runs", label: "Agent runs" },
   { href: "/admin/approvals", label: "Approval Queue" },

@@ -26,6 +26,17 @@ type OverviewResponse = {
     activeAgents: number;
     pendingApprovals: number;
   };
+  architecture?: {
+    singleBrain: { entities: string[] };
+    dataSources: { connected: number; pending: number; disconnected: number };
+    workers: { active: number };
+    humanControl: { pendingApprovals: number };
+  };
+  realityCheck?: {
+    toolFailures24h: number;
+    providerErrors24h: number;
+    missingDataSources: number;
+  };
   last14d: {
     leads: number;
     runs: number;
@@ -60,13 +71,15 @@ export function AdminOverviewDashboard({ organizationId }: { organizationId: str
 
   const kpis = overview.data?.kpis;
   const series = overview.data?.last14d?.series ?? [];
+  const arch = overview.data?.architecture;
+  const reality = overview.data?.realityCheck;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
         <p className="text-sm text-muted-foreground">
-          Live KPIs and 14-day activity for leads, agent runs, and analytics events.
+          Your Single Brain: live KPIs + worker activity, data inputs, approvals, and telemetry.
         </p>
       </div>
 
@@ -87,6 +100,86 @@ export function AdminOverviewDashboard({ organizationId }: { organizationId: str
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">AiWorkers Single Brain architecture</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Data sources feed a central brain; specialized workers produce outputs; humans control risk.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Single Brain</p>
+              <p className="mt-1 text-sm font-medium">Shared org memory</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {(arch?.singleBrain.entities?.slice(0, 5) ?? ["campaigns", "funnels", "leads", "content", "approvals"]).join(
+                  " · ",
+                )}
+              </p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data Sources</p>
+              <p className="mt-1 text-sm font-medium">Inputs connected</p>
+              <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>Connected</span>
+                  <span className="text-foreground">{overview.isLoading ? "…" : arch?.dataSources.connected ?? "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pending</span>
+                  <span className="text-foreground">{overview.isLoading ? "…" : arch?.dataSources.pending ?? "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Disconnected</span>
+                  <span className="text-foreground">{overview.isLoading ? "…" : arch?.dataSources.disconnected ?? "—"}</span>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Human in control</p>
+              <p className="mt-1 text-sm font-medium">Approvals + audit</p>
+              <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>Pending approvals</span>
+                  <span className="text-foreground">
+                    {overview.isLoading ? "…" : arch?.humanControl.pendingApprovals ?? kpis?.pendingApprovals ?? "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Active workers</span>
+                  <span className="text-foreground">{overview.isLoading ? "…" : arch?.workers.active ?? kpis?.activeAgents ?? "—"}</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Reality Check</CardTitle>
+            <p className="text-xs text-muted-foreground">Conflicts, risk, missing inputs, provider errors.</p>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+              <span className="text-muted-foreground">Tool failures (24h)</span>
+              <span className="font-semibold">{overview.isLoading ? "…" : reality?.toolFailures24h ?? "—"}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+              <span className="text-muted-foreground">Provider errors (24h)</span>
+              <span className="font-semibold">{overview.isLoading ? "…" : reality?.providerErrors24h ?? "—"}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+              <span className="text-muted-foreground">Non-connected sources</span>
+              <span className="font-semibold">{overview.isLoading ? "…" : reality?.missingDataSources ?? "—"}</span>
+            </div>
+            <p className="pt-1 text-xs text-muted-foreground">
+              Reality Check is a guardrail summary (not a blocker). Use Approval Queue + Logs for details.
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>

@@ -155,8 +155,9 @@ export function HomeHero() {
               <span className="text-foreground">It’s a leverage system.</span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-muted-foreground text-pretty md:text-xl md:leading-relaxed">
-              Replace manual marketing bottlenecks with <span className="font-medium text-foreground">connected AI workers</span>{" "}
-              for discovery, funnels, content, lead capture, nurture, and optimization—run on cadence with{" "}
+              Your AI marketing workforce, powered by{" "}
+              <span className="font-medium text-foreground">one shared brain</span>. Connected workers run discovery, funnels,
+              content, lead capture, nurture, and optimization—on cadence with{" "}
               <span className="font-medium text-foreground">approvals</span> and{" "}
               <span className="font-medium text-foreground">telemetry</span> you can defend.
             </p>

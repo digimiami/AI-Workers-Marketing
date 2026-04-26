@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
+import { getDataSources } from "@/services/dataSources/dataSources";
 
 const qSchema = z.object({ organizationId: z.string().uuid() });
 
@@ -47,6 +48,8 @@ export async function GET(request: Request) {
     leadsSeries,
     runs,
     events,
+    toolFailures24h,
+    providerErrors24h,
   ] = await Promise.all([
     ctx.supabase.from("leads" as never).select("id", { count: "exact", head: true }).eq("organization_id", orgId),
     ctx.supabase
@@ -84,6 +87,18 @@ export async function GET(request: Request) {
       .select("id,created_at", { count: "exact" })
       .eq("organization_id", orgId)
       .gte("created_at", since.toISOString()),
+    ctx.supabase
+      .from("openclaw_tool_calls" as never)
+      .select("id,created_at", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("ok", false)
+      .gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString()),
+    ctx.supabase
+      .from("email_logs" as never)
+      .select("id,created_at", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .not("error_message", "is", null)
+      .gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString()),
   ]);
 
   if (totalLeads.error) return NextResponse.json({ ok: false, message: totalLeads.error.message }, { status: 500 });
@@ -97,6 +112,15 @@ export async function GET(request: Request) {
   if (leadsSeries.error) return NextResponse.json({ ok: false, message: leadsSeries.error.message }, { status: 500 });
   if (runs.error) return NextResponse.json({ ok: false, message: runs.error.message }, { status: 500 });
   if (events.error) return NextResponse.json({ ok: false, message: events.error.message }, { status: 500 });
+  if (toolFailures24h.error)
+    return NextResponse.json({ ok: false, message: toolFailures24h.error.message }, { status: 500 });
+  if (providerErrors24h.error)
+    return NextResponse.json({ ok: false, message: providerErrors24h.error.message }, { status: 500 });
+
+  const sources = await getDataSources(ctx.supabase as any, orgId).catch(() => []);
+  const connectedSources = sources.filter((s) => s.status === "connected").length;
+  const pendingSources = sources.filter((s) => s.status === "pending").length;
+  const disconnectedSources = sources.filter((s) => s.status === "disconnected").length;
 
   const days = lastNDays(14);
   const leadByDay: Record<string, number> = Object.fromEntries(days.map((d) => [d, 0]));
@@ -127,6 +151,39 @@ export async function GET(request: Request) {
       activeCampaigns: activeCampaigns.count ?? 0,
       activeAgents: activeAgents.count ?? 0,
       pendingApprovals: approvals.count ?? 0,
+    },
+    architecture: {
+      singleBrain: {
+        entities: [
+          "organizations",
+          "campaigns",
+          "funnels",
+          "leads",
+          "content",
+          "email sequences",
+          "analytics events",
+          "agent outputs",
+          "approvals",
+          "logs",
+          "memory/context (metadata + settings)",
+        ],
+      },
+      dataSources: {
+        connected: connectedSources,
+        pending: pendingSources,
+        disconnected: disconnectedSources,
+      },
+      workers: {
+        active: activeAgents.count ?? 0,
+      },
+      humanControl: {
+        pendingApprovals: approvals.count ?? 0,
+      },
+    },
+    realityCheck: {
+      toolFailures24h: toolFailures24h.count ?? 0,
+      providerErrors24h: providerErrors24h.count ?? 0,
+      missingDataSources: Math.max(0, sources.filter((s) => s.status !== "connected").length),
     },
     last14d: {
       leads: leadsSeries.count ?? 0,

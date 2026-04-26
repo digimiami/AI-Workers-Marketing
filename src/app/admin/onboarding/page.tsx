@@ -18,13 +18,34 @@ export default async function AdminOnboardingPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Workspace setup</h1>
         <p className="text-sm text-muted-foreground">
-          Select an organization or create a new one.
+          Select an organization or create a new one. Your workspace is the Single Brain that stores campaigns, funnels,
+          leads, content, approvals, logs, and context for every worker.
         </p>
         {error ? (
           <p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}
           </p>
         ) : null}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="border-border/70 bg-card/70 backdrop-blur-md dark:border-white/[0.08]">
+          <CardHeader>
+            <CardTitle className="text-base">Human in control</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            High-risk actions route through approvals, audit logs, and manual overrides. Workers are fast—humans decide what
+            ships.
+          </CardContent>
+        </Card>
+        <Card className="border-border/70 bg-card/70 backdrop-blur-md dark:border-white/[0.08]">
+          <CardHeader>
+            <CardTitle className="text-base">4-month flywheel</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Month 1: foundation + chaos. Month 2: connect + learn. Month 3: scale + automate. Month 4: optimize + own.
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
