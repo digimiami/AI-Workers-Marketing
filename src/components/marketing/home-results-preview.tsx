@@ -63,10 +63,10 @@ export function HomeResultsPreview() {
               Internal
             </Badge>
           </div>
-          <div className="relative mt-4 h-[220px] w-full min-w-0 overflow-hidden rounded-xl border border-border/50 bg-background/20">
+          <div className="relative mt-4 w-full min-w-0 overflow-hidden rounded-xl border border-border/50 bg-background/20">
             <div className="pointer-events-none absolute inset-0 fx-scanlines opacity-0 transition-opacity duration-300 group-hover:opacity-40" />
             {chartReady ? (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
+              <ResponsiveContainer width="100%" height={220} minWidth={0} debounce={50}>
                 <AreaChart data={chartData} margin={{ top: 4, right: 8, left: -18, bottom: 0 }}>
                   <defs>
                     <linearGradient id="fillLeads" x1="0" y1="0" x2="0" y2="1">
@@ -96,7 +96,7 @@ export function HomeResultsPreview() {
               </ResponsiveContainer>
             ) : (
               <div
-                className="flex h-full w-full items-end justify-between gap-1 px-2 pb-2 pt-6"
+                className="flex h-[220px] w-full items-end justify-between gap-1 px-2 pb-2 pt-6"
                 aria-hidden
               >
                 {chartData.map((d) => (

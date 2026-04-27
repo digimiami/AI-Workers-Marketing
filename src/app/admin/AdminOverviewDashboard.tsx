@@ -70,9 +70,16 @@ export function AdminOverviewDashboard({ organizationId }: { organizationId: str
   });
 
   const kpis = overview.data?.kpis;
-  const series = overview.data?.last14d?.series ?? [];
+  const rawSeries = overview.data?.last14d?.series;
+  const series = Array.isArray(rawSeries) ? rawSeries : [];
   const arch = overview.data?.architecture;
   const reality = overview.data?.realityCheck;
+
+  const entityPreview = React.useMemo(() => {
+    const e = arch?.singleBrain?.entities;
+    if (Array.isArray(e) && e.length) return e.slice(0, 5).join(" · ");
+    return ["campaigns", "funnels", "leads", "content", "approvals"].join(" · ");
+  }, [arch?.singleBrain?.entities]);
 
   return (
     <div className="space-y-6">
@@ -115,9 +122,7 @@ export function AdminOverviewDashboard({ organizationId }: { organizationId: str
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Single Brain</p>
               <p className="mt-1 text-sm font-medium">Shared org memory</p>
               <p className="mt-2 text-xs text-muted-foreground">
-                {(arch?.singleBrain.entities?.slice(0, 5) ?? ["campaigns", "funnels", "leads", "content", "approvals"]).join(
-                  " · ",
-                )}
+                {entityPreview}
               </p>
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
@@ -193,8 +198,8 @@ export function AdminOverviewDashboard({ organizationId }: { organizationId: str
           {overview.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading chart…</p>
           ) : chartReady ? (
-            <div className="h-[280px] w-full min-w-0">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
+            <div className="w-full min-w-0">
+              <ResponsiveContainer width="100%" height={280} minWidth={0} debounce={50}>
                 <AreaChart data={series} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
                   <defs>
                     <linearGradient id="ovLeads" x1="0" y1="0" x2="0" y2="1">

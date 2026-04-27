@@ -32,8 +32,9 @@ export function AnalyticsClient({ organizationId }: { organizationId: string }) 
     },
   });
 
-  const events = eventsQuery.data?.events ?? [];
-  const top = eventsQuery.data?.topEvents ?? [];
+  const analyticsPayload = eventsQuery.data;
+  const events = Array.isArray(analyticsPayload?.events) ? analyticsPayload.events : [];
+  const top = Array.isArray(analyticsPayload?.topEvents) ? analyticsPayload.topEvents : [];
 
   return (
     <div className="space-y-6">
