@@ -91,11 +91,12 @@ const emailTemplateOut = z.object({ id, name: z.string(), subject: z.string(), s
 
 const createEmailSequenceIn = z.object({
   organizationId: id,
+  campaign_id: id.nullish(),
   name: z.string().min(1),
   description: z.string().optional().nullable(),
   is_active: z.boolean().optional(),
 });
-const emailSequenceOut = z.object({ id, name: z.string(), is_active: z.boolean() });
+const emailSequenceOut = z.object({ id, name: z.string(), is_active: z.boolean(), campaign_id: id.nullable().optional() });
 
 const addEmailStepIn = z.object({
   organizationId: id,

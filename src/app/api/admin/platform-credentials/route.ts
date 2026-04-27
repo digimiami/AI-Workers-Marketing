@@ -4,9 +4,19 @@ import { z } from "zod";
 
 import { withOrgOperator, withOrgMember } from "@/app/api/admin/openclaw/_shared";
 import { writeAuditLog } from "@/services/audit/auditService";
-import { encryptJson, decryptJson, redactCredentials } from "@/services/platforms/credentialsCrypto";
+import { decryptJson, encryptJson, redactCredentials } from "@/services/platforms/credentialsCrypto";
 
-const platformSchema = z.enum(["facebook", "google_ads", "tiktok"]);
+const platformSchema = z.enum([
+  "facebook",
+  "google_ads",
+  "youtube_ads",
+  "tiktok",
+  "pinterest_ads",
+  "microsoft_ads",
+  "taboola",
+  "revcontent",
+  "adcombo",
+]);
 
 const querySchema = z.object({
   organizationId: z.string().uuid(),
@@ -26,15 +36,28 @@ function computeStatus(platform: z.infer<typeof platformSchema>, creds: Record<s
       missing: ["app_id", "app_secret", "ad_account_id"].filter((k) => !has(k)),
     };
   }
-  if (platform === "google_ads") {
+  if (platform === "google_ads" || platform === "youtube_ads") {
     return {
       connected: has("developer_token") && has("client_id") && has("client_secret"),
       missing: ["developer_token", "client_id", "client_secret"].filter((k) => !has(k)),
     };
   }
+  if (platform === "tiktok") {
+    return {
+      connected: has("advertiser_id") && has("access_token"),
+      missing: ["advertiser_id", "access_token"].filter((k) => !has(k)),
+    };
+  }
+  if (platform === "microsoft_ads") {
+    return {
+      connected: has("developer_token") && has("client_id") && has("client_secret") && has("customer_id"),
+      missing: ["developer_token", "client_id", "client_secret", "customer_id"].filter((k) => !has(k)),
+    };
+  }
+  // Generic API-key based networks (Taboola, Revcontent, Adcombo, Pinterest Ads)
   return {
-    connected: has("advertiser_id") && has("access_token"),
-    missing: ["advertiser_id", "access_token"].filter((k) => !has(k)),
+    connected: has("api_key") && (has("account_id") || has("publisher_id") || has("advertiser_id")),
+    missing: ["api_key", "account_id"].filter((k) => !has(k)),
   };
 }
 

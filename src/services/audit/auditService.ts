@@ -22,6 +22,9 @@ export type AuditAction =
   | "approval.decision"
   | "settings.updated"
   | "email.sent"
+  | "appointment.created"
+  | "appointment.invite_queued"
+  | "org.member_invited"
   | "workspace.provisioned"
   | "workspace.provision_failed";
 

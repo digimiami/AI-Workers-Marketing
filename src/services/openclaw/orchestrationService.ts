@@ -780,7 +780,7 @@ export async function decideApproval(
     decision === "approved" ? "ready_to_deploy" : ("rejected" as const);
 
   const safeUpdateReviewStatus = async (
-    table: "content_assets" | "email_templates" | "email_sequences" | "affiliate_links",
+    table: "content_assets" | "email_templates" | "email_sequences" | "affiliate_links" | "funnel_steps",
     id: string,
   ) => {
     await db
@@ -807,6 +807,39 @@ export async function decideApproval(
         await db
           .from("affiliate_links" as never)
           .update({ is_active: true, updated_at: new Date().toISOString() } as never)
+          .eq("organization_id", organizationId)
+          .eq("id", targetEntityId);
+      }
+    }
+    if (targetEntityType === "funnel_step") {
+      await safeUpdateReviewStatus("funnel_steps", targetEntityId);
+    }
+    if (targetEntityType === "email_log") {
+      if (decision === "approved") {
+        const { data: row2 } = await db
+          .from("email_logs" as never)
+          .select("metadata")
+          .eq("organization_id", organizationId)
+          .eq("id", targetEntityId)
+          .maybeSingle();
+        const meta = (((row2 as any)?.metadata ?? {}) as Record<string, unknown>) ?? {};
+        await db
+          .from("email_logs" as never)
+          .update({
+            next_attempt_at: new Date().toISOString(),
+            error_message: null,
+            metadata: { ...meta, gated: false, approved_at: new Date().toISOString() },
+          } as never)
+          .eq("organization_id", organizationId)
+          .eq("id", targetEntityId);
+      } else {
+        await db
+          .from("email_logs" as never)
+          .update({
+            status: "failed",
+            error_message: reason ?? "Rejected",
+            next_attempt_at: null,
+          } as never)
           .eq("organization_id", organizationId)
           .eq("id", targetEntityId);
       }

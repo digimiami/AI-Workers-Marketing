@@ -10,6 +10,7 @@ const schema = z.object({
   organizationId: z.string().uuid(),
   campaignId: z.string().uuid().optional(),
   funnelId: z.string().uuid().optional(),
+  funnelStepId: z.string().uuid().optional(),
   email: z.string().email(),
   fullName: z.string().min(1).optional(),
   phone: z.string().min(6).optional(),
@@ -25,8 +26,15 @@ function hashIp(ip: string | null) {
 }
 
 export async function POST(request: Request) {
-  const json = await request.json().catch(() => null);
-  const parsed = schema.safeParse(json);
+  const ct = request.headers.get("content-type") ?? "";
+  const raw =
+    ct.includes("application/json")
+      ? await request.json().catch(() => null)
+      : ct.includes("application/x-www-form-urlencoded") || ct.includes("multipart/form-data")
+        ? Object.fromEntries(Array.from((await request.formData()).entries()).map(([k, v]) => [k, String(v)]))
+        : await request.json().catch(() => null);
+
+  const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(
       { ok: false, message: "Invalid payload" },
@@ -89,6 +97,7 @@ export async function POST(request: Request) {
       source_page: parsed.data.sourcePage ?? null,
       source_content_asset_id: parsed.data.sourceContentAssetId ?? null,
       funnel_id: parsed.data.funnelId ?? null,
+      funnel_step_id: parsed.data.funnelStepId ?? null,
       utm: parsed.data.utm ?? null,
     },
   } as any);
@@ -100,7 +109,12 @@ export async function POST(request: Request) {
     campaign_id: parsed.data.campaignId ?? null,
     funnel_id: parsed.data.funnelId ?? null,
     lead_id: (lead as any).id,
-    metadata: { source_page: parsed.data.sourcePage ?? null, source_content_asset_id: parsed.data.sourceContentAssetId ?? null, utm: parsed.data.utm ?? null },
+    metadata: {
+      source_page: parsed.data.sourcePage ?? null,
+      source_content_asset_id: parsed.data.sourceContentAssetId ?? null,
+      funnel_step_id: parsed.data.funnelStepId ?? null,
+      utm: parsed.data.utm ?? null,
+    },
   } as any);
 
   await writeAuditLog({
@@ -111,6 +125,64 @@ export async function POST(request: Request) {
     entityId: (lead as any).id,
     metadata: { campaign_id: parsed.data.campaignId ?? null, funnel_id: parsed.data.funnelId ?? null },
   });
+
+  // If there's an active, deployed sequence for this campaign, auto-enroll the lead.
+  if (parsed.data.campaignId) {
+    const { data: seq } = await admin
+      .from("email_sequences" as any)
+      .select("id,is_active,review_status")
+      .eq("organization_id", parsed.data.organizationId)
+      .eq("campaign_id", parsed.data.campaignId)
+      .eq("is_active", true)
+      .in("review_status", ["deployed"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const seqRow = seq as any;
+    if (seqRow?.id) {
+      const { enrollLeadInSequence } = await import("@/services/email/enrollmentService");
+      await enrollLeadInSequence(admin as any, {
+        organizationId: parsed.data.organizationId,
+        actorUserId: null,
+        leadId: (lead as any).id,
+        sequenceId: String(seqRow.id),
+      }).catch(() => undefined);
+    }
+  }
+
+  const isFormPost =
+    ct.includes("application/x-www-form-urlencoded") || ct.includes("multipart/form-data");
+  if (isFormPost && parsed.data.campaignId) {
+    try {
+      const { data: camp } = await admin
+        .from("campaigns" as any)
+        .select("funnel_id")
+        .eq("organization_id", parsed.data.organizationId)
+        .eq("id", parsed.data.campaignId)
+        .maybeSingle();
+      const funnelId = (camp as any)?.funnel_id ? String((camp as any).funnel_id) : null;
+      if (funnelId) {
+        const { data: thanks } = await admin
+          .from("funnel_steps" as any)
+          .select("slug")
+          .eq("organization_id", parsed.data.organizationId)
+          .eq("funnel_id", funnelId)
+          .eq("step_type", "thank_you")
+          .eq("is_public", true)
+          .order("step_index", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        const slug = (thanks as any)?.slug ? String((thanks as any).slug) : null;
+        if (slug) {
+          const dest = new URL(`/f/${parsed.data.campaignId}/${slug}`, request.url);
+          return NextResponse.redirect(dest);
+        }
+      }
+    } catch {
+      // fall through to JSON
+    }
+  }
 
   return NextResponse.json({ ok: true, leadId: (lead as any).id });
 }

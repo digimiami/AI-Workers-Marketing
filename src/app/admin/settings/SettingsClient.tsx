@@ -22,7 +22,16 @@ import { toast } from "sonner";
 type SettingRow = { key: string; value: Record<string, unknown>; updated_at: string };
 type OrgRow = { id: string; name: string; role: string };
 type PlatformRow = {
-  platform: "facebook" | "google_ads" | "tiktok";
+  platform:
+    | "facebook"
+    | "google_ads"
+    | "youtube_ads"
+    | "tiktok"
+    | "pinterest_ads"
+    | "microsoft_ads"
+    | "taboola"
+    | "revcontent"
+    | "adcombo";
   status: { connected?: boolean; missing?: string[] };
   updated_at: string;
   credentials_redacted: Record<string, unknown>;
@@ -95,8 +104,23 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
   const [gDevToken, setGDevToken] = React.useState("");
   const [gClientId, setGClientId] = React.useState("");
   const [gClientSecret, setGClientSecret] = React.useState("");
+  const [ytDevToken, setYtDevToken] = React.useState("");
+  const [ytClientId, setYtClientId] = React.useState("");
+  const [ytClientSecret, setYtClientSecret] = React.useState("");
   const [ttAdvertiserId, setTtAdvertiserId] = React.useState("");
   const [ttAccessToken, setTtAccessToken] = React.useState("");
+  const [pinApiKey, setPinApiKey] = React.useState("");
+  const [pinAccountId, setPinAccountId] = React.useState("");
+  const [msDevToken, setMsDevToken] = React.useState("");
+  const [msClientId, setMsClientId] = React.useState("");
+  const [msClientSecret, setMsClientSecret] = React.useState("");
+  const [msCustomerId, setMsCustomerId] = React.useState("");
+  const [tabApiKey, setTabApiKey] = React.useState("");
+  const [tabAccountId, setTabAccountId] = React.useState("");
+  const [revApiKey, setRevApiKey] = React.useState("");
+  const [revAccountId, setRevAccountId] = React.useState("");
+  const [adcApiKey, setAdcApiKey] = React.useState("");
+  const [adcAccountId, setAdcAccountId] = React.useState("");
   const [platformNotes, setPlatformNotes] = React.useState("");
 
   const platformQuery = useQuery({
@@ -139,15 +163,78 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
                   notes: platformNotes,
                 },
               }
-            : {
-                organizationId,
-                platform,
-                credentials: {
-                  advertiser_id: ttAdvertiserId,
-                  access_token: ttAccessToken,
-                  notes: platformNotes,
-                },
-              };
+              : platform === "youtube_ads"
+                ? {
+                    organizationId,
+                    platform,
+                    credentials: {
+                      developer_token: ytDevToken,
+                      client_id: ytClientId,
+                      client_secret: ytClientSecret,
+                      notes: platformNotes,
+                    },
+                  }
+                : platform === "tiktok"
+                  ? {
+                      organizationId,
+                      platform,
+                      credentials: {
+                        advertiser_id: ttAdvertiserId,
+                        access_token: ttAccessToken,
+                        notes: platformNotes,
+                      },
+                    }
+                  : platform === "pinterest_ads"
+                    ? {
+                        organizationId,
+                        platform,
+                        credentials: {
+                          api_key: pinApiKey,
+                          account_id: pinAccountId,
+                          notes: platformNotes,
+                        },
+                      }
+                    : platform === "microsoft_ads"
+                      ? {
+                          organizationId,
+                          platform,
+                          credentials: {
+                            developer_token: msDevToken,
+                            client_id: msClientId,
+                            client_secret: msClientSecret,
+                            customer_id: msCustomerId,
+                            notes: platformNotes,
+                          },
+                        }
+                      : platform === "taboola"
+                        ? {
+                            organizationId,
+                            platform,
+                            credentials: {
+                              api_key: tabApiKey,
+                              account_id: tabAccountId,
+                              notes: platformNotes,
+                            },
+                          }
+                        : platform === "revcontent"
+                          ? {
+                              organizationId,
+                              platform,
+                              credentials: {
+                                api_key: revApiKey,
+                                account_id: revAccountId,
+                                notes: platformNotes,
+                              },
+                            }
+                          : {
+                              organizationId,
+                              platform,
+                              credentials: {
+                                api_key: adcApiKey,
+                                account_id: adcAccountId,
+                                notes: platformNotes,
+                              },
+                            };
 
       const res = await fetch("/api/admin/platform-credentials", {
         method: "POST",
@@ -217,6 +304,21 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Revoke failed"),
   });
 
+  const connectGoogleOauth = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/oauth/google/start", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId, returnTo: "/admin/settings" }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const j = (await res.json()) as { ok: boolean; url: string };
+      if (!j.url) throw new Error("Missing OAuth URL");
+      window.location.href = j.url;
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "OAuth connect failed"),
+  });
+
   React.useEffect(() => {
     if (settingsQuery.data) setDraft(readFeatureFlags(settingsQuery.data));
   }, [settingsQuery.data]);
@@ -233,6 +335,28 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Connect OAuth</CardTitle>
+          <CardDescription>
+            Connect Google Analytics + Search Console via OAuth. Tokens are stored encrypted (requires{" "}
+            <code className="font-mono text-xs">PLATFORM_CREDENTIALS_ENCRYPTION_KEY</code>).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => connectGoogleOauth.mutate()}
+            disabled={connectGoogleOauth.isPending}
+          >
+            {connectGoogleOauth.isPending ? "Opening Google…" : "Connect Google OAuth"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            After connecting, mark Data Sources as connected and start ingesting events.
+          </p>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Cloud API (OpenClaw & agents)</CardTitle>
@@ -406,6 +530,42 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
           <div className="rounded-lg border border-border/60 p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
+                <div className="font-medium">YouTube Ads (Google)</div>
+                <div className="text-xs text-muted-foreground">
+                  Status:{" "}
+                  {platformBy.get("youtube_ads")?.status?.connected ? (
+                    <span className="text-emerald-600">connected</span>
+                  ) : (
+                    <span className="text-muted-foreground">not connected</span>
+                  )}
+                </div>
+              </div>
+              <Button type="button" variant="outline" disabled>
+                Connect OAuth (stub)
+              </Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label>Developer Token</Label>
+                <Input value={ytDevToken} onChange={(e) => setYtDevToken(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Client ID</Label>
+                <Input value={ytClientId} onChange={(e) => setYtClientId(e.target.value)} />
+              </div>
+              <div className="space-y-1 md:col-span-2">
+                <Label>Client Secret</Label>
+                <Input value={ytClientSecret} onChange={(e) => setYtClientSecret(e.target.value)} />
+              </div>
+            </div>
+            <Button type="button" onClick={() => savePlatform.mutate("youtube_ads")} disabled={savePlatform.isPending}>
+              Save YouTube Ads credentials
+            </Button>
+          </div>
+
+          <div className="rounded-lg border border-border/60 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
                 <div className="font-medium">TikTok Ads API</div>
                 <div className="text-xs text-muted-foreground">
                   Status:{" "}
@@ -433,6 +593,167 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
             <Button type="button" onClick={() => savePlatform.mutate("tiktok")} disabled={savePlatform.isPending}>
               Save TikTok credentials
             </Button>
+          </div>
+
+          <div className="rounded-lg border border-border/60 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Pinterest Ads</div>
+                <div className="text-xs text-muted-foreground">
+                  Status:{" "}
+                  {platformBy.get("pinterest_ads")?.status?.connected ? (
+                    <span className="text-emerald-600">connected</span>
+                  ) : (
+                    <span className="text-muted-foreground">not connected</span>
+                  )}
+                </div>
+              </div>
+              <Button type="button" variant="outline" disabled>
+                Connect OAuth (stub)
+              </Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label>API Key</Label>
+                <Input value={pinApiKey} onChange={(e) => setPinApiKey(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Account ID</Label>
+                <Input value={pinAccountId} onChange={(e) => setPinAccountId(e.target.value)} />
+              </div>
+            </div>
+            <Button type="button" onClick={() => savePlatform.mutate("pinterest_ads")} disabled={savePlatform.isPending}>
+              Save Pinterest credentials
+            </Button>
+          </div>
+
+          <div className="rounded-lg border border-border/60 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Microsoft Ads (Bing)</div>
+                <div className="text-xs text-muted-foreground">
+                  Status:{" "}
+                  {platformBy.get("microsoft_ads")?.status?.connected ? (
+                    <span className="text-emerald-600">connected</span>
+                  ) : (
+                    <span className="text-muted-foreground">not connected</span>
+                  )}
+                </div>
+              </div>
+              <Button type="button" variant="outline" disabled>
+                Connect OAuth (stub)
+              </Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label>Developer Token</Label>
+                <Input value={msDevToken} onChange={(e) => setMsDevToken(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Customer ID</Label>
+                <Input value={msCustomerId} onChange={(e) => setMsCustomerId(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Client ID</Label>
+                <Input value={msClientId} onChange={(e) => setMsClientId(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Client Secret</Label>
+                <Input value={msClientSecret} onChange={(e) => setMsClientSecret(e.target.value)} />
+              </div>
+            </div>
+            <Button type="button" onClick={() => savePlatform.mutate("microsoft_ads")} disabled={savePlatform.isPending}>
+              Save Microsoft Ads credentials
+            </Button>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="rounded-lg border border-border/60 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium">Taboola</div>
+                  <div className="text-xs text-muted-foreground">
+                    Status:{" "}
+                    {platformBy.get("taboola")?.status?.connected ? (
+                      <span className="text-emerald-600">connected</span>
+                    ) : (
+                      <span className="text-muted-foreground">not connected</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3">
+                <div className="space-y-1">
+                  <Label>API Key</Label>
+                  <Input value={tabApiKey} onChange={(e) => setTabApiKey(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Account ID</Label>
+                  <Input value={tabAccountId} onChange={(e) => setTabAccountId(e.target.value)} />
+                </div>
+              </div>
+              <Button type="button" onClick={() => savePlatform.mutate("taboola")} disabled={savePlatform.isPending}>
+                Save Taboola credentials
+              </Button>
+            </div>
+
+            <div className="rounded-lg border border-border/60 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium">Revcontent</div>
+                  <div className="text-xs text-muted-foreground">
+                    Status:{" "}
+                    {platformBy.get("revcontent")?.status?.connected ? (
+                      <span className="text-emerald-600">connected</span>
+                    ) : (
+                      <span className="text-muted-foreground">not connected</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3">
+                <div className="space-y-1">
+                  <Label>API Key</Label>
+                  <Input value={revApiKey} onChange={(e) => setRevApiKey(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Account ID</Label>
+                  <Input value={revAccountId} onChange={(e) => setRevAccountId(e.target.value)} />
+                </div>
+              </div>
+              <Button type="button" onClick={() => savePlatform.mutate("revcontent")} disabled={savePlatform.isPending}>
+                Save Revcontent credentials
+              </Button>
+            </div>
+
+            <div className="rounded-lg border border-border/60 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium">Adcombo</div>
+                  <div className="text-xs text-muted-foreground">
+                    Status:{" "}
+                    {platformBy.get("adcombo")?.status?.connected ? (
+                      <span className="text-emerald-600">connected</span>
+                    ) : (
+                      <span className="text-muted-foreground">not connected</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3">
+                <div className="space-y-1">
+                  <Label>API Key</Label>
+                  <Input value={adcApiKey} onChange={(e) => setAdcApiKey(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Account ID</Label>
+                  <Input value={adcAccountId} onChange={(e) => setAdcAccountId(e.target.value)} />
+                </div>
+              </div>
+              <Button type="button" onClick={() => savePlatform.mutate("adcombo")} disabled={savePlatform.isPending}>
+                Save Adcombo credentials
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -601,11 +601,12 @@ export const TOOLS: AnyToolDef[] = [
         .from("email_sequences" as never)
         .insert({
           organization_id: input.organizationId,
+          campaign_id: (input as any).campaign_id ?? null,
           name: input.name,
           description: input.description ?? null,
           is_active: input.is_active ?? true,
         } as never)
-        .select("id,name,is_active")
+        .select("id,name,is_active,campaign_id")
         .single();
       if (error || !data) throw new Error(error?.message ?? "Failed to create sequence");
       return data as any;
@@ -746,63 +747,19 @@ export const TOOLS: AnyToolDef[] = [
     output: z.object({ ok: z.boolean(), enrollment_id: id.optional(), queued: z.number().int().optional() }),
     allowedRoles: ["lead_nurture_worker", "campaign_launcher", "supervisor"],
     async handler(_ctx, input) {
-      // Use existing service via API logic: directly insert enrollment and queue logs (simplified).
       const admin = createSupabaseAdminClient();
-      // Ensure lead + sequence belong to org
-      const { data: lead } = await admin
-        .from("leads" as never)
-        .select("id,email")
-        .eq("organization_id", input.organizationId)
-        .eq("id", input.lead_id)
-        .maybeSingle();
-      if (!lead) throw new Error("LEAD_NOT_FOUND");
-      const { data: seq } = await admin
-        .from("email_sequences" as never)
-        .select("id")
-        .eq("organization_id", input.organizationId)
-        .eq("id", input.sequence_id)
-        .maybeSingle();
-      if (!seq) throw new Error("SEQUENCE_NOT_FOUND");
-
-      const { data: enrollment, error: eErr } = await admin
-        .from("email_enrollments" as never)
-        .insert({
-          organization_id: input.organizationId,
-          lead_id: input.lead_id,
-          sequence_id: input.sequence_id,
-          status: "active",
-        } as never)
-        .select("id")
-        .single();
-      if (eErr || !enrollment) throw new Error(eErr?.message ?? "Failed to enroll");
-
-      const enrollmentId = (enrollment as any).id as string;
-      const { data: steps } = await admin
-        .from("email_sequence_steps" as never)
-        .select("id,step_index,delay_minutes,template_id")
-        .eq("organization_id", input.organizationId)
-        .eq("sequence_id", input.sequence_id)
-        .order("step_index", { ascending: true });
-      const now = Date.now();
-      let queued = 0;
-      for (const s of steps ?? []) {
-        const delay = Number((s as any).delay_minutes ?? 0);
-        const scheduledFor = new Date(now + delay * 60_000).toISOString();
-        await admin.from("email_logs" as never).insert({
-          organization_id: input.organizationId,
-          lead_id: input.lead_id,
-          sequence_id: input.sequence_id,
-          sequence_step_id: (s as any).id,
-          status: "queued",
-          scheduled_for: scheduledFor,
-          to_email: (lead as any).email ?? null,
-          subject: "",
-          body_markdown: "",
-          metadata: { template_id: (s as any).template_id, enrollment_id: enrollmentId },
-        } as never);
-        queued++;
-      }
-      return { ok: true, enrollment_id: enrollmentId, queued };
+      const { enrollLeadInSequence } = await import("@/services/email/enrollmentService");
+      const result = await enrollLeadInSequence(admin as any, {
+        organizationId: input.organizationId,
+        actorUserId: input.actor_user_id,
+        leadId: input.lead_id,
+        sequenceId: input.sequence_id,
+      });
+      return {
+        ok: true,
+        enrollment_id: String((result as any)?.enrollment?.id ?? ""),
+        queued: Number((result as any)?.queuedCount ?? 0),
+      };
     },
   },
   {

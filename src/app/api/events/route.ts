@@ -8,9 +8,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 const eventSchema = z.object({
   organizationId: z.string().uuid().optional(),
   campaignId: z.string().uuid().optional(),
+  funnelId: z.string().uuid().optional(),
   leadId: z.string().uuid().optional(),
   eventName: z.string().min(1),
   properties: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   source: z.string().default("internal"),
   sessionId: z.string().optional(),
 });
@@ -49,9 +51,11 @@ export async function POST(request: Request) {
   const { error } = await admin.from("analytics_events" as any).insert({
     organization_id: parsed.data.organizationId ?? null,
     campaign_id: parsed.data.campaignId ?? null,
+    funnel_id: parsed.data.funnelId ?? null,
     lead_id: parsed.data.leadId ?? null,
     event_name: parsed.data.eventName,
-    properties: parsed.data.properties ?? {},
+    properties: parsed.data.properties ?? parsed.data.metadata ?? {},
+    metadata: parsed.data.metadata ?? parsed.data.properties ?? {},
     source: parsed.data.source,
     session_id: parsed.data.sessionId ?? null,
     user_agent: ua,

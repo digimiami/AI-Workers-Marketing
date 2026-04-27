@@ -59,6 +59,26 @@ export function WorkspaceReviewClient({
     onError: (e) => toast.error(e instanceof Error ? e.message : "Retry failed"),
   });
 
+  const sectionAction = useMutation({
+    mutationFn: async (args: {
+      section: "funnel" | "content" | "email" | "cta";
+      action: "approve" | "reject" | "deploy";
+      reason?: string;
+    }) => {
+      const res = await fetch("/api/workspace/section-action", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId, campaignId, ...args }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: () => {
+      toast.success("Section updated");
+      ctxQuery.refetch();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Action failed"),
+  });
+
   const data = ctxQuery.data;
 
   return (
@@ -120,9 +140,25 @@ export function WorkspaceReviewClient({
             <CardTitle className="text-base">Funnel</CardTitle>
             <p className="text-xs text-muted-foreground">Steps + lead capture wiring metadata.</p>
           </div>
-          <Button variant="outline" onClick={() => retryMutation.mutate("funnel")} disabled={retryMutation.isPending}>
-            Retry funnel
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => retryMutation.mutate("funnel")} disabled={retryMutation.isPending}>
+              Regenerate
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => sectionAction.mutate({ section: "funnel", action: "approve" })}
+              disabled={sectionAction.isPending}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => sectionAction.mutate({ section: "funnel", action: "deploy" })}
+              disabled={sectionAction.isPending}
+            >
+              Deploy
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -154,9 +190,25 @@ export function WorkspaceReviewClient({
             <CardTitle className="text-base">Content assets</CardTitle>
             <p className="text-xs text-muted-foreground">Drafts created by workers (stub or live provider).</p>
           </div>
-          <Button variant="outline" onClick={() => retryMutation.mutate("content")} disabled={retryMutation.isPending}>
-            Retry content
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => retryMutation.mutate("content")} disabled={retryMutation.isPending}>
+              Regenerate
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => sectionAction.mutate({ section: "content", action: "approve" })}
+              disabled={sectionAction.isPending}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => sectionAction.mutate({ section: "content", action: "deploy" })}
+              disabled={sectionAction.isPending}
+            >
+              Deploy
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -188,9 +240,25 @@ export function WorkspaceReviewClient({
             <CardTitle className="text-base">Email</CardTitle>
             <p className="text-xs text-muted-foreground">Templates + sequence steps (draft, approvals required to send).</p>
           </div>
-          <Button variant="outline" onClick={() => retryMutation.mutate("email")} disabled={retryMutation.isPending}>
-            Retry email
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => retryMutation.mutate("email")} disabled={retryMutation.isPending}>
+              Regenerate
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => sectionAction.mutate({ section: "email", action: "approve" })}
+              disabled={sectionAction.isPending}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => sectionAction.mutate({ section: "email", action: "deploy" })}
+              disabled={sectionAction.isPending}
+            >
+              Deploy
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>

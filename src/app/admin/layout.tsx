@@ -7,12 +7,17 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
 import { requireUser } from "@/services/auth/authService";
+import { AdminOrgControls } from "@/app/admin/AdminOrgControls";
 
 const nav = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/campaigns", label: "Campaigns" },
   { href: "/admin/funnels", label: "Funnels" },
   { href: "/admin/leads", label: "Leads" },
+  { href: "/admin/chat", label: "Chat" },
+  { href: "/admin/appointments", label: "Appointments" },
+  { href: "/admin/ad-creative", label: "Ad Creative" },
+  { href: "/admin/reports", label: "Weekly Reports" },
   { href: "/admin/content", label: "Content" },
   { href: "/admin/email", label: "Email Sequences" },
   { href: "/admin/data-sources", label: "Data Sources" },
@@ -57,6 +62,7 @@ export default async function AdminLayout({
             </div>
           </div>
           <Separator className="my-4 opacity-60" />
+          <AdminOrgControls currentOrgId={orgId} />
           <nav className="space-y-0.5">
             {nav.map((item) => (
               <Link

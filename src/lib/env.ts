@@ -25,6 +25,10 @@ const serverSchema = z.object({
   // App
   APP_BASE_URL: z.string().url().optional(),
 
+  // OAuth (Google) - used for connecting Analytics/Search Console via admin
+  GOOGLE_OAUTH_CLIENT_ID: z.string().min(10).optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(10).optional(),
+
   // Cron (Vercel / external)
   CRON_SECRET: z.string().min(8).optional(),
 

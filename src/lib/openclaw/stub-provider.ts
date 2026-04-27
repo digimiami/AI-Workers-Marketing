@@ -271,6 +271,7 @@ export class OpenClawStubProvider implements OpenClawProvider {
       }
       const seq = await callTool("create_email_sequence", {
         organizationId: ctx.organizationId,
+        campaign_id: campaign.id,
         name: `${niche} nurture`.slice(0, 120),
         description: `Stub-generated sequence for ${audience || "audience"} · Goal: ${goal}`,
         is_active: false,
@@ -441,6 +442,7 @@ export class OpenClawStubProvider implements OpenClawProvider {
       }
       const seq = await callTool("create_email_sequence", {
         organizationId: ctx.organizationId,
+        campaign_id: ctx.campaignId,
         name: `${brief.niche} nurture`.slice(0, 120),
         description: `Stub nurture sequence · Goal: ${brief.goal}`,
         is_active: false,
@@ -491,6 +493,118 @@ export class OpenClawStubProvider implements OpenClawProvider {
               events: ["page_view", "lead_submit", "cta_click", "affiliate_click", "email_queued", "approval_decision"],
               dashboard_kpis: ["leads", "clicks", "runs", "approvals"],
               notes: "Events are internal analytics_events rows; external providers can be connected later.",
+            },
+          },
+        ],
+        raw: { provider: provider_mode, runId: ctx.runId, traceId: ctx.traceId },
+      };
+    }
+
+    if (ctx.agentKey === "opportunity_scout") {
+      await logWorkerRunEvent();
+      const r = await callTool("create_content_asset", {
+        organizationId: ctx.organizationId,
+        title: `Research brief · ${brief.niche}`.slice(0, 120),
+        platform: "web",
+        status: "draft",
+        campaign_id: ctx.campaignId,
+        funnel_id: (ctx.input as any)?.funnel_id ?? null,
+        hook: "World agent / research findings",
+        body: [
+          `## Research brief (stub)`,
+          `- Niche: ${brief.niche || "(missing)"}`,
+          `- Audience: ${brief.audience || "(missing)"}`,
+          ``,
+          `### Hypotheses to validate`,
+          `- What “quick win” does the audience want most?`,
+          `- What objections block the click?`,
+          `- What proof would be credible?`,
+          ``,
+          `### Next actions`,
+          `- Enable OpenClaw HTTP for live research`,
+          `- Add real competitor URLs / examples`,
+        ].join("\n"),
+        metadata: { provider_mode, trace_id: ctx.traceId, kind: "research_brief" },
+      });
+      return {
+        ok: true,
+        summary: `Research brief drafted (${provider_mode})`,
+        structuredOutputs: [
+          {
+            outputType: "openclaw.research_brief",
+            content: { provider_mode, trace_id: ctx.traceId, created_asset_id: r.ok ? (r.data as any).id : null },
+          },
+        ],
+        raw: { provider: provider_mode, runId: ctx.runId, traceId: ctx.traceId },
+      };
+    }
+
+    if (ctx.agentKey === "video_worker") {
+      await logWorkerRunEvent();
+      const r = await callTool("create_content_asset", {
+        organizationId: ctx.organizationId,
+        title: `Video shotlist · ${brief.niche}`.slice(0, 120),
+        platform: brief.traffic_source || "tiktok",
+        status: "draft",
+        campaign_id: ctx.campaignId,
+        funnel_id: (ctx.input as any)?.funnel_id ?? null,
+        hook: "On-camera plan + b-roll",
+        body: [
+          `## Shotlist (stub)`,
+          `1) Hook (0-2s): “Stop doing this in ${brief.niche}…”`,
+          `2) Problem (2-6s): tactics without system`,
+          `3) Mechanism (6-15s): brain → workers → approvals → telemetry`,
+          `4) CTA (15-20s): go to landing page / comment keyword`,
+        ].join("\n"),
+        metadata: { provider_mode, trace_id: ctx.traceId, kind: "video_shotlist" },
+      });
+      return {
+        ok: true,
+        summary: `Video plan drafted (${provider_mode})`,
+        structuredOutputs: [
+          { outputType: "openclaw.video_plan", content: { provider_mode, trace_id: ctx.traceId, asset_id: r.ok ? (r.data as any).id : null } },
+        ],
+        raw: { provider: provider_mode, runId: ctx.runId, traceId: ctx.traceId },
+      };
+    }
+
+    if (ctx.agentKey === "publishing_worker") {
+      await logWorkerRunEvent();
+      return {
+        ok: true,
+        summary: `Publishing pipeline ready (stub)`,
+        structuredOutputs: [
+          {
+            outputType: "openclaw.publishing_plan",
+            content: {
+              provider_mode,
+              trace_id: ctx.traceId,
+              note:
+                "Deploy action will enqueue publish jobs; live social providers are not connected in stub mode.",
+              prerequisites: ["Configure social provider credentials", "Approve content assets"],
+            },
+          },
+        ],
+        raw: { provider: provider_mode, runId: ctx.runId, traceId: ctx.traceId },
+      };
+    }
+
+    if (ctx.agentKey === "conversion_worker") {
+      await logWorkerRunEvent();
+      return {
+        ok: true,
+        summary: `Conversion recommendations (${provider_mode})`,
+        structuredOutputs: [
+          {
+            outputType: "openclaw.conversion_plan",
+            content: {
+              provider_mode,
+              trace_id: ctx.traceId,
+              experiments: [
+                { metric: "lead_submit", change: "Shorten form to email-only", expected: "+10-20%" },
+                { metric: "cta_click", change: "Add 2nd CTA mid-page", expected: "+5-10%" },
+              ],
+              guardrails: ["No guaranteed results claims"],
             },
           },
         ],

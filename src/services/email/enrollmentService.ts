@@ -8,7 +8,7 @@ export async function enrollLeadInSequence(
   db: Db,
   params: {
     organizationId: string;
-    actorUserId: string;
+    actorUserId: string | null;
     leadId: string;
     sequenceId: string;
   },
@@ -80,6 +80,8 @@ export async function enrollLeadInSequence(
       subject,
       provider: "resend",
       status: "queued",
+      scheduled_for: scheduledFor,
+      next_attempt_at: scheduledFor,
       metadata: { scheduled_for: scheduledFor, step_index: s.step_index },
     };
   });
@@ -100,14 +102,16 @@ export async function enrollLeadInSequence(
     } as never);
   }
 
-  await writeAuditLog({
-    organizationId: params.organizationId,
-    actorUserId: params.actorUserId,
-    action: "email.enrolled",
-    entityType: "email_enrollment",
-    entityId: (enrollment as any)?.id,
-    metadata: { lead_id: params.leadId, sequence_id: params.sequenceId, queued: queued.length },
-  });
+  if (params.actorUserId) {
+    await writeAuditLog({
+      organizationId: params.organizationId,
+      actorUserId: params.actorUserId,
+      action: "email.enrolled",
+      entityType: "email_enrollment",
+      entityId: (enrollment as any)?.id,
+      metadata: { lead_id: params.leadId, sequence_id: params.sequenceId, queued: queued.length },
+    });
+  }
 
   return { enrollment, queuedCount: queued.length };
 }

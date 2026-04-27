@@ -409,6 +409,41 @@ export async function executeWorkspaceProvisioning(params: {
       content_assets.push({ id: a.id, title: a.title, status: a.status });
     }
     review.content_assets = content_assets;
+
+    // Attach minimal renderable copy onto key funnel steps (so public funnel routes can render from DB).
+    const landingStepId = (review.funnel_steps ?? []).find((s) => s.step_type === "landing")?.id;
+    const bridgeStepId = (review.funnel_steps ?? []).find((s) => s.step_type === "bridge")?.id;
+    const thanksStepId = (review.funnel_steps ?? []).find((s) => s.step_type === "thank_you")?.id;
+    const landingCopy = contentSpecs.find((x) => x.kind === "landing_copy")?.body ?? "";
+    const bridgeCopy = contentSpecs.find((x) => x.kind === "bridge_copy")?.body ?? "";
+    if (landingStepId) {
+      await t("update_funnel_step", {
+        organizationId,
+        step_id: landingStepId,
+        metadata: { page: { kind: "markdown", markdown: landingCopy, title: `Landing · ${input.niche}` } },
+      });
+    }
+    if (bridgeStepId) {
+      await t("update_funnel_step", {
+        organizationId,
+        step_id: bridgeStepId,
+        metadata: { page: { kind: "markdown", markdown: bridgeCopy, title: `Bridge · ${input.niche}` } },
+      });
+    }
+    if (thanksStepId) {
+      await t("update_funnel_step", {
+        organizationId,
+        step_id: thanksStepId,
+        metadata: {
+          page: {
+            kind: "markdown",
+            title: "Thank you",
+            markdown: `## You're in.\n\nCheck your inbox for the first email.\n\nIf you want the next step, use the CTA.`,
+          },
+        },
+      });
+    }
+
     pushProgress(review, "content", "ok");
 
     // --- Email ---
@@ -435,6 +470,7 @@ export async function executeWorkspaceProvisioning(params: {
     });
     const sequence = await t("create_email_sequence", {
       organizationId,
+      campaign_id: campaign.id,
       name: `${input.niche} nurture`.slice(0, 120),
       description: `Goal: ${campaignGoal} · Traffic: ${input.traffic_source}`,
       is_active: false,
@@ -498,7 +534,18 @@ export async function executeWorkspaceProvisioning(params: {
     }
 
     // --- Campaign workers ---
-    const workerKeys = ["campaign_launcher", "analyst_worker", "content_strategist", "lead_nurture_worker"] as const;
+    const workerKeys = [
+      "campaign_launcher",
+      "offer_analyst",
+      "opportunity_scout",
+      "funnel_architect",
+      "content_strategist",
+      "video_worker",
+      "publishing_worker",
+      "lead_nurture_worker",
+      "conversion_worker",
+      "analyst_worker",
+    ] as const;
     const assigned: NonNullable<WorkspaceProvisionReview["workers"]>["assigned"] = [];
     for (const key of workerKeys) {
       const aid = await agentIdForKey(admin, organizationId, key);

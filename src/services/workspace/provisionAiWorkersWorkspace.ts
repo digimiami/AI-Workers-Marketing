@@ -278,12 +278,14 @@ export async function provisionAiWorkersWorkspace(params: {
   const wantWorkers = [
     "campaign_launcher",
     "offer_analyst",
+    "opportunity_scout",
     "funnel_architect",
     "content_strategist",
-    "lead_nurture_worker",
-    "analyst_worker",
-    "opportunity_scout",
+    "video_worker",
     "publishing_worker",
+    "lead_nurture_worker",
+    "conversion_worker",
+    "analyst_worker",
   ];
 
   const ensured = await ensureCounts({
@@ -351,12 +353,14 @@ export async function provisionAiWorkersWorkspace(params: {
   );
   for (const key of [
     "offer_analyst",
+    "opportunity_scout",
     "funnel_architect",
     "content_strategist",
-    "lead_nurture_worker",
-    "analyst_worker",
-    "opportunity_scout",
+    "video_worker",
     "publishing_worker",
+    "lead_nurture_worker",
+    "conversion_worker",
+    "analyst_worker",
   ]) {
     const purpose = `post_provision_${key}`;
     if (existingPurposes.has(purpose)) continue;
