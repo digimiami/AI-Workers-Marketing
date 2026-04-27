@@ -25,6 +25,7 @@ const nav = [
   { href: "/admin/ai-workers/runs", label: "Agent runs" },
   { href: "/admin/approvals", label: "Approval Queue" },
   { href: "/admin/analytics", label: "Analytics" },
+  { href: "/admin/organizations", label: "Organizations" },
   { href: "/admin/settings", label: "Settings" },
   { href: "/admin/logs", label: "Logs" },
 ];
