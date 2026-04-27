@@ -107,6 +107,79 @@ Content-Type: application/json`}
             <code className="font-mono text-xs">error.details.zod</code> (field issues) so you can fix the payload
             without guessing.
           </p>
+          <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+            <li>
+              <strong>401</strong> — missing/invalid <code className="font-mono text-xs">Authorization: Bearer</code>{" "}
+              (wrong Cloud API token or revoked token).
+            </li>
+            <li>
+              <strong>403</strong> — <code className="font-mono text-xs">organization_id</code> in the JSON body does
+              not exactly match the organization bound to the Cloud API token.
+            </li>
+            <li>
+              <strong>409</strong> — <code className="font-mono text-xs">APPROVAL_REQUIRED</code> — tool needs human
+              approval; surface to the operator / approvals queue instead of retrying blindly.
+            </li>
+          </ul>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">7. System instructions for agents (copy-paste)</h2>
+          <p className="text-muted-foreground">
+            Paste the block below into OpenClaw (or any LLM agent) <strong>system</strong> or <strong>developer</strong>{" "}
+            instructions so the agent always uses Cloud API tokens correctly. Replace{" "}
+            <code className="font-mono text-xs">{"{APP_BASE_URL}"}</code> with your production origin (e.g.{" "}
+            <code className="font-mono text-xs">https://aiworkers.vip</code>).
+          </p>
+          <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-4 font-mono text-[11px] leading-relaxed">
+            {`You are an autonomous agent integrating with AiWorkers.
+
+Authentication (required)
+- All machine calls go to the Cloud Tools API: POST {APP_BASE_URL}/api/v1/cloud/tools/run
+- Use HTTP Bearer auth with a Cloud API token created by a human operator in the AiWorkers admin UI:
+  Admin → Settings → Cloud API → "Create token & copy to clipboard".
+- The token plaintext is shown once. Store it in a secret manager; never commit it to git or paste into public channels.
+
+Headers
+- Authorization: Bearer <CLOUD_API_TOKEN>
+- Content-Type: application/json
+
+Body rules (critical)
+- Send a JSON object (tool run envelope). camelCase or snake_case top-level fields are accepted.
+- organization_id is mandatory and must be the exact UUID of the org that owns the Cloud API token. Mismatch → 403.
+- For Cloud API tokens, the server forces actor from the token (you cannot impersonate another user).
+- Include trace_id (8–120 chars) per logical operation for correlation.
+- Set role_mode to the workflow (e.g. campaign_launcher, funnel_architect, analyst, supervisor).
+- Set approval_mode: use "enforced" for outbound/high-risk actions that require human approval.
+- Set tool_name and input (object) per the tool registry.
+
+Do not
+- Never ask for or use SUPABASE_SERVICE_ROLE_KEY, database passwords, or full Vercel env dumps.
+- Do not assume OPENCLAW_API_KEY exists; prefer per-org Cloud API tokens from Admin → Settings.
+
+Minimal example
+POST {APP_BASE_URL}/api/v1/cloud/tools/run
+Authorization: Bearer <CLOUD_API_TOKEN>
+
+{
+  "organization_id": "<ORG_UUID>",
+  "trace_id": "openclaw-trace-001",
+  "role_mode": "analyst",
+  "approval_mode": "enforced",
+  "tool_name": "<TOOL_NAME>",
+  "input": {},
+  "campaign_id": "<OPTIONAL_CAMPAIGN_UUID>"
+}`}
+          </pre>
+          <p>
+            <strong>One-liner for task prompts:</strong> use the operator-created Cloud API token from{" "}
+            <Link className="text-primary underline" href="/admin/settings">
+              Admin → Settings → Cloud API
+            </Link>
+            , call <code className="font-mono text-xs">POST {"{APP_BASE_URL}"}/api/v1/cloud/tools/run</code> with{" "}
+            <code className="font-mono text-xs">Authorization: Bearer …</code>, and set{" "}
+            <code className="font-mono text-xs">organization_id</code> to the token’s org UUID exactly.
+          </p>
         </section>
       </div>
     </PublicShell>
