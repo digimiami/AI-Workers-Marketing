@@ -15,6 +15,10 @@ export function AdminOrgControls({ currentOrgId }: { currentOrgId: string }) {
   const [loadingOrgs, setLoadingOrgs] = React.useState(false);
   const [selectedOrgId, setSelectedOrgId] = React.useState(currentOrgId);
 
+  const [createName, setCreateName] = React.useState("");
+  const [createSlug, setCreateSlug] = React.useState("");
+  const [creating, setCreating] = React.useState(false);
+
   const [inviteEmail, setInviteEmail] = React.useState("");
   const [inviteRole, setInviteRole] = React.useState<"operator" | "viewer" | "client">("viewer");
   const [inviting, setInviting] = React.useState(false);
@@ -80,6 +84,28 @@ export function AdminOrgControls({ currentOrgId }: { currentOrgId: string }) {
     }
   };
 
+  const createOrg = async () => {
+    const name = createName.trim();
+    const slug = createSlug.trim().toLowerCase();
+    if (!name || !slug) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/admin/organizations/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, slug }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast.success("Organization created");
+      // Cookie is set server-side; reload into the new org.
+      window.location.href = "/admin";
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Create org failed");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <div className="mt-4 rounded-xl border border-border/60 bg-background/40 p-3 space-y-3">
       <div className="space-y-1.5">
@@ -110,6 +136,20 @@ export function AdminOrgControls({ currentOrgId }: { currentOrgId: string }) {
             Switch
           </Button>
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Create organization</Label>
+        <div className="space-y-2">
+          <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Org name" />
+          <Input value={createSlug} onChange={(e) => setCreateSlug(e.target.value)} placeholder="org-slug" />
+          <Button size="sm" onClick={() => void createOrg()} disabled={creating || !createName.trim() || !createSlug.trim()}>
+            Create
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Slug must be lowercase letters, numbers, and dashes.
+        </p>
       </div>
 
       <div className="space-y-1.5">
