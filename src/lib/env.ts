@@ -32,6 +32,9 @@ const serverSchema = z.object({
   // Cron (Vercel / external)
   CRON_SECRET: z.string().min(8).optional(),
 
+  // Affiliate postback security (optional)
+  POSTBACK_SECRET: z.string().min(8).optional(),
+
   // Platform credentials (encryption)
   PLATFORM_CREDENTIALS_ENCRYPTION_KEY: z.string().min(16).optional(),
 

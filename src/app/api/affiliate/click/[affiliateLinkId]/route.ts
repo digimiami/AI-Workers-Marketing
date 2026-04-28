@@ -75,6 +75,15 @@ export async function GET(
     .single();
 
   if (!clickErr) {
+    // First-party click id propagation for downstream attribution.
+    // - `cid` is a common affiliate postback click id parameter (e.g. Digistore24).
+    // - `_tid` is our internal click id alias.
+    if ((click as any)?.id) {
+      const clickId = String((click as any).id);
+      if (!destination.searchParams.has("cid")) destination.searchParams.set("cid", clickId);
+      if (!destination.searchParams.has("_tid")) destination.searchParams.set("_tid", clickId);
+    }
+
     await admin.from("analytics_events" as any).insert({
       organization_id: (link as any).organization_id ?? null,
       event_name: "affiliate_click",
