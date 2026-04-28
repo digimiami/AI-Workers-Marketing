@@ -395,6 +395,11 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
           <Button type="button" onClick={() => createToken.mutate()} disabled={createToken.isPending}>
             Create token & copy to clipboard
           </Button>
+          <p className="text-xs text-amber-950/90 dark:text-amber-200/90 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-2">
+            <strong className="font-medium">Security:</strong> the full token is shown only once. Paste it only into
+            OpenClaw’s <em>secret / environment / credential</em> field — never into a chat, ticket, or email. If a
+            truncated or partial token was shared anywhere, revoke the token below and create a new one.
+          </p>
           <p className="text-xs text-muted-foreground">
             The token acts as your operator for tool calls; <code className="font-mono">organization_id</code> in
             requests must match this org.

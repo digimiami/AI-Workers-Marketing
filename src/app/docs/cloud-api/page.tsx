@@ -39,6 +39,12 @@ export default function CloudApiDocsPage() {
             → <strong>Cloud API tokens</strong> → create token. The plaintext secret is shown once; store it in
             OpenClaw or your secret manager.
           </p>
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-950/90 dark:text-amber-200/90">
+            <strong>Never paste the full token into an LLM chat</strong> (including “OpenClaw” conversation threads).
+            Put the complete <code className="font-mono text-xs">aiw_…</code> string only in OpenClaw’s{" "}
+            <strong>secret / env / credential</strong> UI. If you already exposed a token, revoke it and create a new
+            one.
+          </p>
           <p>
             <strong>Alternative:</strong> deployment-wide legacy key{" "}
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">OPENCLAW_API_KEY</code> (Vercel env). When
