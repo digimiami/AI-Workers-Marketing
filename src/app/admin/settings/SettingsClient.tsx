@@ -8,6 +8,14 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -98,6 +106,8 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
 
   const [draft, setDraft] = React.useState<FeatureFlags | null>(null);
   const [tokenName, setTokenName] = React.useState("OpenClaw");
+  const [plainTokenDialogOpen, setPlainTokenDialogOpen] = React.useState(false);
+  const [lastCreatedPlainToken, setLastCreatedPlainToken] = React.useState<string | null>(null);
   const [fbAppId, setFbAppId] = React.useState("");
   const [fbAppSecret, setFbAppSecret] = React.useState("");
   const [fbAdAccountId, setFbAdAccountId] = React.useState("");
@@ -282,8 +292,14 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
       return (await res.json()) as { ok: boolean; plain_token: string; token_prefix: string };
     },
     onSuccess: async (j) => {
-      await navigator.clipboard.writeText(j.plain_token);
-      toast.success("Token created and copied to clipboard. Store it safely — it is not shown again.");
+      setLastCreatedPlainToken(j.plain_token);
+      setPlainTokenDialogOpen(true);
+      try {
+        await navigator.clipboard.writeText(j.plain_token);
+      } catch {
+        /* clipboard may be blocked; user can copy from dialog */
+      }
+      toast.success("Token created — copy the full value below into OpenClaw secrets (not chat).");
       await qc.invalidateQueries({ queryKey: ["cloud-api-tokens", organizationId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Create token failed"),
@@ -333,7 +349,13 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
     setDraft((prev) => (prev ? { ...prev, [k]: v } : prev));
   };
 
+  const closePlainTokenDialog = (clearSecret: boolean) => {
+    setPlainTokenDialogOpen(false);
+    if (clearSecret) setLastCreatedPlainToken(null);
+  };
+
   return (
+    <>
     <div className="space-y-6">
       <Card>
         <CardHeader>
@@ -406,7 +428,7 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
           </p>
           <div className="rounded-lg border border-border/60">
             <div className="border-b border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground">
-              Existing tokens
+              Existing tokens <span className="font-normal">(preview only — not the secret; the “…” is not part of the token)</span>
             </div>
             <ul className="divide-y divide-border/60">
               {(tokensQuery.data?.tokens ?? []).length === 0 ? (
@@ -788,5 +810,63 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
         </CardContent>
       </Card>
     </div>
+
+      <Dialog
+        open={plainTokenDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) closePlainTokenDialog(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-[min(36rem,calc(100%-2rem))]" showCloseButton>
+          <DialogHeader>
+            <DialogTitle>Cloud API token (full secret)</DialogTitle>
+            <DialogDescription>
+              This is the <strong>only</strong> time the complete token is shown. Copy it into OpenClaw’s{" "}
+              <strong>environment / secret / credential</strong> field — not into a chat. The value under “Existing
+              tokens” is a <strong>short preview</strong> (ends with …) and will <strong>not</strong> work as{" "}
+              <code className="font-mono text-xs">Authorization: Bearer …</code>.
+            </DialogDescription>
+          </DialogHeader>
+          {lastCreatedPlainToken ? (
+            <div className="space-y-2">
+              <Label htmlFor="plain-token-field">Full token</Label>
+              <Input
+                id="plain-token-field"
+                readOnly
+                className="font-mono text-xs break-all"
+                value={lastCreatedPlainToken}
+                onFocus={(e) => e.currentTarget.select()}
+              />
+            </div>
+          ) : null}
+          <DialogFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={async () => {
+                if (!lastCreatedPlainToken) return;
+                try {
+                  await navigator.clipboard.writeText(lastCreatedPlainToken);
+                  toast.success("Copied to clipboard");
+                } catch {
+                  toast.error("Could not copy — select the field and copy manually");
+                }
+              }}
+            >
+              Copy again
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                closePlainTokenDialog(true);
+                toast.message("If OpenClaw still shows a truncated token, it is reading the wrong field — use this full value only once from here or from clipboard right after create.");
+              }}
+            >
+              Done — I saved it elsewhere
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

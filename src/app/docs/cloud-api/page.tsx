@@ -45,6 +45,12 @@ export default function CloudApiDocsPage() {
             <strong>secret / env / credential</strong> UI. If you already exposed a token, revoke it and create a new
             one.
           </p>
+          <p className="text-muted-foreground">
+            The <strong>Existing tokens</strong> list only shows a short <code className="font-mono text-xs">token_prefix</code>{" "}
+            (it may end with <code className="font-mono text-xs">…</code>). That is <strong>not</strong> a truncated secret
+            you can “complete” — it is display-only. After you click create, use the <strong>full token</strong> from the
+            confirmation dialog (or your clipboard right at creation time).
+          </p>
           <p>
             <strong>Alternative:</strong> deployment-wide legacy key{" "}
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">OPENCLAW_API_KEY</code> (Vercel env). When
