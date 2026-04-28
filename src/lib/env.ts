@@ -35,6 +35,13 @@ const serverSchema = z.object({
   // Affiliate postback security (optional)
   POSTBACK_SECRET: z.string().min(8).optional(),
 
+  // GitHub Actions (optional) - used for approval-gated automation like applying Supabase migrations
+  GITHUB_ACTIONS_TOKEN: z.string().min(10).optional(),
+  GITHUB_REPO_OWNER: z.string().min(1).optional(),
+  GITHUB_REPO_NAME: z.string().min(1).optional(),
+  GITHUB_MIGRATIONS_WORKFLOW_FILE: z.string().min(1).optional(),
+  GITHUB_MIGRATIONS_REF: z.string().min(1).optional(),
+
   // Platform credentials (encryption)
   PLATFORM_CREDENTIALS_ENCRYPTION_KEY: z.string().min(16).optional(),
 

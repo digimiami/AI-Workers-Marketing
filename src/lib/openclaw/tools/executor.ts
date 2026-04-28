@@ -208,6 +208,8 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
           ? "email_sending"
           : env.tool_name === "create_tracking_link"
             ? "affiliate_cta_activation"
+            : env.tool_name === "apply_supabase_migrations"
+              ? "db_migrations_apply"
             : "high_risk_copy";
 
     const gated = await maybeGateWithApproval({

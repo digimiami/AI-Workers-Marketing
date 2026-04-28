@@ -5,6 +5,8 @@ import { getOpenClawProvider } from "@/lib/openclaw/factory";
 import { getRegistryEntry, OPENCLAW_AGENT_REGISTRY } from "@/lib/openclaw/registry";
 import type { ExecuteContext, OpenClawRunStatus, RunHumanGate } from "@/lib/openclaw/types";
 import { writeAuditLog } from "@/services/audit/auditService";
+import { dispatchWorkflow } from "@/services/github/githubActionsService";
+import { env } from "@/lib/env";
 
 type Db = SupabaseClient;
 
@@ -844,6 +846,22 @@ export async function decideApproval(
           .eq("id", targetEntityId);
       }
     }
+  }
+
+  // Approval-gated automation: DB migrations via GitHub Actions.
+  // This does NOT execute SQL directly; it triggers a workflow that runs `supabase db push` from the repo.
+  if (decision === "approved" && approvalType === "db_migrations_apply") {
+    const workflow = env.server.GITHUB_MIGRATIONS_WORKFLOW_FILE ?? "supabase-db-push.yml";
+    const ref = env.server.GITHUB_MIGRATIONS_REF ?? "master";
+    await dispatchWorkflow({
+      workflowFile: workflow,
+      ref,
+      inputs: {
+        organization_id: organizationId,
+        approval_id: approvalId,
+        requested_by_user_id: String((row as any)?.requested_by_user_id ?? ""),
+      },
+    });
   }
 
   const runId = (row as { agent_run_id?: string | null }).agent_run_id;

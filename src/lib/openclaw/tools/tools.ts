@@ -808,6 +808,22 @@ export const TOOLS: AnyToolDef[] = [
     },
   },
   {
+    name: "apply_supabase_migrations",
+    description:
+      "Request applying Supabase migrations (approval-gated). Triggers a GitHub Action that runs `supabase db push` from the repo.",
+    input: z.object({
+      organizationId: id,
+      reason: z.string().min(1).optional(),
+    }),
+    output: z.object({ ok: z.boolean() }),
+    allowedRoles: ["supervisor"],
+    highRisk: true,
+    async handler(_ctx, _input) {
+      // Execution is approval-gated in the tool executor (returns APPROVAL_REQUIRED and creates an approval item).
+      return { ok: true };
+    },
+  },
+  {
     name: "log_analytics_event",
     description: "Write an analytics event.",
     input: z.object({
