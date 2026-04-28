@@ -99,8 +99,27 @@ function asNumber(v: unknown, fallback = 0): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
 function readCampaignSections(metadata: Record<string, unknown>) {
-  const ads = asArray<Record<string, unknown>>(metadata.ad_templates).map(
+  // Backward-compatible metadata reader:
+  // - Legacy flat shape: metadata.ad_templates, metadata.email_sequence, metadata.funnel_settings, ...
+  // - New strict OpenClaw shape: metadata.ads, metadata.emails, metadata.funnel (containers)
+  const adsMeta = asRecord(metadata.ads);
+  const emailsMeta = asRecord(metadata.emails);
+  const funnelMeta = asRecord(metadata.funnel);
+
+  const adRows = (() => {
+    const a = asArray<Record<string, unknown>>(adsMeta.ad_templates);
+    if (a.length) return a;
+    const b = asArray<Record<string, unknown>>(adsMeta.templates);
+    if (b.length) return b;
+    return asArray<Record<string, unknown>>(metadata.ad_templates);
+  })();
+
+  const ads = adRows.map(
     (a): AdTemplate => ({
       ad_name: asString(a.ad_name),
       platform: asString(a.platform),
@@ -111,11 +130,20 @@ function readCampaignSections(metadata: Record<string, unknown>) {
     }),
   );
 
-  const contentHooksScripts = metadata.content_hooks_scripts as
-    | { hooks?: unknown; scripts?: unknown }
-    | undefined;
+  const contentHooksScripts = asRecord(adsMeta.content_hooks_scripts ?? metadata.content_hooks_scripts) as {
+    hooks?: unknown;
+    scripts?: unknown;
+  };
 
-  const email = asArray<Record<string, unknown>>(metadata.email_sequence).map(
+  const emailRows = (() => {
+    const a = asArray<Record<string, unknown>>(emailsMeta.email_sequence);
+    if (a.length) return a;
+    const b = asArray<Record<string, unknown>>(emailsMeta.sequence);
+    if (b.length) return b;
+    return asArray<Record<string, unknown>>(metadata.email_sequence);
+  })();
+
+  const email = emailRows.map(
     (e): EmailStep => ({
       day: asNumber(e.day),
       subject: asString(e.subject),
@@ -123,14 +151,14 @@ function readCampaignSections(metadata: Record<string, unknown>) {
     }),
   );
 
-  const lead = (metadata.lead_capture_settings as Record<string, unknown> | undefined) ?? {};
+  const lead = asRecord(metadata.lead_capture_settings);
   const leadCapture: LeadCapture = {
     form_fields: asArray<string>(lead.form_fields).filter((s) => typeof s === "string"),
     incentive: asString(lead.incentive),
     autoresponder: asString(lead.autoresponder),
   };
 
-  const landing = (metadata.landing_settings as Record<string, unknown> | undefined) ?? {};
+  const landing = asRecord(metadata.landing_settings);
   const landingSettings: LandingSettings = {
     landing_url: asString(landing.landing_url),
     cta_button_text: asString(landing.cta_button_text),
@@ -138,7 +166,7 @@ function readCampaignSections(metadata: Record<string, unknown>) {
     meta_description: asString(landing.meta_description),
   };
 
-  const funnel = (metadata.funnel_settings as Record<string, unknown> | undefined) ?? {};
+  const funnel = asRecord(funnelMeta.funnel_settings ?? metadata.funnel_settings);
 
   return {
     adTemplates: ads,
