@@ -264,9 +264,14 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
         }),
       });
       if (!res.ok) throw new Error(await res.text());
+      const j = (await res.json()) as { ok: boolean; campaign?: CampaignRow };
+      return j.campaign ?? null;
     },
-    onSuccess: async () => {
+    onSuccess: async (updated) => {
       toast.success("Campaign saved");
+      if (updated) {
+        qc.setQueryData(["campaign", props.organizationId, props.campaignId], updated);
+      }
       await qc.invalidateQueries({ queryKey: ["campaign", props.organizationId, props.campaignId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
