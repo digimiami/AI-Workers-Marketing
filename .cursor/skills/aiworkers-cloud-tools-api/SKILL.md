@@ -49,6 +49,32 @@ Top-level fields accept either `snake_case` or `camelCase`.
 
 ## Common patterns
 
+### Update campaign metadata (strict)
+
+Tool: `update_campaign`
+
+- The tool input is **strict**. If you send unknown keys (e.g. `funnel`, `ads`, `emails` at the top level), the API returns **400** with `error.code = "VALIDATION_ERROR"`.
+- Put your funnel/ads/emails object under **`input.metadata`**.
+
+```json
+{
+  "organization_id": "ORG_UUID",
+  "trace_id": "trace_campaign_update_001",
+  "role_mode": "campaign_launcher",
+  "approval_mode": "auto",
+  "tool_name": "update_campaign",
+  "input": {
+    "organizationId": "ORG_UUID",
+    "campaign_id": "CAMPAIGN_UUID",
+    "metadata": {
+      "funnel": { "...": "..." },
+      "ads": { "...": "..." },
+      "emails": { "...": "..." }
+    }
+  }
+}
+```
+
 ### Create a tracking link (affiliate)
 
 Tool: `create_tracking_link`

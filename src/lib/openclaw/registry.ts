@@ -152,6 +152,7 @@ export const OPENCLAW_AGENT_REGISTRY: AgentRegistryEntry[] = [
       "Prefer tool calls over prose; persist records instead of describing them.",
       "Never publish or send emails automatically.",
       "If a requested action is high-risk, request approval instead of executing.",
+      "When calling update_campaign: ONLY send allowed keys. Put funnel/ads/emails under input.metadata. Unknown keys will hard-fail validation.",
       "Log assumptions and decisions as structured JSON.",
     ],
     expectedOutputs: [

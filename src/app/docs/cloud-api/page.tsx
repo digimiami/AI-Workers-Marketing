@@ -164,6 +164,7 @@ Body rules (critical)
 - Set role_mode to the workflow (e.g. campaign_launcher, funnel_architect, analyst, supervisor).
 - Set approval_mode: use "enforced" for outbound/high-risk actions that require human approval.
 - Set tool_name and input (object) per the tool registry.
+- Tool inputs may be STRICT: do not send unknown keys. Example: update_campaign requires funnel/ads/emails under input.metadata (unknown top-level keys → 400 VALIDATION_ERROR).
 
 Do not
 - Never ask for or use SUPABASE_SERVICE_ROLE_KEY, database passwords, or full Vercel env dumps.
