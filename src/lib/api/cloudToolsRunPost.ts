@@ -74,6 +74,8 @@ export async function handleCloudToolsRunPost(request: Request): Promise<Respons
     ? 200
     : result.error.code === "VALIDATION_ERROR"
       ? 400
+      : result.error.code === "NOT_IMPLEMENTED"
+        ? 400
       : result.error.code === "UNAUTHORIZED"
         ? 401
         : result.error.code === "FORBIDDEN"
