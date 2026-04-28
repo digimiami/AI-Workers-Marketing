@@ -118,7 +118,12 @@ async function maybeGateWithApproval(params: {
     payload,
   });
 
-  if (error && /column .* does not exist/i.test(String((error as any).message ?? ""))) {
+  const msg = String((error as any)?.message ?? "");
+  const missingColumn =
+    /column .* does not exist/i.test(msg) ||
+    /Could not find the '.*' column of '.*' in the schema cache/i.test(msg) ||
+    /schema cache/i.test(msg);
+  if (error && missingColumn) {
     ({ data, error } = await tryInsert({
       organization_id: params.ctx.organizationId,
       campaign_id: params.ctx.campaignId ?? null,
