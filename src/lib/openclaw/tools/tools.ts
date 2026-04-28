@@ -100,16 +100,18 @@ export const TOOLS: AnyToolDef[] = [
     name: "update_campaign",
     description:
       "Update campaign fields. When metadata is provided, it is deep-merged into the existing jsonb metadata (partial updates safe).",
-    input: z.object({
-      organizationId: id,
-      campaign_id: id,
-      name: z.string().min(1).optional(),
-      status: z.string().optional(),
-      type: z.string().optional(),
-      target_audience: z.string().nullable().optional(),
-      description: z.string().nullable().optional(),
-      metadata: z.record(z.string(), z.unknown()).optional(),
-    }),
+    input: z
+      .object({
+        organizationId: id,
+        campaign_id: id,
+        name: z.string().min(1).optional(),
+        status: z.string().optional(),
+        type: z.string().optional(),
+        target_audience: z.string().nullable().optional(),
+        description: z.string().nullable().optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      })
+      .strict(),
     output: TOOL_SCHEMAS.campaignOut,
     allowedRoles: ["campaign_launcher", "supervisor"],
     async handler(_ctx, input) {
