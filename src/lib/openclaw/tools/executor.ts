@@ -86,36 +86,51 @@ async function maybeGateWithApproval(params: {
   // "auto": gate only high-risk tools (handled by tool def) – executor passes approvalType when needed.
   // "enforced": gate whenever tool requested it.
   const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
-    .from("approvals" as never)
-    .insert({
+  const requestedBy =
+    params.ctx.actor.type === "user" ? params.ctx.actor.userId : params.ctx.actor.userId ?? null;
+  const payload = {
+    tool: params.toolName,
+    trace_id: params.ctx.traceId,
+    ...params.payload,
+  };
+
+  const tryInsert = async (row: Record<string, unknown>) =>
+    admin.from("approvals" as never).insert(row as never).select("id,status").single();
+
+  // Newer DB schemas include agent_run_id / target_entity_*; older schemas may not.
+  // Try full insert first, then retry minimal insert if a column is missing.
+  let { data, error } = await tryInsert({
+    organization_id: params.ctx.organizationId,
+    campaign_id: params.ctx.campaignId ?? null,
+    status: "pending",
+    approval_type: params.approvalType,
+    reason_required: true,
+    requested_by_user_id: requestedBy,
+    agent_run_id: params.ctx.runId ?? null,
+    target_entity_type:
+      typeof (params.payload as any)?.target_entity_type === "string"
+        ? ((params.payload as any).target_entity_type as string)
+        : null,
+    target_entity_id:
+      typeof (params.payload as any)?.target_entity_id === "string"
+        ? ((params.payload as any).target_entity_id as string)
+        : null,
+    payload,
+  });
+
+  if (error && /column .* does not exist/i.test(String((error as any).message ?? ""))) {
+    ({ data, error } = await tryInsert({
       organization_id: params.ctx.organizationId,
       campaign_id: params.ctx.campaignId ?? null,
       status: "pending",
       approval_type: params.approvalType,
       reason_required: true,
-      requested_by_user_id: params.ctx.actor.type === "user" ? params.ctx.actor.userId : params.ctx.actor.userId ?? null,
-      agent_run_id: params.ctx.runId ?? null,
-      target_entity_type:
-        typeof (params.payload as any)?.target_entity_type === "string"
-          ? ((params.payload as any).target_entity_type as string)
-          : null,
-      target_entity_id:
-        typeof (params.payload as any)?.target_entity_id === "string"
-          ? ((params.payload as any).target_entity_id as string)
-          : null,
-      payload: {
-        tool: params.toolName,
-        trace_id: params.ctx.traceId,
-        ...params.payload,
-      },
-    } as never)
-    .select("id,status")
-    .single();
-
-  if (error || !data) {
-    throw new Error(error?.message ?? "Failed to create approval");
+      requested_by_user_id: requestedBy,
+      payload,
+    }));
   }
+
+  if (error || !data) throw new Error((error as any)?.message ?? "Failed to create approval");
 
   return { gated: true as const, approvalId: (data as { id: string }).id };
 }
@@ -132,6 +147,9 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
 
   const env = parsed.data;
   const traceId = env.trace_id;
+
+  // Never throw out of this function; Cloud API should return structured JSON errors.
+  try {
 
   // Load tool definition
   const tool = getToolByName(env.tool_name);
@@ -174,24 +192,28 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
   // Tool input validation (tool.input is zod)
   const inputParsed = (tool.input as z.ZodTypeAny).safeParse(env.input ?? {});
   if (!inputParsed.success) {
-    await insertToolCallLog({
-      organization_id: ctx.organizationId,
-      trace_id: traceId,
-      actor_type: ctx.actor.type,
-      actor_user_id: actorUserId,
-      system_actor_id: ctx.actor.type === "system" ? ctx.actor.systemActorId : null,
-      agent_id: ctx.agentId ?? null,
-      run_id: ctx.runId ?? null,
-      campaign_id: ctx.campaignId ?? null,
-      tool_name: env.tool_name,
-      role_mode: env.role_mode,
-      approval_mode: env.approval_mode,
-      ok: false,
-      error_code: "VALIDATION_ERROR",
-      error_message: inputParsed.error.message,
-      input: env.input,
-      output: {},
-    });
+    try {
+      await insertToolCallLog({
+        organization_id: ctx.organizationId,
+        trace_id: traceId,
+        actor_type: ctx.actor.type,
+        actor_user_id: actorUserId,
+        system_actor_id: ctx.actor.type === "system" ? ctx.actor.systemActorId : null,
+        agent_id: ctx.agentId ?? null,
+        run_id: ctx.runId ?? null,
+        campaign_id: ctx.campaignId ?? null,
+        tool_name: env.tool_name,
+        role_mode: env.role_mode,
+        approval_mode: env.approval_mode,
+        ok: false,
+        error_code: "VALIDATION_ERROR",
+        error_message: inputParsed.error.message,
+        input: env.input,
+        output: {},
+      });
+    } catch {
+      // best-effort logging only
+    }
     return err(traceId, "VALIDATION_ERROR", "Invalid tool input", {
       zod: inputParsed.error.flatten(),
       tool_name: env.tool_name,
@@ -228,24 +250,28 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
     });
     if (gated.gated) {
       approvalId = gated.approvalId;
-      await insertToolCallLog({
-        organization_id: ctx.organizationId,
-        trace_id: traceId,
-        actor_type: ctx.actor.type,
-        actor_user_id: actorUserId,
-        system_actor_id: ctx.actor.type === "system" ? ctx.actor.systemActorId : null,
-        agent_id: ctx.agentId ?? null,
-        run_id: ctx.runId ?? null,
-        campaign_id: ctx.campaignId ?? null,
-        tool_name: env.tool_name,
-        role_mode: env.role_mode,
-        approval_mode: env.approval_mode,
-        approval_required: true,
-        approval_id: approvalId,
-        ok: true,
-        input: env.input,
-        output: { approval_required: true, approval_id: approvalId },
-      });
+      try {
+        await insertToolCallLog({
+          organization_id: ctx.organizationId,
+          trace_id: traceId,
+          actor_type: ctx.actor.type,
+          actor_user_id: actorUserId,
+          system_actor_id: ctx.actor.type === "system" ? ctx.actor.systemActorId : null,
+          agent_id: ctx.agentId ?? null,
+          run_id: ctx.runId ?? null,
+          campaign_id: ctx.campaignId ?? null,
+          tool_name: env.tool_name,
+          role_mode: env.role_mode,
+          approval_mode: env.approval_mode,
+          approval_required: true,
+          approval_id: approvalId,
+          ok: true,
+          input: env.input,
+          output: { approval_required: true, approval_id: approvalId },
+        });
+      } catch {
+        // best-effort logging only
+      }
 
       return err(traceId, "APPROVAL_REQUIRED", "Approval required before executing this tool");
     }
@@ -271,24 +297,28 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
       },
     });
 
-    await insertToolCallLog({
-      organization_id: ctx.organizationId,
-      trace_id: traceId,
-      actor_type: ctx.actor.type,
-      actor_user_id: actorUserId,
-      system_actor_id: ctx.actor.type === "system" ? ctx.actor.systemActorId : null,
-      agent_id: ctx.agentId ?? null,
-      run_id: ctx.runId ?? null,
-      campaign_id: ctx.campaignId ?? null,
-      tool_name: env.tool_name,
-      role_mode: env.role_mode,
-      approval_mode: env.approval_mode,
-      approval_required: false,
-      approval_id: approvalId,
-      ok: true,
-      input: env.input,
-      output: { summary: summarizeJson(out) },
-    });
+    try {
+      await insertToolCallLog({
+        organization_id: ctx.organizationId,
+        trace_id: traceId,
+        actor_type: ctx.actor.type,
+        actor_user_id: actorUserId,
+        system_actor_id: ctx.actor.type === "system" ? ctx.actor.systemActorId : null,
+        agent_id: ctx.agentId ?? null,
+        run_id: ctx.runId ?? null,
+        campaign_id: ctx.campaignId ?? null,
+        tool_name: env.tool_name,
+        role_mode: env.role_mode,
+        approval_mode: env.approval_mode,
+        approval_required: false,
+        approval_id: approvalId,
+        ok: true,
+        input: env.input,
+        output: { summary: summarizeJson(out) },
+      });
+    } catch {
+      // best-effort logging only
+    }
 
     return ok(traceId, out);
   } catch (e) {
@@ -311,26 +341,34 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
       },
     });
 
-    await insertToolCallLog({
-      organization_id: ctx.organizationId,
-      trace_id: traceId,
-      actor_type: ctx.actor.type,
-      actor_user_id: actorUserId,
-      system_actor_id: ctx.actor.type === "system" ? ctx.actor.systemActorId : null,
-      agent_id: ctx.agentId ?? null,
-      run_id: ctx.runId ?? null,
-      campaign_id: ctx.campaignId ?? null,
-      tool_name: env.tool_name,
-      role_mode: env.role_mode,
-      approval_mode: env.approval_mode,
-      ok: false,
-      error_code: "INTERNAL_ERROR",
-      error_message: msg,
-      input: env.input,
-      output: {},
-    });
+    try {
+      await insertToolCallLog({
+        organization_id: ctx.organizationId,
+        trace_id: traceId,
+        actor_type: ctx.actor.type,
+        actor_user_id: actorUserId,
+        system_actor_id: ctx.actor.type === "system" ? ctx.actor.systemActorId : null,
+        agent_id: ctx.agentId ?? null,
+        run_id: ctx.runId ?? null,
+        campaign_id: ctx.campaignId ?? null,
+        tool_name: env.tool_name,
+        role_mode: env.role_mode,
+        approval_mode: env.approval_mode,
+        ok: false,
+        error_code: "INTERNAL_ERROR",
+        error_message: msg,
+        input: env.input,
+        output: {},
+      });
+    } catch {
+      // best-effort logging only
+    }
 
     return err(traceId, "INTERNAL_ERROR", "Tool failed");
+  }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unhandled tool error";
+    return err(traceId, "INTERNAL_ERROR", msg);
   }
 }
 
