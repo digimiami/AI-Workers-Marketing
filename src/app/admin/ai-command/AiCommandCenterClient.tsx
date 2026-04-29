@@ -201,7 +201,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
           output_summary: string | null;
           error_message: string | null;
         } | null,
-        logs: asRows<{ id: string; created_at: string; level: string; message: string }>(j.logs),
+        logs: asRows<{ id: string; created_at: string; level: string; message: string; data?: unknown }>(j.logs),
         outputs: asRows<{ id: string; output_type: string; content: Record<string, unknown>; created_at: string }>(
           j.outputs,
         ),
@@ -502,6 +502,15 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
                           <span className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                             {stage}
                           </span>
+                          {l.level === "error" ? (
+                            <div className="mt-1 text-[11px] text-destructive">
+                              {(() => {
+                                const d = asRecord(l.data);
+                                const err = typeof d.error === "string" ? d.error : "";
+                                return err ? `Error: ${err}` : "";
+                              })()}
+                            </div>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -575,8 +584,22 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
                             >
                               Campaign
                             </Link>
+                            <span className="text-muted-foreground">·</span>
+                            <Link
+                              href={`/f/${campaignId}`}
+                              className="text-sm underline underline-offset-4"
+                            >
+                              Public funnel
+                            </Link>
                           </>
                         ) : null}
+                        <span className="text-muted-foreground">·</span>
+                        <Link
+                          href={`/admin/ai-workers/runs/${activeRunId ?? ""}`}
+                          className="text-sm underline underline-offset-4"
+                        >
+                          Run detail
+                        </Link>
                         <span className="text-muted-foreground">·</span>
                         <Link href="/admin/funnels" className="text-sm underline underline-offset-4">
                           Funnels{funnelId ? " (created)" : ""}
@@ -594,6 +617,11 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
                           Approvals{typeof approvalsCount === "number" ? ` (${approvalsCount})` : ""}
                         </Link>
                       </div>
+                      {emailSequenceId ? (
+                        <div className="text-xs text-muted-foreground">
+                          Email sequence: <span className="font-mono">{emailSequenceId}</span>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })()}

@@ -26,7 +26,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ runId: stri
 
   const { data: logs } = await orgCtx.supabase
     .from("agent_logs" as never)
-    .select("id,created_at,level,message")
+    .select("id,created_at,level,message,data")
     .eq("organization_id", parsedOrg.data)
     .eq("run_id", parsedRun.data)
     .order("created_at", { ascending: true })
