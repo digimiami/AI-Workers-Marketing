@@ -79,6 +79,12 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
   const [lastRun, setLastRun] = React.useState<RunResult | null>(null);
   const [activeRunId, setActiveRunId] = React.useState<string | null>(null);
 
+  const stageLabels = React.useMemo(
+    () => ["Research", "Strategy", "Creation", "Execution"] as const,
+    [],
+  );
+  const stageByIdx = (idx: number) => stageLabels[Math.min(stageLabels.length - 1, Math.max(0, idx))];
+
   const planMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/admin/ai-command/plan", {
@@ -206,14 +212,33 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">AI Command Center</h1>
         <p className="text-sm text-muted-foreground">
-          Org-scoped AI operator that plans and executes marketing workflows through safe internal tools.
+          Simple run flow: Research → Strategy → Creation → Execution. Drafts are created via safe tools; risky actions stay approval-gated.
         </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        {stageLabels.map((label) => (
+          <Card key={label}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">{label}</CardTitle>
+              <CardDescription className="text-xs">
+                {label === "Research"
+                  ? "Analyze URL + inputs"
+                  : label === "Strategy"
+                    ? "Plan workflow + approvals"
+                    : label === "Creation"
+                      ? "Draft funnel/content/email/ads"
+                      : "Create approvals + handoff"}
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ))}
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Command</CardTitle>
-          <CardDescription>Provide URL + goal + audience + traffic source. The agent handles the rest.</CardDescription>
+          <CardDescription>Fill the basics. Use Advanced only if you need it.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2 md:col-span-2">
@@ -236,34 +261,23 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
           </div>
 
           <div className="space-y-2">
-            <Label>Mode</Label>
+            <Label>Workflow</Label>
             <Select value={mode} onValueChange={(v) => setMode(modeSchema.parse(v))}>
               <SelectTrigger>
                 <SelectValue placeholder="Pick mode" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="create_campaign">Create new campaign</SelectItem>
+                <SelectItem value="create_campaign">Build everything (campaign + funnel + content + email)</SelectItem>
                 <SelectItem value="improve_campaign">Improve existing campaign</SelectItem>
-                <SelectItem value="generate_content">Generate content</SelectItem>
                 <SelectItem value="build_funnel">Build funnel</SelectItem>
+                <SelectItem value="generate_content">Generate content</SelectItem>
                 <SelectItem value="build_email_sequence">Build email sequence</SelectItem>
-                <SelectItem value="analyze_performance">Analyze performance</SelectItem>
                 <SelectItem value="create_ads">Create ads</SelectItem>
                 <SelectItem value="setup_lead_capture">Setup lead capture</SelectItem>
+                <SelectItem value="analyze_performance">Analyze performance</SelectItem>
               </SelectContent>
             </Select>
           </div>
-
-          {mode !== "create_campaign" ? (
-            <div className="space-y-2 md:col-span-2">
-              <Label>Campaign ID (for non-create modes)</Label>
-              <Input
-                value={campaignId}
-                onChange={(e) => setCampaignId(e.target.value)}
-                placeholder="campaign uuid"
-              />
-            </div>
-          ) : null}
 
           <div className="space-y-2 md:col-span-2">
             <Label>Goal</Label>
@@ -276,10 +290,6 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
           </div>
 
           <div className="space-y-2">
-            <Label>Niche</Label>
-            <Input value={niche} onChange={(e) => setNiche(e.target.value)} placeholder="local SEO / real estate..." />
-          </div>
-          <div className="space-y-2">
             <Label>Audience</Label>
             <Input value={audience} onChange={(e) => setAudience(e.target.value)} placeholder="small business owners" />
           </div>
@@ -287,14 +297,42 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
             <Label>Traffic source</Label>
             <Input value={trafficSource} onChange={(e) => setTrafficSource(e.target.value)} placeholder="TikTok + Shorts" />
           </div>
-          <div className="space-y-2">
-            <Label>Campaign type</Label>
-            <Input value={campaignType} onChange={(e) => setCampaignType(e.target.value)} placeholder="affiliate" />
-          </div>
 
           <div className="space-y-2 md:col-span-2">
             <Label>Notes (optional)</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+          </div>
+
+          <div className="md:col-span-2">
+            <details className="rounded-lg border border-border/60 bg-card/40 px-3 py-2">
+              <summary className="cursor-pointer select-none text-sm font-medium">
+                Advanced (optional)
+              </summary>
+              <div className="mt-3 grid gap-4 md:grid-cols-2">
+                {mode !== "create_campaign" ? (
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Campaign ID</Label>
+                    <Input
+                      value={campaignId}
+                      onChange={(e) => setCampaignId(e.target.value)}
+                      placeholder="campaign uuid"
+                    />
+                  </div>
+                ) : null}
+                <div className="space-y-2">
+                  <Label>Niche</Label>
+                  <Input
+                    value={niche}
+                    onChange={(e) => setNiche(e.target.value)}
+                    placeholder="local SEO / real estate..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Campaign type</Label>
+                  <Input value={campaignType} onChange={(e) => setCampaignType(e.target.value)} placeholder="affiliate" />
+                </div>
+              </div>
+            </details>
           </div>
 
           <div className="space-y-2">
@@ -345,7 +383,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Plan preview</CardTitle>
-          <CardDescription>Edit if needed. Approve to execute.</CardDescription>
+          <CardDescription>Edit if needed. In Autonomous mode, the plan is auto-approved and executed.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Textarea
@@ -398,28 +436,48 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
             <CardDescription>Live agent_logs for the run.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {!runStatusQuery.data ? (
-              <p className="text-sm text-muted-foreground">No run yet.</p>
-            ) : (
-              <div className="space-y-2">
-                <div className="text-sm">
-                  Status:{" "}
-                  <span className="font-medium">{runStatusQuery.data.run?.status ?? "—"}</span>
+            {(() => {
+              const rs = runStatusQuery.data;
+              if (!rs) {
+                return <p className="text-sm text-muted-foreground">No run yet.</p>;
+              }
+              return (
+                <div className="space-y-2">
+                  <div className="text-sm">
+                    Status: <span className="font-medium">{rs.run?.status ?? "—"}</span>
+                  </div>
+                  <div className="max-h-[360px] overflow-auto rounded border border-border/60 p-3 space-y-2">
+                    {rs.logs.map((l, idx) => {
+                      const denom = Math.max(1, rs.logs.length - 1);
+                      const p = idx / denom;
+                      const stage =
+                        p >= 0.75
+                          ? "Execution"
+                          : p >= 0.5
+                            ? "Creation"
+                            : p >= 0.25
+                              ? "Strategy"
+                              : "Research";
+                      return (
+                        <div key={l.id} className="text-xs">
+                          <span className="text-muted-foreground">
+                            {new Date(l.created_at).toLocaleTimeString()}{" "}
+                          </span>
+                          <span className="font-mono">{l.level}</span>{" "}
+                          <span>{l.message}</span>{" "}
+                          <span className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                            {stage}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {rs.logs.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No logs yet.</div>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="max-h-[360px] overflow-auto rounded border border-border/60 p-3 space-y-2">
-                  {runStatusQuery.data.logs.map((l) => (
-                    <div key={l.id} className="text-xs">
-                      <span className="text-muted-foreground">{new Date(l.created_at).toLocaleTimeString()} </span>
-                      <span className="font-mono">{l.level}</span>{" "}
-                      <span>{l.message}</span>
-                    </div>
-                  ))}
-                  {runStatusQuery.data.logs.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No logs yet.</div>
-                  ) : null}
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </CardContent>
         </Card>
 

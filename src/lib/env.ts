@@ -18,6 +18,12 @@ const serverSchema = z.object({
   OPENCLAW_API_KEY: z.string().min(10).optional(),
   OPENCLAW_TIMEOUT_MS: z.coerce.number().int().positive().default(45000),
 
+  // Internal LLM (OpenAI-compatible)
+  INTERNAL_LLM_PROVIDER: z.enum(["openai"]).optional(),
+  INTERNAL_LLM_API_KEY: z.string().min(10).optional(),
+  INTERNAL_LLM_MODEL: z.string().min(2).optional(),
+  INTERNAL_LLM_BASE_URL: z.string().url().optional(),
+
   // Analytics
   POSTHOG_API_KEY: z.string().min(10).optional(),
   POSTHOG_HOST: z.string().url().optional(),

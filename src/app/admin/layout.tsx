@@ -9,26 +9,45 @@ import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
 import { requireUser } from "@/services/auth/authService";
 import { AdminOrgControls } from "@/app/admin/AdminOrgControls";
 
-const nav = [
-  { href: "/admin", label: "Overview" },
-  { href: "/admin/campaigns", label: "Campaigns" },
-  { href: "/admin/funnels", label: "Funnels" },
-  { href: "/admin/leads", label: "Leads" },
-  { href: "/admin/chat", label: "Chat" },
-  { href: "/admin/appointments", label: "Appointments" },
-  { href: "/admin/ad-creative", label: "Ad Creative" },
-  { href: "/admin/reports", label: "Weekly Reports" },
-  { href: "/admin/content", label: "Content" },
-  { href: "/admin/email", label: "Email Sequences" },
-  { href: "/admin/data-sources", label: "Data Sources" },
-  { href: "/admin/ai-command", label: "AI Command Center" },
-  { href: "/admin/ai-workers", label: "AI Workers" },
-  { href: "/admin/ai-workers/runs", label: "Agent runs" },
-  { href: "/admin/approvals", label: "Approval Queue" },
-  { href: "/admin/analytics", label: "Analytics" },
-  { href: "/admin/organizations", label: "Organizations" },
-  { href: "/admin/settings", label: "Settings" },
-  { href: "/admin/logs", label: "Logs" },
+const NAV_GROUPS: Array<{
+  title: string;
+  items: Array<{ href: string; label: string }>;
+}> = [
+  {
+    title: "Core",
+    items: [
+      { href: "/admin", label: "Overview" },
+      { href: "/admin/ai-command", label: "AI Command Center" },
+      { href: "/admin/launch", label: "Launch (Autopilot)" },
+      { href: "/admin/campaigns", label: "Campaigns" },
+      { href: "/admin/approvals", label: "Approvals" },
+    ],
+  },
+  {
+    title: "Build",
+    items: [
+      { href: "/admin/funnels", label: "Funnels" },
+      { href: "/admin/content", label: "Content" },
+      { href: "/admin/email", label: "Email" },
+      { href: "/admin/leads", label: "Leads" },
+      { href: "/admin/ad-creative", label: "Ad Creative" },
+    ],
+  },
+  {
+    title: "Advanced",
+    items: [
+      { href: "/admin/analytics", label: "Analytics" },
+      { href: "/admin/reports", label: "Weekly Reports" },
+      { href: "/admin/data-sources", label: "Data Sources" },
+      { href: "/admin/ai-workers", label: "AI Workers" },
+      { href: "/admin/ai-workers/runs", label: "Agent runs" },
+      { href: "/admin/chat", label: "Chat" },
+      { href: "/admin/appointments", label: "Appointments" },
+      { href: "/admin/organizations", label: "Organizations" },
+      { href: "/admin/settings", label: "Settings" },
+      { href: "/admin/logs", label: "Logs" },
+    ],
+  },
 ];
 
 export default async function AdminLayout({
@@ -65,15 +84,24 @@ export default async function AdminLayout({
           </div>
           <Separator className="my-4 opacity-60" />
           <AdminOrgControls currentOrgId={orgId} />
-          <nav className="space-y-0.5">
-            {nav.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="block rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground hover:bg-accent/70 border border-transparent hover:border-border/50"
-              >
-                {item.label}
-              </Link>
+          <nav className="space-y-4">
+            {NAV_GROUPS.map((g) => (
+              <div key={g.title} className="space-y-1">
+                <div className="px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                  {g.title}
+                </div>
+                <div className="space-y-0.5">
+                  {g.items.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="block rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground hover:bg-accent/70 border border-transparent hover:border-border/50"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
             ))}
           </nav>
         </div>

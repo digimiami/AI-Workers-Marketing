@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AiPlan, RunAiMarketingAgentInput, RunAiMarketingAgentOutput } from "@/services/ai-agent/types";
 import { executeInternalPlan } from "@/services/ai-agent/agentExecutor";
 import { buildAiPlan } from "@/services/ai-agent/agentPlanner";
+import { planWithInternalLlm } from "@/services/ai-agent/internalLlmProvider";
 import { createPendingRun, executePendingRun, syncAgentsAndTemplates } from "@/services/openclaw/orchestrationService";
 
 type Db = SupabaseClient;
@@ -18,7 +19,7 @@ async function getAgentIdByKey(db: Db, organizationId: string, key: string) {
 }
 
 export async function planOnly(input: RunAiMarketingAgentInput): Promise<AiPlan> {
-  return buildAiPlan({
+  const plannerInput = {
     provider: input.provider,
     mode: input.mode,
     url: input.url,
@@ -30,7 +31,13 @@ export async function planOnly(input: RunAiMarketingAgentInput): Promise<AiPlan>
     campaignType: input.campaignType,
     notes: input.notes,
     approvalMode: input.approvalMode,
-  });
+  };
+
+  if (input.provider === "internal_llm" || input.provider === "hybrid") {
+    return planWithInternalLlm(plannerInput);
+  }
+
+  return buildAiPlan(plannerInput);
 }
 
 export async function routeAndRun(params: {
