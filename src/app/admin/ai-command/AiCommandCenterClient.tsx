@@ -40,6 +40,15 @@ type Plan = {
   expected_outputs: string[];
 };
 
+type PlannerMeta = {
+  used: boolean;
+  provider: string;
+  model?: string;
+  baseUrl?: string;
+  reason?: string;
+  httpStatus?: number;
+};
+
 type RunResult = {
   ok: boolean;
   runId: string;
@@ -83,6 +92,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
   const [approvedPlan, setApprovedPlan] = React.useState<Plan | null>(null);
   const [lastRun, setLastRun] = React.useState<RunResult | null>(null);
   const [activeRunId, setActiveRunId] = React.useState<string | null>(null);
+  const [plannerMeta, setPlannerMeta] = React.useState<PlannerMeta | null>(null);
 
   const stageLabels = React.useMemo(
     () => ["Research", "Strategy", "Creation", "Execution"] as const,
@@ -111,11 +121,12 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as { ok: boolean; plan: Plan };
+      return (await res.json()) as { ok: boolean; plan: Plan; planner?: PlannerMeta };
     },
     onSuccess: (j) => {
       setApprovedPlan(null);
       setPlanOverride(JSON.stringify(j.plan, null, 2));
+      setPlannerMeta(j.planner ?? null);
       toast.success("Plan generated");
 
       if (autonomous) {
@@ -391,6 +402,24 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
           <CardDescription>Edit if needed. In Autonomous mode, the plan is auto-approved and executed.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {plannerMeta ? (
+            <div className="rounded border border-border/60 bg-card/40 p-2 text-xs">
+              <span className="font-medium">Planner:</span>{" "}
+              {plannerMeta.used ? (
+                <span>
+                  OpenAI ({plannerMeta.model ?? "model"}){" "}
+                  <span className="text-muted-foreground">
+                    {plannerMeta.baseUrl ? `· ${plannerMeta.baseUrl}` : ""}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  Fallback {plannerMeta.httpStatus ? `(HTTP ${plannerMeta.httpStatus})` : ""}
+                  {plannerMeta.reason ? ` · ${plannerMeta.reason}` : ""}
+                </span>
+              )}
+            </div>
+          ) : null}
           <Textarea
             value={planOverride}
             onChange={(e) => setPlanOverride(e.target.value)}
