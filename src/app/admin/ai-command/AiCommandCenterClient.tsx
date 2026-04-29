@@ -50,6 +50,14 @@ type RunResult = {
   errors: string[];
 };
 
+function asRows<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : [];
+}
+
+function asStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
 export function AiCommandCenterClient({ organizationId }: { organizationId: string }) {
   const [provider, setProvider] = React.useState<Provider>("hybrid");
   const [mode, setMode] = React.useState<Mode>("create_campaign");
@@ -123,7 +131,17 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as RunResult;
+      const raw = (await res.json()) as Record<string, unknown>;
+      return {
+        ok: Boolean(raw.ok),
+        runId: String(raw.runId ?? ""),
+        plan: raw.plan as Plan,
+        createdRecords: (raw.createdRecords as Record<string, unknown>) ?? {},
+        updatedRecords: (raw.updatedRecords as Record<string, unknown>) ?? {},
+        approvalItems: asRows<{ id: string; status: string; approval_type: string }>(raw.approvalItems),
+        warnings: asStringArray(raw.warnings),
+        errors: asStringArray(raw.errors),
+      };
     },
     onSuccess: (j) => {
       setLastRun(j);
@@ -144,12 +162,20 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
         `/api/admin/ai-command/runs/${runId}?organizationId=${encodeURIComponent(organizationId)}`,
       );
       if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as {
-        ok: boolean;
-        run: { id: string; status: string; output_summary: string | null; error_message: string | null } | null;
-        logs: Array<{ id: string; created_at: string; level: string; message: string }>;
-        outputs: Array<{ id: string; output_type: string; content: Record<string, unknown>; created_at: string }>;
-        approvals: Array<{ id: string; status: string; approval_type: string; created_at: string }>;
+      const j = (await res.json()) as Record<string, unknown>;
+      return {
+        ok: Boolean(j.ok),
+        run: (j.run ?? null) as {
+          id: string;
+          status: string;
+          output_summary: string | null;
+          error_message: string | null;
+        } | null,
+        logs: asRows<{ id: string; created_at: string; level: string; message: string }>(j.logs),
+        outputs: asRows<{ id: string; output_type: string; content: Record<string, unknown>; created_at: string }>(
+          j.outputs,
+        ),
+        approvals: asRows<{ id: string; status: string; approval_type: string; created_at: string }>(j.approvals),
       };
     },
   });
@@ -163,7 +189,9 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
     }
   }, [planOverride]);
 
-  const canApprove = Boolean(parsedPlan && parsedPlan.steps?.length);
+  const canApprove = Boolean(
+    parsedPlan && Array.isArray(parsedPlan.steps) && parsedPlan.steps.length > 0,
+  );
 
   return (
     <div className="space-y-6">
@@ -263,7 +291,10 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
 
           <div className="space-y-2">
             <Label>Approval mode</Label>
-            <Select value={approvalMode} onValueChange={(v) => setApprovalMode(v as any)}>
+            <Select
+              value={approvalMode}
+              onValueChange={(v) => setApprovalMode(v === "required" ? "required" : "auto_draft")}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Pick approval mode" />
               </SelectTrigger>
@@ -352,14 +383,14 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
                   <span className="font-medium">{runStatusQuery.data.run?.status ?? "—"}</span>
                 </div>
                 <div className="max-h-[360px] overflow-auto rounded border border-border/60 p-3 space-y-2">
-                  {(runStatusQuery.data.logs ?? []).map((l) => (
+                  {runStatusQuery.data.logs.map((l) => (
                     <div key={l.id} className="text-xs">
                       <span className="text-muted-foreground">{new Date(l.created_at).toLocaleTimeString()} </span>
                       <span className="font-mono">{l.level}</span>{" "}
                       <span>{l.message}</span>
                     </div>
                   ))}
-                  {(runStatusQuery.data.logs ?? []).length === 0 ? (
+                  {runStatusQuery.data.logs.length === 0 ? (
                     <div className="text-sm text-muted-foreground">No logs yet.</div>
                   ) : null}
                 </div>
@@ -380,7 +411,9 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
                   Run: <span className="font-mono text-xs">{lastRun.runId}</span>
                 </div>
                 <div className="text-muted-foreground">
-                  {lastRun.errors.length ? `Errors: ${lastRun.errors.join(" · ")}` : "No errors."}
+                  {asStringArray(lastRun.errors).length
+                    ? `Errors: ${asStringArray(lastRun.errors).join(" · ")}`
+                    : "No errors."}
                 </div>
               </div>
             ) : (
@@ -391,7 +424,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
               <>
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Approvals</div>
-                  {(runStatusQuery.data.approvals ?? []).length ? (
+                  {runStatusQuery.data.approvals.length ? (
                     <div className="space-y-1">
                       {runStatusQuery.data.approvals.map((a) => (
                         <div key={a.id} className="text-xs">
@@ -408,7 +441,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
 
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Outputs</div>
-                  {(runStatusQuery.data.outputs ?? []).length ? (
+                  {runStatusQuery.data.outputs.length ? (
                     <div className="space-y-2">
                       {runStatusQuery.data.outputs.map((o) => (
                         <div key={o.id} className="rounded border border-border/60 p-2">

@@ -56,6 +56,7 @@ export async function POST(request: Request) {
     plan: parsed.data.plan,
   });
 
-  return NextResponse.json({ ok: out.errors.length === 0, ...out });
+  const errors = Array.isArray(out.errors) ? out.errors : [];
+  return NextResponse.json({ ok: errors.length === 0, ...out, errors });
 }
 

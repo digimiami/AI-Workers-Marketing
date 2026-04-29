@@ -48,12 +48,14 @@ export async function GET(request: Request, ctx: { params: Promise<{ runId: stri
     .order("created_at", { ascending: false })
     .limit(50);
 
+  const asRows = <T>(v: unknown): T[] => (Array.isArray(v) ? v : []);
+
   return NextResponse.json({
     ok: true,
     run: run ?? null,
-    logs: logs ?? [],
-    outputs: (outputs ?? []) as any,
-    approvals: approvals ?? [],
+    logs: asRows(logs),
+    outputs: asRows(outputs),
+    approvals: asRows(approvals),
   });
 }
 
