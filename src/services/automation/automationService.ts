@@ -28,7 +28,15 @@ export async function getCampaignAutomationSettings(
     .eq("campaign_id", campaignId)
     .maybeSingle();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    const msg = String((error as any)?.message ?? "");
+    const missingTable =
+      /relation .*campaign_automation_settings.* does not exist/i.test(msg) ||
+      /Could not find the 'campaign_automation_settings' table/i.test(msg) ||
+      /schema cache/i.test(msg);
+    if (missingTable) return null;
+    throw new Error(msg);
+  }
   return (data as any) ?? null;
 }
 
@@ -59,7 +67,10 @@ export async function upsertCampaignAutomationSettings(
     )
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    const msg = String((error as any)?.message ?? "");
+    throw new Error(msg);
+  }
   return data;
 }
 

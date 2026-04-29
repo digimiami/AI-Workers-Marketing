@@ -23,8 +23,17 @@ export async function GET(request: Request) {
   const ctx = await withOrgMember(parsedOrg.data);
   if (ctx.error) return ctx.error;
 
-  const settings = await getCampaignAutomationSettings(ctx.supabase, parsedOrg.data, parsedCampaign.data);
-  return NextResponse.json({ ok: true, settings });
+  try {
+    const settings = await getCampaignAutomationSettings(ctx.supabase, parsedOrg.data, parsedCampaign.data);
+    return NextResponse.json({ ok: true, settings });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // Safe fallback: UI can still render defaults even if automation tables aren't migrated yet.
+    return NextResponse.json(
+      { ok: true, settings: null, warning: msg },
+      { status: 200 },
+    );
+  }
 }
 
 const upsertSchema = z.object({
@@ -49,16 +58,22 @@ export async function POST(request: Request) {
   const ctx = await withOrgOperator(parsed.data.organizationId);
   if (ctx.error) return ctx.error;
 
-  const row = await upsertCampaignAutomationSettings(ctx.supabase, parsed.data.organizationId, {
-    campaign_id: parsed.data.campaignId,
-    automation_enabled: parsed.data.automation_enabled,
-    auto_generate_content_drafts: parsed.data.auto_generate_content_drafts,
-    auto_run_analyst_weekly: parsed.data.auto_run_analyst_weekly,
-    require_approval_before_publish: parsed.data.require_approval_before_publish,
-    require_approval_before_email: parsed.data.require_approval_before_email,
-    auto_log_analytics_reviews: parsed.data.auto_log_analytics_reviews,
-    max_runs_per_day: parsed.data.max_runs_per_day,
-  });
+  let row: unknown = null;
+  try {
+    row = await upsertCampaignAutomationSettings(ctx.supabase, parsed.data.organizationId, {
+      campaign_id: parsed.data.campaignId,
+      automation_enabled: parsed.data.automation_enabled,
+      auto_generate_content_drafts: parsed.data.auto_generate_content_drafts,
+      auto_run_analyst_weekly: parsed.data.auto_run_analyst_weekly,
+      require_approval_before_publish: parsed.data.require_approval_before_publish,
+      require_approval_before_email: parsed.data.require_approval_before_email,
+      auto_log_analytics_reviews: parsed.data.auto_log_analytics_reviews,
+      max_runs_per_day: parsed.data.max_runs_per_day,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ ok: false, message: msg }, { status: 500 });
+  }
 
   await writeAuditLog({
     organizationId: parsed.data.organizationId,
