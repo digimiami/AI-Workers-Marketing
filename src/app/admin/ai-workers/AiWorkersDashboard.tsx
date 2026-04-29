@@ -224,6 +224,9 @@ export function AiWorkersDashboard({ organizationId }: { organizationId: string 
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/admin/ai-command" className={buttonVariants({ variant: "default" })}>
+            AI Command Center
+          </Link>
           <Button variant="outline" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
             {syncMutation.isPending ? "Syncing…" : "Sync from registry"}
           </Button>
