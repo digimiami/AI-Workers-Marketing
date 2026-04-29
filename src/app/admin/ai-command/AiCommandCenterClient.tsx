@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import Link from "next/link";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -56,6 +57,10 @@ function asRows<T>(v: unknown): T[] {
 
 function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 export function AiCommandCenterClient({ organizationId }: { organizationId: string }) {
@@ -504,6 +509,66 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
 
             {runStatusQuery.data ? (
               <>
+                {(() => {
+                  // If internal/hybrid ran full provisioning, it writes ids into ai.artifacts output.
+                  const artifacts = runStatusQuery.data.outputs.find((o) => o.output_type === "ai.artifacts");
+                  const content = asRecord(artifacts?.content);
+                  const updated = asRecord(content.updatedRecords);
+                  const prov = asRecord(asRecord(content.createdRecords).provisioning);
+
+                  const campaignId = (updated.campaign_id as string | undefined) ?? (prov.campaignId as string | undefined);
+                  const funnelId = (updated.funnel_id as string | undefined) ?? (prov.funnelId as string | undefined);
+                  const emailSequenceId =
+                    (updated.email_sequence_id as string | undefined) ?? (prov.emailSequenceId as string | undefined);
+
+                  const contentCount = Array.isArray(prov.contentAssetIds) ? prov.contentAssetIds.length : null;
+                  const templateCount = Array.isArray(prov.emailTemplateIds) ? prov.emailTemplateIds.length : null;
+                  const approvalsCount = Array.isArray(prov.approvalIds) ? prov.approvalIds.length : null;
+
+                  if (!campaignId && !funnelId && !emailSequenceId) return null;
+
+                  return (
+                    <div className="rounded border border-border/60 p-3 space-y-2">
+                      <div className="text-sm font-medium">Open created modules</div>
+                      <div className="flex flex-wrap gap-2">
+                        {campaignId ? (
+                          <>
+                            <Link
+                              href={`/admin/workspace/review/${campaignId}`}
+                              className="text-sm underline underline-offset-4"
+                            >
+                              Workspace Review
+                            </Link>
+                            <span className="text-muted-foreground">·</span>
+                            <Link
+                              href={`/admin/campaigns/${campaignId}`}
+                              className="text-sm underline underline-offset-4"
+                            >
+                              Campaign
+                            </Link>
+                          </>
+                        ) : null}
+                        <span className="text-muted-foreground">·</span>
+                        <Link href="/admin/funnels" className="text-sm underline underline-offset-4">
+                          Funnels{funnelId ? " (created)" : ""}
+                        </Link>
+                        <span className="text-muted-foreground">·</span>
+                        <Link href="/admin/content" className="text-sm underline underline-offset-4">
+                          Content{typeof contentCount === "number" ? ` (${contentCount})` : ""}
+                        </Link>
+                        <span className="text-muted-foreground">·</span>
+                        <Link href="/admin/email" className="text-sm underline underline-offset-4">
+                          Email{typeof templateCount === "number" ? ` (${templateCount} templates)` : ""}
+                        </Link>
+                        <span className="text-muted-foreground">·</span>
+                        <Link href="/admin/approvals" className="text-sm underline underline-offset-4">
+                          Approvals{typeof approvalsCount === "number" ? ` (${approvalsCount})` : ""}
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Approvals</div>
                   {runStatusQuery.data.approvals.length ? (

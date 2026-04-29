@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { executeOpenClawTool } from "@/lib/openclaw/tools/executor";
 import type { AiPlan, RunAiMarketingAgentInput, RunAiMarketingAgentOutput } from "@/services/ai-agent/types";
+import { provisionAiWorkersWorkspace } from "@/services/workspace/provisionAiWorkersWorkspace";
+import { syncAgentsAndTemplates } from "@/services/openclaw/orchestrationService";
 
 type Db = SupabaseClient;
 
@@ -53,6 +55,18 @@ function inferCampaignName(input: RunAiMarketingAgentInput) {
     host || input.niche || "Draft",
   ].filter(Boolean);
   return parts.join(" · ").slice(0, 80);
+}
+
+async function getOrCreateLauncherAgentId(db: Db, organizationId: string) {
+  // Ensure registry-backed agents exist for this org, then fetch campaign_launcher id.
+  await syncAgentsAndTemplates(db as any, organizationId);
+  const { data } = await db
+    .from("agents" as never)
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("key", "campaign_launcher")
+    .maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 export async function executeInternalPlan(params: {
@@ -111,125 +125,43 @@ export async function executeInternalPlan(params: {
     };
   }
 
-  // Use tool layer to create drafts. This ensures org ownership validation + tool-call logs.
+  // Full "OS bootstrap" execution: reuse the proven workspace provisioning pipeline.
+  // This creates Campaign, Funnel+steps, Content assets, Email templates+sequence, Tracking, Approvals, Logs.
   const traceId = `ai_cmd_${runId}`.slice(0, 120);
-  const callTool = async (tool_name: string, toolInput: Record<string, unknown>) => {
-    const env = {
-      organization_id: input.organizationId,
-      trace_id: traceId,
-      role_mode: "supervisor",
-      approval_mode: "auto",
-      tool_name,
-      actor: { type: "user", user_id: input.userId },
-      campaign_id: input.campaignId ?? null,
-      run_id: runId,
-      input: toolInput,
-    };
-    const r = await executeOpenClawTool(env);
-    if (!r.success) {
-      throw new Error(`${tool_name}: ${r.error.code} ${r.error.message}`);
-    }
-    return r.data as Record<string, unknown>;
-  };
 
   try {
-    await log("info", "Logging analytics event", { event: "ai_command.plan_executing" });
-    await callTool("log_analytics_event", {
-      organizationId: input.organizationId,
-      event_name: "ai_command.plan_executing",
-      source: "ai_command_center",
-      campaign_id: input.campaignId ?? null,
-      metadata: { provider: "internal_llm", mode: input.mode },
-    });
+    await log("info", "Starting full workspace provisioning (creates funnel/content/email/etc)");
 
-    await log("info", "Creating campaign draft");
-    const campaign = await callTool("create_campaign", {
+    const launcherAgentId = await getOrCreateLauncherAgentId(db, input.organizationId);
+    if (!launcherAgentId) throw new Error("Missing campaign_launcher agent after sync");
+
+    const isClient = (input.campaignType ?? "").toLowerCase().includes("client");
+    const provision = await provisionAiWorkersWorkspace({
+      actorUserId: input.userId,
       organizationId: input.organizationId,
-      name: inferCampaignName(input),
-      type: input.campaignType ?? "affiliate",
-      status: "draft",
-      target_audience: input.audience ?? null,
-      description: input.goal,
-      metadata: {
-        funnel: {
-          url: input.url ?? null,
-          goal: input.goal,
-          audience: input.audience ?? null,
-          traffic_source: input.trafficSource ?? null,
-          niche: input.niche ?? null,
-          notes: input.notes ?? null,
-        },
-        ads: {
-          traffic_source: input.trafficSource ?? null,
-          audience: input.audience ?? null,
-        },
-        emails: {
-          audience: input.audience ?? null,
-          goal: input.goal,
-        },
+      launcherAgentId,
+      masterRunId: runId,
+      traceId,
+      input: {
+        mode: isClient ? "client" : "affiliate",
+        organizationMode: "existing",
+        organizationId: input.organizationId,
+        affiliateLink: !isClient ? input.url : undefined,
+        clientWebsite: isClient ? input.url : undefined,
+        businessName: isClient ? (input.niche ?? "Client") : undefined,
+        niche: input.niche ?? "general",
+        audience: input.audience ?? "general audience",
+        trafficSource: input.trafficSource ?? "tiktok",
+        goal: input.goal,
+        notes: input.notes,
+        devSeedDemoData: false,
       },
     });
-    createdRecords.campaign = campaign;
-    const campaignId = String(campaign.id ?? "");
-    if (campaignId) {
-      updatedRecords.campaign_id = campaignId;
-    } else {
-      warnings.push("create_campaign did not return an id");
-    }
 
-    if (campaignId) {
-      await log("info", "Creating funnel draft");
-      const funnel = await callTool("create_funnel", {
-        organizationId: input.organizationId,
-        name: "Funnel · Draft",
-        campaign_id: campaignId,
-        status: "draft",
-        metadata: { source_url: input.url ?? null },
-      });
-      createdRecords.funnel = funnel;
-
-      const funnelId = String(funnel.id ?? "");
-      if (funnelId) {
-        await log("info", "Adding funnel steps");
-        const step1 = await callTool("add_funnel_step", {
-          organizationId: input.organizationId,
-          funnel_id: funnelId,
-          name: "Landing",
-          step_type: "landing",
-          slug: "landing",
-          metadata: { goal: input.goal },
-        });
-        const step2 = await callTool("add_funnel_step", {
-          organizationId: input.organizationId,
-          funnel_id: funnelId,
-          name: "Bridge",
-          step_type: "bridge",
-          slug: "bridge",
-          metadata: { goal: input.goal },
-        });
-        createdRecords.funnel_steps = [step1, step2];
-      }
-    }
-
-    // Tracking link creation is high-risk in some orgs; tool layer will gate via approvals if configured.
-    if (input.url) {
-      await log("info", "Creating tracking link (may require approval)");
-      try {
-        const link = await callTool("create_tracking_link", {
-          organizationId: input.organizationId,
-          destination_url: input.url,
-          label: `AI Command · ${input.trafficSource ?? "traffic"}`.slice(0, 80),
-          campaign_id: (updatedRecords.campaign_id as string | undefined) ?? null,
-          utm_defaults: {
-            utm_source: (input.trafficSource ?? "").toLowerCase().slice(0, 32) || "ai",
-            utm_campaign: "ai-command",
-          },
-        });
-        createdRecords.tracking_link = link;
-      } catch (e) {
-        warnings.push(e instanceof Error ? e.message : "create_tracking_link failed");
-      }
-    }
+    createdRecords.provisioning = provision as any;
+    updatedRecords.campaign_id = provision.campaignId ?? null;
+    updatedRecords.funnel_id = provision.funnelId ?? null;
+    updatedRecords.email_sequence_id = provision.emailSequenceId ?? null;
 
     await insertAgentOutput(db, {
       organization_id: input.organizationId,
