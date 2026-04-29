@@ -89,9 +89,9 @@ export default async function AdminLayout({
               <details
                 key={g.title}
                 open={g.title !== "Advanced"}
-                className="group rounded-lg border border-transparent"
+                className="group rounded-lg border border-transparent open:bg-accent/20"
               >
-                <summary className="cursor-pointer list-none rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 hover:bg-accent/40">
+                <summary className="cursor-pointer rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 hover:bg-accent/40">
                   <span className="inline-flex items-center gap-2">
                     <span>{g.title}</span>
                     <span className="text-[10px] text-muted-foreground/70">
