@@ -433,18 +433,22 @@ export const TOOLS: AnyToolDef[] = [
       if (input.campaign_id) await requireCampaignOrgMatch(input.organizationId, input.campaign_id);
       if (input.funnel_id) await requireFunnelOrgMatch(input.organizationId, input.funnel_id);
       const admin = createSupabaseAdminClient();
+      // DB schema: content_assets has script_markdown/captions/angles/metadata (no platform/hook/body columns).
+      const metadata = {
+        ...(typeof input.metadata === "object" && input.metadata ? (input.metadata as any) : {}),
+        ...(input.platform ? { platform: input.platform } : {}),
+        ...(input.hook ? { hook: input.hook } : {}),
+      } as Record<string, unknown>;
       const { data, error } = await admin
         .from("content_assets" as never)
         .insert({
           organization_id: input.organizationId,
           title: input.title,
-          platform: input.platform ?? null,
           status: input.status ?? "draft",
           campaign_id: input.campaign_id ?? null,
           funnel_id: input.funnel_id ?? null,
-          hook: input.hook ?? null,
-          body: input.body ?? null,
-          metadata: input.metadata ?? {},
+          script_markdown: input.body ?? null,
+          metadata,
         } as never)
         .select("id,title,status,campaign_id,funnel_id,organization_id")
         .single();
@@ -471,12 +475,27 @@ export const TOOLS: AnyToolDef[] = [
     async handler(_ctx, input) {
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (input.title !== undefined) patch.title = input.title;
-      if (input.hook !== undefined) patch.hook = input.hook;
-      if (input.body !== undefined) patch.body = input.body;
-      if (input.platform !== undefined) patch.platform = input.platform;
       if (input.campaign_id !== undefined) patch.campaign_id = input.campaign_id ?? null;
       if (input.funnel_id !== undefined) patch.funnel_id = input.funnel_id ?? null;
-      if (input.metadata !== undefined) patch.metadata = input.metadata;
+      // Store hook/platform in metadata; store body in script_markdown (matches DB schema).
+      if (input.body !== undefined) patch.script_markdown = input.body;
+      const metaPatch: Record<string, unknown> = {
+        ...(input.metadata ? (input.metadata as any) : {}),
+        ...(input.platform !== undefined ? { platform: input.platform } : {}),
+        ...(input.hook !== undefined ? { hook: input.hook } : {}),
+      };
+      if (Object.keys(metaPatch).length) {
+        const admin0 = createSupabaseAdminClient();
+        const { data: row, error: metaErr } = await admin0
+          .from("content_assets" as never)
+          .select("metadata")
+          .eq("organization_id", input.organizationId)
+          .eq("id", input.content_asset_id)
+          .maybeSingle();
+        if (metaErr) throw new Error(metaErr.message);
+        const prev = asMetadataRecord((row as { metadata?: unknown } | null)?.metadata);
+        patch.metadata = mergeJsonbRecords(prev, metaPatch);
+      }
       const admin = createSupabaseAdminClient();
       const { data, error } = await admin
         .from("content_assets" as never)
@@ -506,13 +525,19 @@ export const TOOLS: AnyToolDef[] = [
       const admin = createSupabaseAdminClient();
       let q = admin
         .from("content_assets" as never)
-        .select("id,title,status,platform")
+        .select("id,title,status,metadata")
         .eq("organization_id", input.organizationId);
       if (input.status) q = q.eq("status", input.status);
       if (input.campaign_id) q = q.eq("campaign_id", input.campaign_id);
       const { data, error } = await q.order("created_at", { ascending: false }).limit(input.limit ?? 50);
       if (error) throw new Error(error.message);
-      return { assets: (data ?? []) as any };
+      const assets = (data ?? []).map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        platform: typeof r?.metadata?.platform === "string" ? r.metadata.platform : null,
+      }));
+      return { assets: assets as any };
     },
   },
   {
