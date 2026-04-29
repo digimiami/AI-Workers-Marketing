@@ -84,24 +84,33 @@ export default async function AdminLayout({
           </div>
           <Separator className="my-4 opacity-60" />
           <AdminOrgControls currentOrgId={orgId} />
-          <nav className="space-y-4">
+          <nav className="space-y-2">
             {NAV_GROUPS.map((g) => (
-              <div key={g.title} className="space-y-1">
-                <div className="px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">
-                  {g.title}
-                </div>
-                <div className="space-y-0.5">
+              <details
+                key={g.title}
+                open={g.title !== "Advanced"}
+                className="group rounded-lg border border-transparent"
+              >
+                <summary className="cursor-pointer list-none rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 hover:bg-accent/40">
+                  <span className="inline-flex items-center gap-2">
+                    <span>{g.title}</span>
+                    <span className="text-[10px] text-muted-foreground/70">
+                      {g.items.length}
+                    </span>
+                  </span>
+                </summary>
+                <div className="mt-1 space-y-0.5 pb-2">
                   {g.items.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className="block rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground hover:bg-accent/70 border border-transparent hover:border-border/50"
+                      className="ml-2 block rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground hover:bg-accent/70 border border-transparent hover:border-border/50"
                     >
                       {item.label}
                     </Link>
                   ))}
                 </div>
-              </div>
+              </details>
             ))}
           </nav>
         </div>
