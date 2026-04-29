@@ -62,6 +62,8 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
   const [provider, setProvider] = React.useState<Provider>("hybrid");
   const [mode, setMode] = React.useState<Mode>("create_campaign");
 
+  const [autonomous, setAutonomous] = React.useState(true);
+
   const [url, setUrl] = React.useState("");
   const [campaignId, setCampaignId] = React.useState("");
   const [goal, setGoal] = React.useState("");
@@ -104,6 +106,12 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
       setApprovedPlan(null);
       setPlanOverride(JSON.stringify(j.plan, null, 2));
       toast.success("Plan generated");
+
+      if (autonomous) {
+        setApprovedPlan(j.plan);
+        // Fire-and-forget execute; UI timeline will populate via run status polling.
+        setTimeout(() => runMutation.mutate(), 0);
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Plan failed"),
   });
@@ -305,6 +313,22 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
             </Select>
           </div>
 
+          <div className="space-y-2">
+            <Label>Autonomous</Label>
+            <Select
+              value={autonomous ? "on" : "off"}
+              onValueChange={(v) => setAutonomous(v === "on")}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Pick mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="on">On (auto-approve plan + execute)</SelectItem>
+                <SelectItem value="off">Off (manual approve then execute)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="flex items-end justify-end gap-2 md:col-span-1">
             <Button
               type="button"
@@ -312,7 +336,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
               onClick={() => planMutation.mutate()}
               disabled={planMutation.isPending || !goal.trim()}
             >
-              Generate plan
+              {autonomous ? "Start autonomous run" : "Generate plan"}
             </Button>
           </div>
         </CardContent>
