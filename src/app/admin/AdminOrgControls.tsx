@@ -48,6 +48,12 @@ export function AdminOrgControls({ currentOrgId }: { currentOrgId: string }) {
     };
   }, []);
 
+  const currentOrgLabel = React.useMemo(() => {
+    const match = orgs.find((o) => o.id === currentOrgId);
+    if (!match) return "Organization";
+    return `${match.name} (${match.slug})`;
+  }, [orgs, currentOrgId]);
+
   const switchOrg = async () => {
     if (!selectedOrgId || selectedOrgId === currentOrgId) return;
     const res = await fetch("/api/admin/organizations/switch", {
@@ -107,36 +113,54 @@ export function AdminOrgControls({ currentOrgId }: { currentOrgId: string }) {
   };
 
   return (
-    <div className="mt-4 rounded-xl border border-border/60 bg-background/40 p-3 space-y-3">
-      <div className="space-y-1.5">
-        <Label htmlFor="orgSwitch" className="text-xs text-muted-foreground">
-          Organization
-        </Label>
-        <div className="flex items-center gap-2">
-          <select
-            id="orgSwitch"
-            aria-label="Switch organization"
-            title="Switch organization"
-            className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm"
-            value={selectedOrgId}
-            disabled={loadingOrgs}
-            onChange={(e) => setSelectedOrgId(e.target.value)}
-          >
-            {orgs.length ? (
-              orgs.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name} ({o.slug}) — {o.role}
-                </option>
-              ))
-            ) : (
-              <option value={currentOrgId}>Current org</option>
-            )}
-          </select>
-          <Button size="sm" variant="outline" onClick={() => void switchOrg()} disabled={loadingOrgs || selectedOrgId === currentOrgId}>
-            Switch
-          </Button>
+    <details className="mt-4 group rounded-xl border border-border/60 bg-background/40">
+      <summary className="cursor-pointer rounded-xl px-3 py-3 text-xs font-medium text-muted-foreground hover:bg-accent/40">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/80">Organization</div>
+            <div className="truncate text-xs text-foreground">{currentOrgLabel}</div>
+          </div>
+          <div className="text-[10px] text-muted-foreground/70 group-open:rotate-180 transition-transform">
+            ▼
+          </div>
         </div>
-      </div>
+      </summary>
+
+      <div className="p-3 space-y-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="orgSwitch" className="text-xs text-muted-foreground">
+            Switch organization
+          </Label>
+          <div className="flex items-center gap-2">
+            <select
+              id="orgSwitch"
+              aria-label="Switch organization"
+              title="Switch organization"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm"
+              value={selectedOrgId}
+              disabled={loadingOrgs}
+              onChange={(e) => setSelectedOrgId(e.target.value)}
+            >
+              {orgs.length ? (
+                orgs.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name} ({o.slug}) — {o.role}
+                  </option>
+                ))
+              ) : (
+                <option value={currentOrgId}>Current org</option>
+              )}
+            </select>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void switchOrg()}
+              disabled={loadingOrgs || selectedOrgId === currentOrgId}
+            >
+              Switch
+            </Button>
+          </div>
+        </div>
 
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Create organization</Label>
@@ -183,7 +207,8 @@ export function AdminOrgControls({ currentOrgId }: { currentOrgId: string }) {
           Operators/admins can invite users. The member is added to <code className="font-mono">organization_members</code>.
         </p>
       </div>
-    </div>
+      </div>
+    </details>
   );
 }
 
