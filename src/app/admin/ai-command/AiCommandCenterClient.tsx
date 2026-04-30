@@ -233,7 +233,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           organizationMode: orgMode,
-          organizationId: orgMode === "existing" ? organizationId : null,
+          organizationId: orgMode === "existing" ? organizationId : undefined,
           organizationName: orgMode === "create" ? orgName : undefined,
           url,
           mode: campaignType === "client" ? "client" : "affiliate",
