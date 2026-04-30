@@ -24,13 +24,13 @@ export type MarketingPipelineStageStatus = z.infer<typeof marketingPipelineStage
 export const runMarketingPipelineInputSchema = z.object({
   organizationMode: marketingPipelineOrgModeSchema,
   organizationId: z.string().uuid().optional(),
-  organizationName: z.string().min(2).optional(),
+  organizationName: z.string().min(2).nullish(),
   url: z.string().url(),
   mode: z.enum(["affiliate", "client"]),
   goal: z.string().min(2),
   audience: z.string().min(2),
   trafficSource: z.string().min(2),
-  notes: z.string().optional(),
+  notes: z.string().nullish(),
   provider: marketingPipelineProviderSchema,
   approvalMode: marketingPipelineApprovalModeSchema,
 });
