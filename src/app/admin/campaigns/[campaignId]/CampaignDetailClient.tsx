@@ -320,6 +320,13 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <Link
               className="text-primary underline"
+              href={`/admin/campaigns/${c.id}/pipeline`}
+            >
+              Pipeline
+            </Link>
+            <span className="text-muted-foreground">•</span>
+            <Link
+              className="text-primary underline"
               href={`/admin/campaigns/${c.id}/automation`}
             >
               Automation

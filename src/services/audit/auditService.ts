@@ -27,7 +27,10 @@ export type AuditAction =
   | "org.created"
   | "org.member_invited"
   | "workspace.provisioned"
-  | "workspace.provision_failed";
+  | "workspace.provision_failed"
+  | "marketing_pipeline.started"
+  | "marketing_pipeline.finished"
+  | "marketing_pipeline.failed";
 
 export type AuditWriteInput = {
   organizationId?: string | null;

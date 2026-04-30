@@ -136,7 +136,23 @@ Content-Type: application/json`}
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">7. System instructions for agents (copy-paste)</h2>
+          <h2 className="text-lg font-semibold">7. Marketing Team Pipeline (stage-based)</h2>
+          <p>
+            AiWorkers includes a stage-based marketing operating system called the{" "}
+            <strong>AiWorkers Marketing Team Pipeline</strong>:
+          </p>
+          <p className="text-muted-foreground">
+            <strong>RESEARCH</strong> → <strong>STRATEGY</strong> → <strong>CREATION</strong> →{" "}
+            <strong>EXECUTION</strong> → <strong>OPTIMIZATION</strong>
+          </p>
+          <p>
+            Important: external agents (OpenClaw) must still use the <strong>Cloud tools API</strong> and the internal
+            tool layer. Do not call raw database endpoints. High-risk actions must remain approval-gated (publish/send/activate).
+          </p>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">8. System instructions for agents (copy-paste)</h2>
           <p className="text-muted-foreground">
             Paste the block below into OpenClaw (or any LLM agent) <strong>system</strong> or <strong>developer</strong>{" "}
             instructions so the agent always uses Cloud API tokens correctly. Replace{" "}
@@ -151,6 +167,12 @@ Authentication (required)
 - Use HTTP Bearer auth with a Cloud API token created by a human operator in the AiWorkers admin UI:
   Admin → Settings → Cloud API → "Create token & copy to clipboard".
 - The token plaintext is shown once. Store it in a secret manager; never commit it to git or paste into public channels.
+
+Operating mode (important)
+- Your goal is to help run the AiWorkers Marketing Team Pipeline:
+  RESEARCH → STRATEGY → CREATION → EXECUTION → OPTIMIZATION
+- You MUST interact only through the Cloud Tools API (tools). Never attempt direct database access.
+- High-risk actions MUST be approval-gated (publish content, send emails, activate ads, activate affiliate CTA, change settings).
 
 Headers
 - Authorization: Bearer <CLOUD_API_TOKEN>

@@ -87,18 +87,21 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
   const [campaignType, setCampaignType] = React.useState("affiliate");
   const [notes, setNotes] = React.useState("");
   const [approvalMode, setApprovalMode] = React.useState<"required" | "auto_draft">("auto_draft");
+  const [orgMode, setOrgMode] = React.useState<"existing" | "create">("existing");
+  const [orgName, setOrgName] = React.useState("");
 
   const [planOverride, setPlanOverride] = React.useState<string>("");
   const [approvedPlan, setApprovedPlan] = React.useState<Plan | null>(null);
   const [lastRun, setLastRun] = React.useState<RunResult | null>(null);
   const [activeRunId, setActiveRunId] = React.useState<string | null>(null);
+  const [activePipelineRunId, setActivePipelineRunId] = React.useState<string | null>(null);
+  const [lastPipeline, setLastPipeline] = React.useState<{ pipelineRunId: string; campaignId: string | null } | null>(null);
   const [plannerMeta, setPlannerMeta] = React.useState<PlannerMeta | null>(null);
 
   const stageLabels = React.useMemo(
     () => ["Research", "Strategy", "Creation", "Execution"] as const,
     [],
   );
-  const stageByIdx = (idx: number) => stageLabels[Math.min(stageLabels.length - 1, Math.max(0, idx))];
 
   const planMutation = useMutation({
     mutationFn: async () => {
@@ -208,6 +211,54 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
         approvals: asRows<{ id: string; status: string; approval_type: string; created_at: string }>(j.approvals),
       };
     },
+  });
+
+  const pipelineRunQuery = useQuery({
+    queryKey: ["marketing-pipeline-run", activePipelineRunId],
+    enabled: Boolean(activePipelineRunId),
+    refetchInterval: 2000,
+    queryFn: async () => {
+      const runId = activePipelineRunId;
+      if (!runId) return null;
+      const res = await fetch(`/api/admin/marketing-pipeline/runs/${runId}`);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as unknown;
+    },
+  });
+
+  const pipelineMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/marketing-pipeline/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationMode: orgMode,
+          organizationId: orgMode === "existing" ? organizationId : null,
+          organizationName: orgMode === "create" ? orgName : null,
+          url,
+          mode: campaignType === "client" ? "client" : "affiliate",
+          goal,
+          audience,
+          trafficSource,
+          notes: notes || null,
+          provider,
+          approvalMode,
+          async: false,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as unknown;
+    },
+    onSuccess: (j) => {
+      const out = asRecord(j);
+      const runId = String(out.pipelineRunId ?? "");
+      const cId = typeof out.campaignId === "string" && out.campaignId.length ? String(out.campaignId) : null;
+      setActivePipelineRunId(runId || null);
+      setLastPipeline(runId ? { pipelineRunId: runId, campaignId: cId } : null);
+      if (cId) setCampaignId(cId);
+      toast.success("Pipeline run completed");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Pipeline run failed"),
   });
 
   const parsedPlan = React.useMemo(() => {
@@ -352,6 +403,32 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
           </div>
 
           <div className="space-y-2">
+            <Label>Organization</Label>
+            <Select value={orgMode} onValueChange={(v) => setOrgMode(v === "create" ? "create" : "existing")}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pick org mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="existing">Use current organization</SelectItem>
+                <SelectItem value="create">Create new organization</SelectItem>
+              </SelectContent>
+            </Select>
+            {orgMode === "create" ? (
+              <div className="pt-2">
+                <Input
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  placeholder="New organization name"
+                />
+              </div>
+            ) : (
+              <div className="pt-2 text-xs text-muted-foreground">
+                Using org <span className="font-mono">{organizationId}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
             <Label>Approval mode</Label>
             <Select
               value={approvalMode}
@@ -391,6 +468,13 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
               disabled={planMutation.isPending || !goal.trim()}
             >
               {autonomous ? "Start autonomous run" : "Generate plan"}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => pipelineMutation.mutate()}
+              disabled={pipelineMutation.isPending || !url.trim() || !goal.trim() || !audience.trim() || !trafficSource.trim() || (orgMode === "create" && orgName.trim().length < 2)}
+            >
+              Run Marketing Pipeline
             </Button>
           </div>
         </CardContent>
@@ -530,6 +614,57 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
             <CardDescription>Outputs + approvals created during execution.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+          {lastPipeline ? (
+            <div className="rounded border border-border/60 p-3 text-sm space-y-1">
+              <div>
+                Pipeline run: <span className="font-mono text-xs">{lastPipeline.pipelineRunId}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {lastPipeline.campaignId ? (
+                  <>
+                    <Link
+                      href={`/admin/campaigns/${lastPipeline.campaignId}`}
+                      className="text-sm underline underline-offset-4"
+                    >
+                      Campaign
+                    </Link>
+                    <span className="text-muted-foreground">·</span>
+                    <Link
+                      href={`/admin/campaigns/${lastPipeline.campaignId}/pipeline`}
+                      className="text-sm underline underline-offset-4"
+                    >
+                      Campaign pipeline
+                    </Link>
+                    <span className="text-muted-foreground">·</span>
+                    <Link
+                      href={`/f/${lastPipeline.campaignId}`}
+                      className="text-sm underline underline-offset-4"
+                    >
+                      Public funnel
+                    </Link>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">Campaign not created yet.</span>
+                )}
+                <span className="text-muted-foreground">·</span>
+                <Link href="/admin/approvals" className="text-sm underline underline-offset-4">
+                  Approvals
+                </Link>
+              </div>
+              {(() => {
+                const pr = asRecord(pipelineRunQuery.data);
+                const run = asRecord(pr.run);
+                const status = typeof run.status === "string" ? run.status : null;
+                if (!status) return null;
+                return (
+                <div className="text-xs text-muted-foreground">
+                  Status: <span className="font-mono">{String(status)}</span>
+                </div>
+                );
+              })()}
+            </div>
+          ) : null}
+
             {lastRun ? (
               <div className="rounded border border-border/60 p-3 text-sm space-y-1">
                 <div>
