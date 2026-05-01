@@ -570,19 +570,42 @@ export const TOOLS: AnyToolDef[] = [
     allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "supervisor"],
     async handler(_ctx, input) {
       const admin = createSupabaseAdminClient();
-      const { data, error } = await admin
-        .from("email_templates" as never)
-        .insert({
-          organization_id: input.organizationId,
-          name: input.name,
-          subject: input.subject,
-          body_markdown: input.body_markdown,
-          status: input.status ?? "draft",
-        } as never)
-        .select("id,name,subject,status")
-        .single();
+      const baseRow: Record<string, unknown> = {
+        organization_id: input.organizationId,
+        name: input.name,
+        subject: input.subject,
+        body_markdown: input.body_markdown,
+      };
+      if (input.status) baseRow.status = input.status;
+
+      const tryInsert = async (row: Record<string, unknown>, select: string) =>
+        admin.from("email_templates" as never).insert(row as never).select(select).single();
+
+      let ins = await tryInsert(baseRow, "id,name,subject,status");
+      let data = ins.data;
+      let error = ins.error;
+      const msg = String((error as { message?: string } | null)?.message ?? "");
+      const missingColumn =
+        /column .* does not exist/i.test(msg) ||
+        /Could not find the '.*' column of '.*' in the schema cache/i.test(msg) ||
+        /schema cache/i.test(msg);
+
+      // Some deployments may not have applied migrations that add `status` yet.
+      if (error && missingColumn && baseRow.status !== undefined) {
+        const { status: _omit, ...withoutStatus } = baseRow;
+        ins = await tryInsert(withoutStatus, "id,name,subject");
+        data = ins.data;
+        error = ins.error;
+      }
+
       if (error || !data) throw new Error(error?.message ?? "Failed to create template");
-      return data as any;
+      const row = data as unknown as { id: string; name: string; subject: string; status?: string };
+      return {
+        id: row.id,
+        name: row.name,
+        subject: row.subject,
+        status: typeof row.status === "string" && row.status.length ? row.status : input.status ?? "draft",
+      };
     },
   },
   {
@@ -605,15 +628,39 @@ export const TOOLS: AnyToolDef[] = [
       if (input.body_markdown !== undefined) patch.body_markdown = input.body_markdown;
       if (input.status !== undefined) patch.status = input.status;
       const admin = createSupabaseAdminClient();
-      const { data, error } = await admin
-        .from("email_templates" as never)
-        .update(patch as never)
-        .eq("organization_id", input.organizationId)
-        .eq("id", input.template_id)
-        .select("id,name,subject,status")
-        .single();
+      const tryUpdate = async (p: Record<string, unknown>, select: string) =>
+        admin
+          .from("email_templates" as never)
+          .update(p as never)
+          .eq("organization_id", input.organizationId)
+          .eq("id", input.template_id)
+          .select(select)
+          .single();
+
+      let upd = await tryUpdate(patch, "id,name,subject,status");
+      let data = upd.data;
+      let error = upd.error;
+      const msg = String((error as { message?: string } | null)?.message ?? "");
+      const missingColumn =
+        /column .* does not exist/i.test(msg) ||
+        /Could not find the '.*' column of '.*' in the schema cache/i.test(msg) ||
+        /schema cache/i.test(msg);
+
+      if (error && missingColumn && patch.status !== undefined) {
+        const { status: _omit, ...withoutStatus } = patch;
+        upd = await tryUpdate(withoutStatus, "id,name,subject");
+        data = upd.data;
+        error = upd.error;
+      }
+
       if (error || !data) throw new Error(error?.message ?? "Failed to update template");
-      return data as any;
+      const row = data as unknown as { id: string; name: string; subject: string; status?: string };
+      return {
+        id: row.id,
+        name: row.name,
+        subject: row.subject,
+        status: typeof row.status === "string" && row.status.length ? row.status : input.status ?? "draft",
+      };
     },
   },
   {
