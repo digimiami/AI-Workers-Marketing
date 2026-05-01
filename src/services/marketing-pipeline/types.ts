@@ -25,6 +25,8 @@ export const runMarketingPipelineInputSchema = z.object({
   organizationMode: marketingPipelineOrgModeSchema,
   organizationId: z.string().uuid().nullish(),
   organizationName: z.string().min(2).nullish(),
+  // Internal/advanced: allow re-running stages for an existing campaign.
+  campaignId: z.string().uuid().nullish(),
   url: z.string().url(),
   mode: z.enum(["affiliate", "client"]),
   goal: z.string().min(2),
@@ -33,6 +35,9 @@ export const runMarketingPipelineInputSchema = z.object({
   notes: z.string().nullish(),
   provider: marketingPipelineProviderSchema,
   approvalMode: marketingPipelineApprovalModeSchema,
+  // Internal/advanced: allow stage re-run actions.
+  startStage: marketingPipelineStageKeySchema.nullish(),
+  stopAfterStage: marketingPipelineStageKeySchema.nullish(),
 });
 
 export type RunMarketingPipelineInput = z.infer<typeof runMarketingPipelineInputSchema>;

@@ -350,6 +350,12 @@ export async function runMarketingPipeline(params: {
 
   const admin = createSupabaseAdminClient();
   const input = parsed.data;
+  const stageOrder: MarketingPipelineStageKey[] = ["research", "strategy", "creation", "execution", "optimization"];
+  const startStage = (input as any).startStage ? (String((input as any).startStage) as MarketingPipelineStageKey) : "research";
+  const stopAfterStage = (input as any).stopAfterStage
+    ? (String((input as any).stopAfterStage) as MarketingPipelineStageKey)
+    : null;
+  const startIdx = Math.max(0, stageOrder.indexOf(startStage));
 
   // --- Resolve organization ---
   let organizationId = input.organizationId ?? "";
@@ -374,11 +380,12 @@ export async function runMarketingPipeline(params: {
     .from("marketing_pipeline_runs" as never)
     .insert({
       organization_id: organizationId,
+      campaign_id: (input as any).campaignId ?? null,
       provider: input.provider,
       approval_mode: input.approvalMode,
       input,
       status: "running",
-      current_stage: "research",
+      current_stage: startStage,
       started_at: nowIso(),
     } as never)
     .select("id")
@@ -390,15 +397,20 @@ export async function runMarketingPipeline(params: {
   const stages: Record<MarketingPipelineStageKey, StageRow> = {} as any;
 
   for (const stageKey of stageKeys) {
+    const idx = stageOrder.indexOf(stageKey);
+    const initialStatus: MarketingPipelineStageStatus =
+      idx < startIdx ? "completed" : idx === startIdx ? "running" : "pending";
     const { data: sRow, error: sErr } = await admin
       .from("marketing_pipeline_stages" as never)
       .insert({
         organization_id: organizationId,
         pipeline_run_id: pipelineRunId,
         stage_key: stageKey,
-        status: stageKey === "research" ? "running" : "pending",
+        status: initialStatus,
         assigned_workers: stageWorkers(stageKey),
-        started_at: stageKey === "research" ? nowIso() : null,
+        started_at: initialStatus === "running" ? nowIso() : null,
+        finished_at: initialStatus === "completed" ? nowIso() : null,
+        output_summary: initialStatus === "completed" ? "Skipped (resume from later stage)" : null,
       } as never)
       .select("id,stage_key,status")
       .single();
@@ -411,7 +423,7 @@ export async function runMarketingPipeline(params: {
   const logs: Array<{ id: string; stage_key?: MarketingPipelineStageKey | null; level: string; message: string; at: string }> = [];
   const warnings: string[] = [];
   const errors: string[] = [];
-  let campaignId: string | null = null;
+  let campaignId: string | null = (input as any).campaignId ? String((input as any).campaignId) : null;
   let funnelId: string | null = null;
   let funnelStepIds: Record<string, string> = {};
   const traceId = `trace_${crypto.randomUUID()}`;
@@ -429,6 +441,83 @@ export async function runMarketingPipeline(params: {
     logs.push({ id: row.id, stage_key: stageKey, level, message, at: row.at });
   };
 
+  const ensureFunnelAndSteps = async () => {
+    if (!campaignId) throw new Error("campaignId required");
+    if (!funnelId) {
+      const { data: f0 } = await admin
+        .from("funnels" as never)
+        .select("id,name")
+        .eq("organization_id", organizationId)
+        .eq("campaign_id", campaignId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      funnelId = f0 ? String((f0 as any).id) : null;
+      if (funnelId) createdRecords.push({ table: "funnels", id: funnelId, label: String((f0 as any).name ?? "Funnel") });
+    }
+    if (!funnelId) {
+      const funnel = await toolOk<any>({
+        ...envelopeBase,
+        campaign_id: campaignId,
+        agent_id: null,
+        run_id: null,
+        tool_name: "create_funnel",
+        input: {
+          organizationId,
+          name: `Funnel · ${input.goal}`.slice(0, 80),
+          campaign_id: campaignId,
+          status: "draft",
+          metadata: { marketing_pipeline: { run_id: pipelineRunId, trace_id: traceId, resumed: true } },
+        },
+      });
+      funnelId = String(funnel.id);
+      createdRecords.push({ table: "funnels", id: funnelId, label: funnel.name });
+    }
+
+    const { data: steps } = await admin
+      .from("funnel_steps" as never)
+      .select("id,step_type,slug")
+      .eq("organization_id", organizationId)
+      .eq("funnel_id", funnelId)
+      .limit(200);
+    const srows = (steps ?? []) as any[];
+    for (const s of srows) {
+      if (typeof s?.step_type === "string" && s?.id) funnelStepIds[String(s.step_type)] = String(s.id);
+    }
+
+    const stepDefs = [
+      { name: "Landing page", step_type: "landing", slug: "landing" },
+      { name: "Bridge page", step_type: "bridge", slug: "bridge" },
+      { name: "Lead capture", step_type: "form", slug: "lead" },
+      { name: "Primary CTA", step_type: "cta", slug: "cta" },
+      { name: "Thank you", step_type: "thank_you", slug: "thanks" },
+      { name: "Nurture trigger", step_type: "email_trigger", slug: "nurture" },
+    ];
+    let stepIndex = 0;
+    for (const def of stepDefs) {
+      if (funnelStepIds[def.step_type]) {
+        stepIndex += 1;
+        continue;
+      }
+      const row = await toolOk<any>({
+        ...envelopeBase,
+        campaign_id: campaignId,
+        tool_name: "add_funnel_step",
+        input: {
+          organizationId,
+          funnel_id: funnelId,
+          name: def.name,
+          step_type: def.step_type,
+          slug: `mp-${pipelineRunId.slice(0, 6)}-${def.slug}`,
+          metadata: { marketing_pipeline: { stage: "resume", trace_id: traceId, step_index: stepIndex } },
+        },
+      });
+      funnelStepIds[def.step_type] = String(row.id);
+      createdRecords.push({ table: "funnel_steps", id: String(row.id), label: `${def.step_type}:${row.slug}` });
+      stepIndex += 1;
+    }
+  };
+
   try {
     await writeAuditLog({
       organizationId,
@@ -438,11 +527,17 @@ export async function runMarketingPipeline(params: {
       entityId: pipelineRunId,
       metadata: { trace_id: traceId, input },
     });
+    const runNeedsApproval = input.approvalMode === "required";
+    const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+    const asRecord = (v: unknown): Record<string, unknown> =>
+      v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
     // ---------------- Stage 1: RESEARCH ----------------
-    await log("research", "info", "Research stage started", { url: input.url, goal: input.goal, audience: input.audience });
-    const researchFallback = stubResearch(input);
-    const offer = await runWorkerAndPersist({
+    let research = stubResearch(input) as Record<string, unknown>;
+    if (startStage === "research") {
+      await log("research", "info", "Research stage started", { url: input.url, goal: input.goal, audience: input.audience });
+      const researchFallback = stubResearch(input);
+      const offer = await runWorkerAndPersist({
       organizationId,
       campaignId: null,
       pipelineRunId,
@@ -454,7 +549,7 @@ export async function runMarketingPipeline(params: {
       schemaHint: "Return JSON with keys: offer_summary, pain_points[], objections[], mechanism, cta_recommendations{primary,secondary}.",
       prompt: `Analyze URL=${input.url}. Mode=${input.mode}. Audience=${input.audience}. Goal=${input.goal}. Traffic=${input.trafficSource}.`,
       fallback: researchFallback,
-    });
+      });
     const ads = await runWorkerAndPersist({
       organizationId,
       campaignId: null,
@@ -532,13 +627,38 @@ export async function runMarketingPipeline(params: {
       outputSummary: "Research output saved",
     });
     stages.research.status = "completed";
+      if (stopAfterStage === "research") {
+        await setRunStatus({ organizationId, pipelineRunId, status: "completed", currentStage: "research" });
+        return {
+          organizationId,
+          campaignId,
+          pipelineRunId,
+          stages: {
+            research: { stageId: stages.research.id, status: stages.research.status },
+            strategy: { stageId: stages.strategy.id, status: stages.strategy.status },
+            creation: { stageId: stages.creation.id, status: stages.creation.status },
+            execution: { stageId: stages.execution.id, status: stages.execution.status },
+            optimization: { stageId: stages.optimization.id, status: stages.optimization.status },
+          },
+          createdRecords,
+          approvalItems,
+          logs,
+          warnings,
+          errors,
+        };
+      }
+    } else {
+      await log("research", "info", "Research stage skipped (resume)", { startStage });
+    }
 
     // ---------------- Stage 2: STRATEGY ----------------
-    await setRunStatus({ organizationId, pipelineRunId, status: "running", currentStage: "strategy" });
-    await setStageStatus({ organizationId, pipelineRunId, stageId: stages.strategy.id, stageKey: "strategy", status: "running" });
-    stages.strategy.status = "running";
-    await log("strategy", "info", "Strategy stage started", { provider: input.provider });
-    const head = await runWorkerAndPersist({
+    let strategy = stubStrategy(input, research) as Record<string, unknown>;
+    if (startIdx <= stageOrder.indexOf("strategy")) {
+      await setRunStatus({ organizationId, pipelineRunId, status: "running", currentStage: "strategy" });
+      await setStageStatus({ organizationId, pipelineRunId, stageId: stages.strategy.id, stageKey: "strategy", status: "running" });
+      stages.strategy.status = "running";
+      await log("strategy", "info", "Strategy stage started", { provider: input.provider });
+      const head = await runWorkerAndPersist({
       organizationId,
       campaignId: null,
       pipelineRunId,
@@ -550,8 +670,8 @@ export async function runMarketingPipeline(params: {
       schemaHint: "Return JSON with keys: campaign_strategy{}, funnel_plan{steps[]}, traffic_plan{}, risk_checklist[].",
       prompt: `Create strategy from research for goal=${input.goal} traffic=${input.trafficSource}.`,
       fallback: stubStrategy(input, research),
-    });
-    const brand = await runWorkerAndPersist({
+      });
+      const brand = await runWorkerAndPersist({
       organizationId,
       campaignId: null,
       pipelineRunId,
@@ -563,8 +683,8 @@ export async function runMarketingPipeline(params: {
       schemaHint: "Return JSON with keys: tone, messaging_pillars[], words_to_use[], words_to_avoid[], credibility_needs[].",
       prompt: "Generate brand voice + messaging pillars.",
       fallback: { provider_mode: "stub" },
-    });
-    const planner = await runWorkerAndPersist({
+      });
+      const planner = await runWorkerAndPersist({
       organizationId,
       campaignId: null,
       pipelineRunId,
@@ -576,8 +696,8 @@ export async function runMarketingPipeline(params: {
       schemaHint: "Return JSON with keys: build_checklist[], asset_counts{}, approvals_to_request[].",
       prompt: "Convert strategy into concrete build checklist and asset counts.",
       fallback: { provider_mode: "stub" },
-    });
-    const strategy = { head: head.output, brand: brand.output, plan: planner.output } as Record<string, unknown>;
+      });
+      strategy = { head: head.output, brand: brand.output, plan: planner.output } as Record<string, unknown>;
     await upsertSkillOutput({
       organizationId,
       pipelineRunId,
@@ -590,70 +710,34 @@ export async function runMarketingPipeline(params: {
       metadata: { worker_run_ids: { head: head.runId, brand: brand.runId, planner: planner.runId } },
     });
 
-    // Create campaign + funnel (safe tool layer)
-    const campaign = await toolOk<any>({
-      ...envelopeBase,
-      campaign_id: null,
-      agent_id: null,
-      run_id: null,
-      tool_name: "create_campaign",
-      input: {
-        organizationId,
-        name: `${input.mode === "affiliate" ? "Affiliate" : "Client"} · ${input.trafficSource} · ${input.goal}`.slice(0, 80),
-        type: input.mode === "affiliate" ? "affiliate" : "client",
-        status: "draft",
-        target_audience: input.audience,
-        description: [input.notes, `URL: ${input.url}`].filter(Boolean).join("\n"),
-        metadata: { marketing_pipeline: { run_id: pipelineRunId, trace_id: traceId, strategy_bundle: strategy } },
-      },
-    });
-    campaignId = String(campaign.id);
-    createdRecords.push({ table: "campaigns", id: campaignId, label: campaign.name });
+      // Create campaign if needed, then ensure funnel+steps
+      if (!campaignId) {
+        const campaign = await toolOk<any>({
+          ...envelopeBase,
+          campaign_id: null,
+          agent_id: null,
+          run_id: null,
+          tool_name: "create_campaign",
+          input: {
+            organizationId,
+            name: `${input.mode === "affiliate" ? "Affiliate" : "Client"} · ${input.trafficSource} · ${input.goal}`.slice(0, 80),
+            type: input.mode === "affiliate" ? "affiliate" : "client",
+            status: "draft",
+            target_audience: input.audience,
+            description: [input.notes, `URL: ${input.url}`].filter(Boolean).join("\n"),
+            metadata: { marketing_pipeline: { run_id: pipelineRunId, trace_id: traceId, strategy_bundle: strategy } },
+          },
+        });
+        campaignId = String(campaign.id);
+        createdRecords.push({ table: "campaigns", id: campaignId, label: campaign.name });
+        await admin
+          .from("marketing_pipeline_runs" as never)
+          .update({ campaign_id: campaignId, updated_at: nowIso() } as never)
+          .eq("organization_id", organizationId)
+          .eq("id", pipelineRunId);
+      }
 
-    const funnel = await toolOk<any>({
-      ...envelopeBase,
-      campaign_id: campaignId,
-      agent_id: null,
-      run_id: null,
-      tool_name: "create_funnel",
-      input: {
-        organizationId,
-        name: `Funnel · ${input.goal}`.slice(0, 80),
-        campaign_id: campaignId,
-        status: "draft",
-        metadata: { marketing_pipeline: { run_id: pipelineRunId, trace_id: traceId } },
-      },
-    });
-    funnelId = String(funnel.id);
-    createdRecords.push({ table: "funnels", id: funnelId, label: funnel.name });
-
-    const stepDefs = [
-      { name: "Landing page", step_type: "landing", slug: "landing" },
-      { name: "Bridge page", step_type: "bridge", slug: "bridge" },
-      { name: "Lead capture", step_type: "form", slug: "lead" },
-      { name: "Primary CTA", step_type: "cta", slug: "cta" },
-      { name: "Thank you", step_type: "thank_you", slug: "thanks" },
-      { name: "Nurture trigger", step_type: "email_trigger", slug: "nurture" },
-    ];
-    let stepIndex = 0;
-    for (const s of stepDefs) {
-      const row = await toolOk<any>({
-        ...envelopeBase,
-        campaign_id: campaignId,
-        tool_name: "add_funnel_step",
-        input: {
-          organizationId,
-          funnel_id: funnelId,
-          name: s.name,
-          step_type: s.step_type,
-          slug: `mp-${pipelineRunId.slice(0, 6)}-${s.slug}`,
-          metadata: { marketing_pipeline: { stage: "strategy", trace_id: traceId, step_index: stepIndex } },
-        },
-      });
-      funnelStepIds[s.step_type] = String(row.id);
-      createdRecords.push({ table: "funnel_steps", id: String(row.id), label: `${s.step_type}:${row.slug}` });
-      stepIndex += 1;
-    }
+      await ensureFunnelAndSteps();
 
     await insertStageOutput({
       organizationId,
@@ -672,18 +756,42 @@ export async function runMarketingPipeline(params: {
       outputSummary: "Campaign + funnel created",
     });
     stages.strategy.status = "completed";
+      if (stopAfterStage === "strategy") {
+        await setRunStatus({ organizationId, pipelineRunId, status: "completed", currentStage: "strategy" });
+        return {
+          organizationId,
+          campaignId,
+          pipelineRunId,
+          stages: {
+            research: { stageId: stages.research.id, status: stages.research.status },
+            strategy: { stageId: stages.strategy.id, status: stages.strategy.status },
+            creation: { stageId: stages.creation.id, status: stages.creation.status },
+            execution: { stageId: stages.execution.id, status: stages.execution.status },
+            optimization: { stageId: stages.optimization.id, status: stages.optimization.status },
+          },
+          createdRecords,
+          approvalItems,
+          logs,
+          warnings,
+          errors,
+        };
+      }
+    } else {
+      if (!campaignId) throw new Error("campaignId required to resume from stage > strategy");
+      await ensureFunnelAndSteps();
+      await log("strategy", "info", "Strategy stage skipped (resume)", { startStage, campaignId, funnelId });
+    }
 
     // ---------------- Stage 3: CREATION ----------------
-    await setRunStatus({ organizationId, pipelineRunId, status: "running", currentStage: "creation" });
-    await setStageStatus({ organizationId, pipelineRunId, stageId: stages.creation.id, stageKey: "creation", status: "running" });
-    stages.creation.status = "running";
-    await log("creation", "info", "Creation stage started");
+    if (startIdx <= stageOrder.indexOf("creation")) {
+      await setRunStatus({ organizationId, pipelineRunId, status: "running", currentStage: "creation" });
+      await setStageStatus({ organizationId, pipelineRunId, stageId: stages.creation.id, stageKey: "creation", status: "running" });
+      stages.creation.status = "running";
+      await log("creation", "info", "Creation stage started");
 
-    if (!campaignId || !funnelId) throw new Error("Missing campaign/funnel in creation stage");
-
-    const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
-    const asRecord = (v: unknown): Record<string, unknown> =>
-      v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+      if (!campaignId) throw new Error("Missing campaignId in creation stage");
+      await ensureFunnelAndSteps();
+      if (!campaignId || !funnelId) throw new Error("Missing campaign/funnel in creation stage");
 
     // Run creation workers (real agent_runs + outputs)
     const creationContext = {
@@ -1081,12 +1189,38 @@ export async function runMarketingPipeline(params: {
       outputSummary: "Assets drafted (pages, content, ads, emails)",
     });
     stages.creation.status = "completed";
+      if (stopAfterStage === "creation") {
+        await setRunStatus({ organizationId, pipelineRunId, status: "completed", currentStage: "creation" });
+        return {
+          organizationId,
+          campaignId,
+          pipelineRunId,
+          stages: {
+            research: { stageId: stages.research.id, status: stages.research.status },
+            strategy: { stageId: stages.strategy.id, status: stages.strategy.status },
+            creation: { stageId: stages.creation.id, status: stages.creation.status },
+            execution: { stageId: stages.execution.id, status: stages.execution.status },
+            optimization: { stageId: stages.optimization.id, status: stages.optimization.status },
+          },
+          createdRecords,
+          approvalItems,
+          logs,
+          warnings,
+          errors,
+        };
+      }
+    } else {
+      if (!campaignId) throw new Error("campaignId required to resume from stage > creation");
+      await ensureFunnelAndSteps();
+      await log("creation", "info", "Creation stage skipped (resume)", { startStage, campaignId, funnelId });
+    }
 
     // ---------------- Stage 4: EXECUTION ----------------
-    await setRunStatus({ organizationId, pipelineRunId, status: "running", currentStage: "execution" });
-    await setStageStatus({ organizationId, pipelineRunId, stageId: stages.execution.id, stageKey: "execution", status: "running" });
-    stages.execution.status = "running";
-    await log("execution", "info", "Execution stage started");
+    if (startIdx <= stageOrder.indexOf("execution")) {
+      await setRunStatus({ organizationId, pipelineRunId, status: "running", currentStage: "execution" });
+      await setStageStatus({ organizationId, pipelineRunId, stageId: stages.execution.id, stageKey: "execution", status: "running" });
+      stages.execution.status = "running";
+      await log("execution", "info", "Execution stage started");
 
     // Run execution workers (real agent_runs + outputs)
     const executionContext = {
@@ -1400,8 +1534,7 @@ export async function runMarketingPipeline(params: {
       },
       createdRecordRefs: createdRecords,
     });
-
-    const runNeedsApproval = input.approvalMode === "required";
+    // runNeedsApproval already computed near pipeline start
     await setStageStatus({
       organizationId,
       pipelineRunId,
@@ -1411,20 +1544,52 @@ export async function runMarketingPipeline(params: {
       outputSummary: runNeedsApproval ? "Drafted execution; awaiting approvals" : "Execution drafted",
     });
     stages.execution.status = runNeedsApproval ? "needs_approval" : "completed";
+      if (stopAfterStage === "execution") {
+        await setRunStatus({ organizationId, pipelineRunId, status: runNeedsApproval ? "needs_approval" : "completed", currentStage: "execution" });
+        return {
+          organizationId,
+          campaignId,
+          pipelineRunId,
+          stages: {
+            research: { stageId: stages.research.id, status: stages.research.status },
+            strategy: { stageId: stages.strategy.id, status: stages.strategy.status },
+            creation: { stageId: stages.creation.id, status: stages.creation.status },
+            execution: { stageId: stages.execution.id, status: stages.execution.status },
+            optimization: { stageId: stages.optimization.id, status: stages.optimization.status },
+          },
+          createdRecords,
+          approvalItems,
+          logs,
+          warnings,
+          errors,
+        };
+      }
+    } else {
+      if (!campaignId) throw new Error("campaignId required to resume from stage > execution");
+      await ensureFunnelAndSteps();
+      await log("execution", "info", "Execution stage skipped (resume)", { startStage, campaignId, funnelId });
+    }
 
     // ---------------- Stage 5: OPTIMIZATION ----------------
-    await setRunStatus({
-      organizationId,
-      pipelineRunId,
-      status: runNeedsApproval ? "needs_approval" : "running",
-      currentStage: "optimization",
-      warnings,
-      errors,
-    });
+    if (startIdx <= stageOrder.indexOf("optimization")) {
+      await setRunStatus({
+        organizationId,
+        pipelineRunId,
+        status: runNeedsApproval ? "needs_approval" : "running",
+        currentStage: "optimization",
+        warnings,
+        errors,
+      });
 
-    await setStageStatus({ organizationId, pipelineRunId, stageId: stages.optimization.id, stageKey: "optimization", status: "running" });
-    stages.optimization.status = "running";
-    await log("optimization", "info", "Optimization stage started");
+      await setStageStatus({
+        organizationId,
+        pipelineRunId,
+        stageId: stages.optimization.id,
+        stageKey: "optimization",
+        status: "running",
+      });
+      stages.optimization.status = "running";
+      await log("optimization", "info", "Optimization stage started");
 
     // Optimization workers (real agent_runs + outputs)
     const optimizationContext = {
@@ -1609,6 +1774,38 @@ export async function runMarketingPipeline(params: {
       outputSummary: "Baseline + recommendations created",
     });
     stages.optimization.status = "completed";
+      if (stopAfterStage === "optimization") {
+        await setRunStatus({ organizationId, pipelineRunId, status: runNeedsApproval ? "needs_approval" : "completed", currentStage: "optimization", warnings, errors });
+        return {
+          organizationId,
+          campaignId,
+          pipelineRunId,
+          stages: {
+            research: { stageId: stages.research.id, status: stages.research.status },
+            strategy: { stageId: stages.strategy.id, status: stages.strategy.status },
+            creation: { stageId: stages.creation.id, status: stages.creation.status },
+            execution: { stageId: stages.execution.id, status: stages.execution.status },
+            optimization: { stageId: stages.optimization.id, status: stages.optimization.status },
+          },
+          createdRecords,
+          approvalItems,
+          logs,
+          warnings,
+          errors,
+        };
+      }
+    } else {
+      await log("optimization", "info", "Optimization stage skipped (resume)", { startStage, campaignId });
+      stages.optimization.status = "completed";
+      await setStageStatus({
+        organizationId,
+        pipelineRunId,
+        stageId: stages.optimization.id,
+        stageKey: "optimization",
+        status: "completed",
+        outputSummary: "Skipped (resume from later stage)",
+      });
+    }
 
     const finalStatus = runNeedsApproval ? "needs_approval" : "completed";
     await setRunStatus({ organizationId, pipelineRunId, status: finalStatus, currentStage: "optimization", warnings, errors });

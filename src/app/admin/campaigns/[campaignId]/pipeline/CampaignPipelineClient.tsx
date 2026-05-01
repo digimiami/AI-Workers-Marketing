@@ -245,13 +245,81 @@ export function CampaignPipelineClient(props: { organizationId: string; campaign
                   >
                     Approve (Execution)
                   </Button>
-                  <Button variant="secondary" size="sm" disabled>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!runId}
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(
+                          `/api/admin/marketing-pipeline/runs/${encodeURIComponent(runId)}/stages/${encodeURIComponent(key)}`,
+                          {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({ action: "rerun", async: true }),
+                          },
+                        );
+                        const j = (await res.json().catch(() => null)) as any;
+                        if (!res.ok || !j?.pipelineRunId) throw new Error(j?.message ?? "Rerun failed");
+                        toast.success("Stage rerun started");
+                        setActiveRunId(String(j.pipelineRunId));
+                        await campaignRunsQuery.refetch();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Rerun failed");
+                      }
+                    }}
+                  >
                     Rerun stage
                   </Button>
-                  <Button variant="secondary" size="sm" disabled>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!runId}
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(
+                          `/api/admin/marketing-pipeline/runs/${encodeURIComponent(runId)}/stages/${encodeURIComponent(key)}`,
+                          {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({ action: "regenerate", async: true }),
+                          },
+                        );
+                        const j = (await res.json().catch(() => null)) as any;
+                        if (!res.ok || !j?.pipelineRunId) throw new Error(j?.message ?? "Regenerate failed");
+                        toast.success("Regeneration started");
+                        setActiveRunId(String(j.pipelineRunId));
+                        await campaignRunsQuery.refetch();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Regenerate failed");
+                      }
+                    }}
+                  >
                     Regenerate output
                   </Button>
-                  <Button size="sm" disabled>
+                  <Button
+                    size="sm"
+                    disabled={!runId || key === "optimization"}
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(
+                          `/api/admin/marketing-pipeline/runs/${encodeURIComponent(runId)}/stages/${encodeURIComponent(key)}`,
+                          {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({ action: "advance", async: true }),
+                          },
+                        );
+                        const j = (await res.json().catch(() => null)) as any;
+                        if (!res.ok || !j?.pipelineRunId) throw new Error(j?.message ?? "Advance failed");
+                        toast.success("Advanced to next stage");
+                        setActiveRunId(String(j.pipelineRunId));
+                        await campaignRunsQuery.refetch();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Advance failed");
+                      }
+                    }}
+                  >
                     Move to next stage
                   </Button>
                 </div>
