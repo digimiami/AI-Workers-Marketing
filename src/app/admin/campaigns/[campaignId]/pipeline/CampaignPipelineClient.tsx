@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 type StageKey = "research" | "strategy" | "creation" | "execution" | "optimization";
 
@@ -39,7 +39,6 @@ const stageOrder: StageKey[] = ["research", "strategy", "creation", "execution",
 
 export function CampaignPipelineClient(props: { organizationId: string; campaignId: string }) {
   const [activeRunId, setActiveRunId] = React.useState<string | null>(null);
-  const { toast } = useToast();
 
   const campaignRunsQuery = useQuery({
     queryKey: ["marketing-pipeline-campaign", props.campaignId],
@@ -237,10 +236,10 @@ export function CampaignPipelineClient(props: { organizationId: string; campaign
                           headers: { "content-type": "application/json" },
                         });
                         if (!res.ok) throw new Error(await res.text());
-                        toast({ title: "Approved", description: "Applied approval side-effects (sequence/pages/creatives)." });
+                        toast.success("Approved: applied side-effects (sequence/pages/creatives).");
                         await runStatusQuery.refetch();
                       } catch (e) {
-                        toast({ title: "Approve failed", description: e instanceof Error ? e.message : "Error", variant: "destructive" });
+                        toast.error(e instanceof Error ? e.message : "Approve failed");
                       }
                     }}
                   >
