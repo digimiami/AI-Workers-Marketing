@@ -30,6 +30,8 @@ const serverSchema = z.object({
 
   // App
   APP_BASE_URL: z.string().url().optional(),
+  PUBLIC_LEAD_ORGANIZATION_ID: z.string().uuid().optional(),
+  PUBLIC_LEAD_CAMPAIGN_ID: z.string().uuid().optional(),
 
   // OAuth (Google) - used for connecting Analytics/Search Console via admin
   GOOGLE_OAUTH_CLIENT_ID: z.string().min(10).optional(),

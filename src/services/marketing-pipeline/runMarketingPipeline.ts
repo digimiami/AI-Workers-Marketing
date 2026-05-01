@@ -425,7 +425,7 @@ export async function runMarketingPipeline(params: {
   const errors: string[] = [];
   let campaignId: string | null = (input as any).campaignId ? String((input as any).campaignId) : null;
   let funnelId: string | null = null;
-  let funnelStepIds: Record<string, string> = {};
+  const funnelStepIds: Record<string, string> = {};
   const traceId = `trace_${crypto.randomUUID()}`;
 
   const envelopeBase = {
@@ -533,7 +533,7 @@ export async function runMarketingPipeline(params: {
       v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
     // ---------------- Stage 1: RESEARCH ----------------
-    let research = stubResearch(input) as Record<string, unknown>;
+    const research = stubResearch(input) as Record<string, unknown>;
     if (startStage === "research") {
       await log("research", "info", "Research stage started", { url: input.url, goal: input.goal, audience: input.audience });
       const researchFallback = stubResearch(input);
@@ -1876,4 +1876,3 @@ export async function runMarketingPipeline(params: {
     };
   }
 }
-

@@ -22,7 +22,15 @@ export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Invalid body" }, { status: 400 });
 
-  const admin = createSupabaseAdminClient();
+  let admin;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, message: e instanceof Error ? e.message : "Supabase not configured" },
+      { status: 503 },
+    );
+  }
 
   // Create or load conversation (org-scoped).
   let conversationId = parsed.data.conversationId ?? null;
@@ -144,4 +152,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true, conversationId, reply });
 }
-

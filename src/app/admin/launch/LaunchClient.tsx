@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -493,26 +494,26 @@ export function LaunchClient({ organizationId }: { organizationId: string }) {
                 >
                   Regenerate section
                 </Button>
-                <Button variant="outline" nativeButton={false} render={<a href="/admin/campaigns" />}>
+                <Button variant="outline" nativeButton={false} render={<Link href="/admin/campaigns" />}>
                   Open campaigns
                 </Button>
-                <Button variant="outline" nativeButton={false} render={<a href="/admin/funnels" />}>
+                <Button variant="outline" nativeButton={false} render={<Link href="/admin/funnels" />}>
                   Open funnels
                 </Button>
-                <Button variant="outline" nativeButton={false} render={<a href="/admin/content" />}>
+                <Button variant="outline" nativeButton={false} render={<Link href="/admin/content" />}>
                   Open content
                 </Button>
-                <Button variant="outline" nativeButton={false} render={<a href="/admin/email" />}>
+                <Button variant="outline" nativeButton={false} render={<Link href="/admin/email" />}>
                   Open email
                 </Button>
-                <Button variant="outline" nativeButton={false} render={<a href="/admin/approvals" />}>
+                <Button variant="outline" nativeButton={false} render={<Link href="/admin/approvals" />}>
                   Open approvals
                 </Button>
                 {review?.campaign?.id ? (
                   <Button
                     variant="outline"
                     nativeButton={false}
-                    render={<a href={`/admin/campaigns/${review.campaign.id}/automation`} />}
+                    render={<Link href={`/admin/campaigns/${review.campaign.id}/automation`} />}
                   >
                     Campaign automation
                   </Button>

@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/agent-schedules",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/email-outbox",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/growth-os-events",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

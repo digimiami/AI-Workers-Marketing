@@ -1,24 +1,7 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Syne } from "next/font/google";
 import "./globals.css";
 
 import { Providers } from "@/app/providers";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const syne = Syne({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-});
 
 export const metadata: Metadata = {
   title: "AiWorkers.vip — AI workforce for marketing",
@@ -34,7 +17,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} h-full antialiased`}
+      className="h-full antialiased"
       suppressHydrationWarning
     >
       {/* suppressHydrationWarning: browser extensions often mutate <html>/<body> before React hydrates */}

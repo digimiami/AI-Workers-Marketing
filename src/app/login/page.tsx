@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirectTo?: string }>;
+  searchParams: Promise<{ redirectTo?: string; error?: string }>;
 }) {
-  const { redirectTo } = await searchParams;
+  const { redirectTo, error } = await searchParams;
 
   return (
     <div className="min-h-[calc(100vh-0px)] flex items-center justify-center px-4 py-16">
@@ -23,6 +23,11 @@ export default async function LoginPage({
             </p>
           </CardHeader>
           <CardContent>
+            {error ? (
+              <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
             <form action={signInWithPasswordAction} className="space-y-4">
               <input type="hidden" name="redirectTo" value={redirectTo || ""} />
               <div className="space-y-2">

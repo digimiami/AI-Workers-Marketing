@@ -29,6 +29,7 @@ import { toast } from "sonner";
 
 type SettingRow = { key: string; value: Record<string, unknown>; updated_at: string };
 type OrgRow = { id: string; name: string; role: string };
+type CampaignEnvRow = { id: string; name: string; status?: string };
 type PlatformRow = {
   platform:
     | "facebook"
@@ -68,6 +69,16 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
     () => (orgsQuery.data ?? []).find((o) => o.id === organizationId) ?? null,
     [orgsQuery.data, organizationId],
   );
+
+  const campaignsQuery = useQuery({
+    queryKey: ["campaigns-for-public-env", organizationId],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/campaigns?organizationId=${organizationId}`);
+      if (!res.ok) throw new Error(await res.text());
+      const json = (await res.json()) as { ok: boolean; campaigns: CampaignEnvRow[] };
+      return json.campaigns ?? [];
+    },
+  });
 
   const settingsQuery = useQuery({
     queryKey: ["settings", organizationId],
@@ -132,6 +143,7 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
   const [adcApiKey, setAdcApiKey] = React.useState("");
   const [adcAccountId, setAdcAccountId] = React.useState("");
   const [platformNotes, setPlatformNotes] = React.useState("");
+  const [selectedPublicCampaignId, setSelectedPublicCampaignId] = React.useState("");
 
   const platformQuery = useQuery({
     queryKey: ["platform-credentials", organizationId],
@@ -354,9 +366,80 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
     if (clearSecret) setLastCreatedPlainToken(null);
   };
 
+  const publicLeadEnvSnippet = [
+    `PUBLIC_LEAD_ORGANIZATION_ID="${organizationId}"`,
+    selectedPublicCampaignId ? `PUBLIC_LEAD_CAMPAIGN_ID="${selectedPublicCampaignId}"` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const copyPublicLeadEnv = async () => {
+    try {
+      await navigator.clipboard.writeText(publicLeadEnvSnippet);
+      toast.success("Public lead env values copied");
+    } catch {
+      toast.error("Copy failed. Select and copy the values manually.");
+    }
+  };
+
   return (
     <>
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Public Lead Capture Env Values</CardTitle>
+          <CardDescription>
+            Use these values in Vercel so public pages like <code className="font-mono text-xs">/book</code> know where
+            to store leads.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+            <div className="text-muted-foreground">Current organization</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="font-medium">{currentOrg?.name ?? "Current org"}</span>
+              {currentOrg?.role ? (
+                <span className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {currentOrg.role}
+                </span>
+              ) : null}
+              <span className="font-mono text-[10px] text-muted-foreground">{organizationId}</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="public-campaign">Campaign for public website leads (optional)</Label>
+            <select
+              id="public-campaign"
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={selectedPublicCampaignId}
+              onChange={(e) => setSelectedPublicCampaignId(e.target.value)}
+            >
+              <option value="">No campaign selected</option>
+              {(campaignsQuery.data ?? []).map((campaign) => (
+                <option key={campaign.id} value={campaign.id}>
+                  {campaign.name}
+                  {campaign.status ? ` (${campaign.status})` : ""}
+                </option>
+              ))}
+            </select>
+            {campaignsQuery.isError ? (
+              <p className="text-xs text-destructive">Could not load campaigns. You can still copy the organization ID.</p>
+            ) : null}
+          </div>
+
+          <Textarea readOnly value={publicLeadEnvSnippet} className="min-h-20 font-mono text-xs" />
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={copyPublicLeadEnv}>
+              Copy env values
+            </Button>
+            <Link href="/admin/campaigns" className="text-sm text-primary underline underline-offset-4">
+              Create or manage campaigns
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Connect OAuth</CardTitle>

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { setCurrentOrgIdCookie } from "@/lib/cookies";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireUser } from "@/services/auth/authService";
+import { assertOrgMember } from "@/services/org/assertOrgAccess";
 
 function redirectOnboardingError(message: string): never {
   redirect(`/admin/onboarding?error=${encodeURIComponent(message)}`);
@@ -48,8 +49,17 @@ export async function createOrganizationAction(formData: FormData) {
 }
 
 export async function selectOrganizationAction(formData: FormData) {
+  const user = await requireUser();
   const orgId = String(formData.get("orgId") ?? "");
   if (!orgId) redirectOnboardingError("Organization is required.");
+
+  const supabase = await createSupabaseServerClient();
+  try {
+    await assertOrgMember(supabase, user.id, orgId);
+  } catch {
+    redirectOnboardingError("You do not have access to that organization.");
+  }
+
   await setCurrentOrgIdCookie(orgId);
   redirect("/admin/campaigns");
 }

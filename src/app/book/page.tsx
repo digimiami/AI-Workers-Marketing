@@ -2,11 +2,9 @@ import { PublicShell } from "@/components/marketing/PublicShell";
 import { PageCloseCta } from "@/components/marketing/page-close-cta";
 import { PageHero } from "@/components/marketing/page-hero";
 import { Reveal } from "@/components/marketing/motion-primitives";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { CalendarDays } from "lucide-react";
+import { BookForm } from "@/app/book/BookForm";
 
 export default function BookPage() {
   return (
@@ -32,36 +30,7 @@ export default function BookPage() {
               </p>
             </CardHeader>
             <CardContent>
-              <form className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Name</label>
-                    <Input placeholder="Your name" className="bg-background/80" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Email</label>
-                    <Input placeholder="you@company.com" type="email" className="bg-background/80" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Offer</label>
-                  <Input placeholder="What are you selling?" className="bg-background/80" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Traffic goal</label>
-                  <Input placeholder="e.g. 50 leads/week from short-form" className="bg-background/80" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Notes</label>
-                  <Textarea placeholder="Constraints, niche considerations, or links." className="bg-background/80" />
-                </div>
-                <Button type="button" className="w-full font-semibold shadow-md shadow-primary/20">
-                  Submit
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Next: connect to lead capture + booking workflow + analytics events.
-                </p>
-              </form>
+              <BookForm />
             </CardContent>
           </Card>
         </Reveal>

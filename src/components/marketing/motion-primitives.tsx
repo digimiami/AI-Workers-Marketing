@@ -71,8 +71,6 @@ export function Tilt({
   hoverLift?: number;
 }) {
   const reduce = useReducedMotion();
-  if (reduce) return <div className={className}>{children}</div>;
-
   const ref = React.useRef<HTMLDivElement | null>(null);
   const mx = useMotionValue(0);
   const my = useMotionValue(0);
@@ -84,6 +82,8 @@ export function Tilt({
 
   const rotateX = useTransform(sy, [-0.5, 0.5], [maxTilt, -maxTilt]);
   const rotateY = useTransform(sx, [-0.5, 0.5], [-maxTilt, maxTilt]);
+
+  if (reduce) return <div className={className}>{children}</div>;
 
   function onMove(e: React.PointerEvent<HTMLDivElement>) {
     const el = ref.current;
