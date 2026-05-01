@@ -1,54 +1,14 @@
 import Link from "next/link";
 import Image from "next/image";
 
-import { signOutAction } from "@/app/login/actions";
-import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
 import { requireUser } from "@/services/auth/authService";
 import { AdminOrgControls } from "@/app/admin/AdminOrgControls";
-
-const NAV_GROUPS: Array<{
-  title: string;
-  items: Array<{ href: string; label: string }>;
-}> = [
-  {
-    title: "Core",
-    items: [
-      { href: "/admin", label: "Overview" },
-      { href: "/admin/ai-command", label: "AI Command Center" },
-      { href: "/admin/launch", label: "Launch (Autopilot)" },
-      { href: "/admin/campaigns", label: "Campaigns" },
-      { href: "/admin/approvals", label: "Approvals" },
-    ],
-  },
-  {
-    title: "Build",
-    items: [
-      { href: "/admin/funnels", label: "Funnels" },
-      { href: "/admin/content", label: "Content" },
-      { href: "/admin/email", label: "Email" },
-      { href: "/admin/leads", label: "Leads" },
-      { href: "/admin/ad-creative", label: "Ad Creative" },
-    ],
-  },
-  {
-    title: "Advanced",
-    items: [
-      { href: "/admin/analytics", label: "Analytics" },
-      { href: "/admin/reports", label: "Weekly Reports" },
-      { href: "/admin/data-sources", label: "Data Sources" },
-      { href: "/admin/ai-workers", label: "AI Workers" },
-      { href: "/admin/ai-workers/runs", label: "Agent runs" },
-      { href: "/admin/chat", label: "Chat" },
-      { href: "/admin/appointments", label: "Appointments" },
-      { href: "/admin/organizations", label: "Organizations" },
-      { href: "/admin/settings", label: "Settings" },
-      { href: "/admin/logs", label: "Logs" },
-    ],
-  },
-];
+import { AdminSidebar } from "@/app/admin/AdminSidebar";
+import { PanelLeft } from "lucide-react";
 
 export default async function AdminLayout({
   children,
@@ -65,57 +25,67 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="min-h-screen grid grid-cols-1 md:grid-cols-[272px_1fr]">
-      <aside className="border-b md:border-b-0 md:border-r border-border/60 glass-panel md:min-h-screen">
-        <div className="p-4 md:sticky md:top-0 md:py-6">
-          <div className="flex items-center justify-between gap-2">
-            <Link href="/" className="flex items-center gap-2">
-              <Image src="/logo.svg" alt="AiWorkers" width={18} height={18} priority />
-              <span className="font-display text-sm font-bold tracking-tight text-gradient-fx">AiWorkers</span>
-            </Link>
-            <div className="flex items-center gap-0.5">
-              <ThemeToggle />
-              <form action={signOutAction}>
-                <Button size="sm" variant="outline" type="submit" className="border-border/80">
-                  Sign out
-                </Button>
-              </form>
-            </div>
-          </div>
-          <Separator className="my-4 opacity-60" />
-          <AdminOrgControls currentOrgId={orgId} />
-          <nav className="space-y-2">
-            {NAV_GROUPS.map((g) => (
-              <details
-                key={g.title}
-                open={g.title !== "Advanced"}
-                className="group rounded-lg border border-transparent open:bg-accent/20"
-              >
-                <summary className="cursor-pointer rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 hover:bg-accent/40">
-                  <span className="inline-flex items-center gap-2">
-                    <span>{g.title}</span>
-                    <span className="text-[10px] text-muted-foreground/70">
-                      {g.items.length}
-                    </span>
-                  </span>
-                </summary>
-                <div className="mt-1 space-y-0.5 pb-2">
-                  {g.items.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="ml-2 block rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground hover:bg-accent/70 border border-transparent hover:border-border/50"
-                    >
-                      {item.label}
+    <div className="min-h-screen">
+      {/* Mobile top bar */}
+      <div className="md:hidden sticky top-0 z-40 border-b border-border/60 bg-background/70 supports-[backdrop-filter]:backdrop-blur glass-panel">
+        <div className="flex items-center justify-between px-4 py-3">
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logo.svg" alt="AiWorkers" width={18} height={18} priority />
+            <span className="font-display text-sm font-bold tracking-tight text-gradient-fx">AiWorkers</span>
+          </Link>
+          <Sheet>
+            <SheetTrigger
+              render={<Button size="sm" variant="outline" className="border-border/80" />}
+              aria-label="Open menu"
+              title="Open menu"
+            >
+              <PanelLeft className="h-4 w-4 mr-2" />
+              Menu
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0">
+              <div className="border-r border-border/60 glass-panel h-full">
+                <AdminSidebar
+                  header={
+                    <Link href="/" className="flex items-center gap-2">
+                      <Image src="/logo.svg" alt="AiWorkers" width={18} height={18} priority />
+                      <span className="font-display text-sm font-bold tracking-tight text-gradient-fx">AiWorkers</span>
                     </Link>
-                  ))}
-                </div>
-              </details>
-            ))}
-          </nav>
+                  }
+                  footer={
+                    <>
+                      <Separator className="my-4 opacity-60" />
+                      <AdminOrgControls currentOrgId={orgId} />
+                    </>
+                  }
+                  defaultCollapsed={false}
+                />
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
-      </aside>
-      <main className="p-6 md:p-8 md:max-w-[1400px]">{children}</main>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-[auto_1fr]">
+        <aside className="hidden md:block border-r border-border/60 glass-panel md:min-h-screen">
+          <div className="md:sticky md:top-0">
+            <AdminSidebar
+              header={
+                <Link href="/" className="flex items-center gap-2">
+                  <Image src="/logo.svg" alt="AiWorkers" width={18} height={18} priority />
+                  <span className="font-display text-sm font-bold tracking-tight text-gradient-fx">AiWorkers</span>
+                </Link>
+              }
+              footer={
+                <>
+                  <Separator className="my-4 opacity-60" />
+                  <AdminOrgControls currentOrgId={orgId} />
+                </>
+              }
+            />
+          </div>
+        </aside>
+        <main className="p-5 md:p-8 md:max-w-[1440px]">{children}</main>
+      </div>
     </div>
   );
 }
