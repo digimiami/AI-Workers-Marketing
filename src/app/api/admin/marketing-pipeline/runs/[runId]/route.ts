@@ -56,6 +56,16 @@ export async function GET(_request: Request, ctx: { params: Promise<{ runId: str
     .order("created_at", { ascending: true })
     .limit(400);
 
+  // Pipeline approvals (created in Stage 4 with payload.pipeline_run_id)
+  const { data: approvals } = await admin
+    .from("approvals" as never)
+    .select("id,status,approval_type,payload,created_at,campaign_id")
+    .eq("organization_id", String((run as any).organization_id))
+    .eq("campaign_id", (run as any).campaign_id ?? null)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  const pipelineApprovals = (approvals ?? []).filter((a: any) => String(a?.payload?.pipeline_run_id ?? "") === parsed.data.runId);
+
   // Normalize
   const runObj = (run as any) as Record<string, unknown>;
   const out = {
@@ -66,6 +76,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ runId: str
     outputs: asRows<any>(outputs).filter((o) => stageIds.size === 0 || stageIds.has(String((o as any).stage_id))),
     logs: asRows<any>(logs),
     workerOutputs: asRows<any>(workerOutputs),
+    approvals: asRows<any>(pipelineApprovals),
   };
 
   return NextResponse.json({ ok: true, run: out });

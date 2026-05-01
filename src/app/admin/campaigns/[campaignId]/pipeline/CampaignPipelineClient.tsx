@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
 
 type StageKey = "research" | "strategy" | "creation" | "execution" | "optimization";
 
@@ -38,6 +39,7 @@ const stageOrder: StageKey[] = ["research", "strategy", "creation", "execution",
 
 export function CampaignPipelineClient(props: { organizationId: string; campaignId: string }) {
   const [activeRunId, setActiveRunId] = React.useState<string | null>(null);
+  const { toast } = useToast();
 
   const campaignRunsQuery = useQuery({
     queryKey: ["marketing-pipeline-campaign", props.campaignId],
@@ -73,6 +75,7 @@ export function CampaignPipelineClient(props: { organizationId: string; campaign
   const stages = asRows<Record<string, unknown>>(run.stages);
   const outputs = asRows<Record<string, unknown>>(run.outputs);
   const logs = asRows<Record<string, unknown>>(run.logs);
+  const approvals = asRows<Record<string, unknown>>(run.approvals);
 
   const stageMap = new Map<string, Record<string, unknown>>();
   for (const s of stages) stageMap.set(String(s.stage_key), s);
@@ -163,6 +166,8 @@ export function CampaignPipelineClient(props: { organizationId: string; campaign
           const stageId = s?.id ? String(s.id) : "";
           const sOutputs = stageId ? outputsByStage.get(stageId) ?? [] : [];
           const sLogs = stageId ? logsByStage.get(stageId) ?? [] : [];
+          const runId = String(run.id ?? activeRunId ?? "");
+          const stageStatus = typeof s?.status === "string" ? String(s.status) : "pending";
 
           return (
             <Card key={key} className="relative">
@@ -221,8 +226,25 @@ export function CampaignPipelineClient(props: { organizationId: string; campaign
                 <Separator />
 
                 <div className="flex flex-col gap-2">
-                  <Button variant="secondary" size="sm" disabled>
-                    Approve
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!runId || key !== "execution" || stageStatus !== "needs_approval"}
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/admin/marketing-pipeline/runs/${encodeURIComponent(runId)}/approve`, {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                        });
+                        if (!res.ok) throw new Error(await res.text());
+                        toast({ title: "Approved", description: "Applied approval side-effects (sequence/pages/creatives)." });
+                        await runStatusQuery.refetch();
+                      } catch (e) {
+                        toast({ title: "Approve failed", description: e instanceof Error ? e.message : "Error", variant: "destructive" });
+                      }
+                    }}
+                  >
+                    Approve (Execution)
                   </Button>
                   <Button variant="secondary" size="sm" disabled>
                     Rerun stage
@@ -236,7 +258,9 @@ export function CampaignPipelineClient(props: { organizationId: string; campaign
                 </div>
 
                 <div className="text-xs text-muted-foreground">
-                  Actions are stubbed in this first pass; stage data is real/persisted.
+                  {key === "execution" && stageStatus === "needs_approval"
+                    ? `Pending approvals: ${approvals.filter((a) => String(a.status) === "pending").length}`
+                    : "Actions are partially wired (approve), others coming next."}
                 </div>
               </CardContent>
             </Card>
