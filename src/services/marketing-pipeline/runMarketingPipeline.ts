@@ -681,18 +681,179 @@ export async function runMarketingPipeline(params: {
 
     if (!campaignId || !funnelId) throw new Error("Missing campaign/funnel in creation stage");
 
-    // Content assets (landing + bridge copy, hooks, scripts)
-    const landingCopy = `# ${input.goal}\n\nDraft landing copy for ${input.audience}.\n\n- Promise\n- Proof placeholders\n- CTA`;
-    const bridgeCopy = `# Bridge\n\nStory → mechanism → CTA for ${input.url}.`;
-    const hooks = Array.from({ length: 20 }).map((_, i) => `Hook ${i + 1}: ${input.audience} — ${input.goal}`);
-    const scripts = Array.from({ length: 10 }).map((_, i) => `## Script ${i + 1}\n\nHook: ${hooks[i]}\n\nBody: ...\n\nCTA: ...`);
+    const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+    const asRecord = (v: unknown): Record<string, unknown> =>
+      v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+    // Run creation workers (real agent_runs + outputs)
+    const creationContext = {
+      url: input.url,
+      mode: input.mode,
+      goal: input.goal,
+      audience: input.audience,
+      trafficSource: input.trafficSource,
+      research,
+      strategy,
+    };
+
+    const creativeDirector = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "creation",
+      workerKey: "creative_director",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: creationContext,
+      schemaHint:
+        "Return JSON with keys: creative_brief{angles[],tone,do_dont[]}, hook_themes[], quality_checks[].",
+      prompt: `Create creative direction for ${input.trafficSource} to reach ${input.audience} and achieve ${input.goal}.`,
+      fallback: { provider_mode: "stub" },
+    });
+
+    const copywriter = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "creation",
+      workerKey: "copywriter",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { ...creationContext, creative: creativeDirector.output },
+      schemaHint:
+        "Return JSON with keys: landing_markdown, bridge_markdown, faq[{q,a}], bullets[].",
+      prompt: `Write landing + bridge copy (markdown). Keep it specific, no unverifiable claims.`,
+      fallback: {
+        landing_markdown: `# ${input.goal}\n\nDraft landing copy for ${input.audience}.\n\n- Promise\n- Proof placeholders\n- CTA`,
+        bridge_markdown: `# Bridge\n\nStory → mechanism → CTA for ${input.url}.`,
+        faq: [],
+        bullets: [],
+      },
+    });
+
+    const scriptwriter = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "creation",
+      workerKey: "scriptwriter",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { ...creationContext, creative: creativeDirector.output, copy: copywriter.output },
+      schemaHint:
+        "Return JSON with keys: hooks[20], scripts[10]{title,hook,beats[],cta,on_screen_text[]}.",
+      prompt: `Generate 20 hooks and 10 short-form scripts optimized for ${input.trafficSource}.`,
+      fallback: {
+        hooks: Array.from({ length: 20 }).map((_, i) => `Hook ${i + 1}: ${input.audience} — ${input.goal}`),
+        scripts: Array.from({ length: 10 }).map((_, i) => ({
+          title: `Script ${i + 1}`,
+          hook: `Hook ${i + 1}: ${input.audience} — ${input.goal}`,
+          beats: ["Problem", "Mechanism", "CTA"],
+          cta: "Click to learn more",
+          on_screen_text: [],
+        })),
+      },
+    });
+
+    const adDesigner = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "creation",
+      workerKey: "ad_designer",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { ...creationContext, hooks: scriptwriter.output, creative: creativeDirector.output },
+      schemaHint:
+        "Return JSON with keys: ad_creatives[10]{headline,primary_text,script_markdown,format,platform}.",
+      prompt: `Create 10 ad creatives for ${input.trafficSource} based on hooks/scripts. Draft-safe.`,
+      fallback: {
+        ad_creatives: Array.from({ length: 10 }).map((_, i) => ({
+          headline: `Ad ${i + 1}: ${input.goal}`,
+          primary_text: `For ${input.audience}: ${input.goal}`,
+          script_markdown: `## Script ${i + 1}\n\nHook: ${input.audience} — ${input.goal}\n\nBody...\n\nCTA...`,
+          format: "short_video",
+          platform: input.trafficSource,
+        })),
+      },
+    });
+
+    const emailWriter = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "creation",
+      workerKey: "email_writer",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { ...creationContext, copy: copywriter.output, creative: creativeDirector.output },
+      schemaHint:
+        "Return JSON with keys: templates[5]{name,subject,body_markdown}.",
+      prompt: `Write 5 email templates (draft). No sending. Include clear CTA aligned to funnel.`,
+      fallback: {
+        templates: Array.from({ length: 5 }).map((_, i) => ({
+          name: `Pipeline email ${i + 1} · ${input.goal}`,
+          subject: `Step ${i + 1}: ${input.goal}`,
+          body_markdown: `Draft email ${i + 1} for ${input.audience}.\n\nGoal: ${input.goal}\nURL: ${input.url}`,
+        })),
+      },
+    });
+
+    const pageDesigner = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "creation",
+      workerKey: "page_designer",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { ...creationContext, copy: copywriter.output },
+      schemaHint:
+        "Return JSON with keys: landing{title,description,blocks[]}, bridge{title,description,blocks[]}, seo{landing_title,bridge_title}. blocks: [{type:'markdown',markdown:string}].",
+      prompt: `Convert the landing/bridge markdown into blocks for the page system.`,
+      fallback: {
+        landing: {
+          title: `Landing · ${input.goal}`,
+          description: `Landing page for ${input.audience}`,
+          blocks: [{ type: "markdown", markdown: String(asRecord(copywriter.output).landing_markdown ?? "") }],
+        },
+        bridge: {
+          title: `Bridge · ${input.goal}`,
+          description: `Bridge page for ${input.audience}`,
+          blocks: [{ type: "markdown", markdown: String(asRecord(copywriter.output).bridge_markdown ?? "") }],
+        },
+        seo: { landing_title: `Landing · ${input.goal}`, bridge_title: `Bridge · ${input.goal}` },
+      },
+    });
+
+    const hooks = asStringArray(asRecord(scriptwriter.output).hooks);
+    const scriptsRaw = Array.isArray(asRecord(scriptwriter.output).scripts) ? (asRecord(scriptwriter.output).scripts as unknown[]) : [];
+    const scripts = scriptsRaw
+      .map((s) => asRecord(s))
+      .map((s, idx) => ({
+        title: typeof s.title === "string" ? s.title : `Script ${idx + 1}`,
+        hook: typeof s.hook === "string" ? s.hook : hooks[idx] ?? "",
+        beats: asStringArray(s.beats),
+        cta: typeof s.cta === "string" ? s.cta : "Click to learn more",
+        on_screen_text: asStringArray(s.on_screen_text),
+      }))
+      .slice(0, 10);
+
+    const landingCopy = String(asRecord(copywriter.output).landing_markdown ?? "");
+    const bridgeCopy = String(asRecord(copywriter.output).bridge_markdown ?? "");
 
     const createdContentAssetIds: string[] = [];
     for (const spec of [
       { title: `Landing copy · ${input.goal}`, kind: "landing_copy", platform: "web", hook: hooks[0], body: landingCopy },
       { title: `Bridge copy · ${input.goal}`, kind: "bridge_copy", platform: "web", hook: hooks[1], body: bridgeCopy },
       { title: `Hooks · ${input.trafficSource}`, kind: "hooks", platform: input.trafficSource, hook: "Hook bank", body: hooks.join("\n") },
-      { title: `Short video scripts · ${input.trafficSource}`, kind: "short_video_scripts", platform: input.trafficSource, hook: "Scripts", body: scripts.join("\n\n") },
+      {
+        title: `Short video scripts · ${input.trafficSource}`,
+        kind: "short_video_scripts",
+        platform: input.trafficSource,
+        hook: "Scripts",
+        body: scripts.map((s, i) => `## ${s.title || `Script ${i + 1}`}\n\nHook: ${s.hook}\n\nBeats:\n- ${s.beats.join("\n- ")}\n\nCTA: ${s.cta}`).join("\n\n"),
+      },
     ]) {
       const a = await toolOk<any>({
         ...envelopeBase,
@@ -718,16 +879,20 @@ export async function runMarketingPipeline(params: {
     const landingStepId = funnelStepIds["landing"];
     const bridgeStepId = funnelStepIds["bridge"];
     if (landingStepId) {
+      const landing = asRecord(asRecord(pageDesigner.output).landing);
+      const landingTitle = typeof landing.title === "string" ? landing.title : `Landing · ${input.goal}`;
+      const landingDesc = typeof landing.description === "string" ? landing.description : `Landing page for ${input.audience}`;
+      const landingBlocks = Array.isArray(landing.blocks) ? landing.blocks : [{ type: "markdown", markdown: landingCopy }];
       const { data: lp, error: lpErr } = await admin
         .from("landing_pages" as never)
         .upsert(
           {
             organization_id: organizationId,
             funnel_step_id: landingStepId,
-            title: `Landing · ${input.goal}`.slice(0, 120),
-            description: `Landing page for ${input.audience}`.slice(0, 200),
-            blocks: [{ type: "markdown", markdown: landingCopy }],
-            seo: { title: `Landing · ${input.goal}` },
+            title: String(landingTitle).slice(0, 120),
+            description: String(landingDesc).slice(0, 200),
+            blocks: landingBlocks,
+            seo: { title: String(landingTitle).slice(0, 120) },
             updated_at: nowIso(),
           } as never,
           { onConflict: "funnel_step_id" },
@@ -747,16 +912,20 @@ export async function runMarketingPipeline(params: {
       });
     }
     if (bridgeStepId) {
+      const bridge = asRecord(asRecord(pageDesigner.output).bridge);
+      const bridgeTitle = typeof bridge.title === "string" ? bridge.title : `Bridge · ${input.goal}`;
+      const bridgeDesc = typeof bridge.description === "string" ? bridge.description : `Bridge page for ${input.audience}`;
+      const bridgeBlocks = Array.isArray(bridge.blocks) ? bridge.blocks : [{ type: "markdown", markdown: bridgeCopy }];
       const { data: bp, error: bpErr } = await admin
         .from("bridge_pages" as never)
         .upsert(
           {
             organization_id: organizationId,
             funnel_step_id: bridgeStepId,
-            title: `Bridge · ${input.goal}`.slice(0, 120),
-            description: `Bridge page for ${input.audience}`.slice(0, 200),
-            blocks: [{ type: "markdown", markdown: bridgeCopy }],
-            seo: { title: `Bridge · ${input.goal}` },
+            title: String(bridgeTitle).slice(0, 120),
+            description: String(bridgeDesc).slice(0, 200),
+            blocks: bridgeBlocks,
+            seo: { title: String(bridgeTitle).slice(0, 120) },
             updated_at: nowIso(),
           } as never,
           { onConflict: "funnel_step_id" },
@@ -776,19 +945,30 @@ export async function runMarketingPipeline(params: {
       });
     }
 
-    // Ad creatives (DB records)
-    const adRows = Array.from({ length: 10 }).map((_, i) => ({
-      organization_id: organizationId,
-      campaign_id: campaignId,
-      platform: input.trafficSource,
-      format: "short_video",
-      status: "draft",
-      headline: `Ad ${i + 1}: ${input.goal}`.slice(0, 120),
-      primary_text: hooks[i % hooks.length].slice(0, 300),
-      script_markdown: scripts[i % scripts.length],
-      metadata: { pipeline_run_id: pipelineRunId, trace_id: traceId, index: i },
-      updated_at: nowIso(),
-    }));
+    // Ad creatives (DB records) from Ad Designer output
+    const adCreativesOut = Array.isArray(asRecord(adDesigner.output).ad_creatives)
+      ? (asRecord(adDesigner.output).ad_creatives as unknown[])
+      : [];
+    const adRows = (adCreativesOut.length ? adCreativesOut : Array.from({ length: 10 }).map((_, i) => ({}))).slice(0, 10).map((raw, i) => {
+      const a = asRecord(raw);
+      const headline = typeof a.headline === "string" ? a.headline : `Ad ${i + 1}: ${input.goal}`;
+      const primary_text = typeof a.primary_text === "string" ? a.primary_text : hooks[i % Math.max(1, hooks.length)] ?? `For ${input.audience}: ${input.goal}`;
+      const script_markdown = typeof a.script_markdown === "string" ? a.script_markdown : (scripts[i % Math.max(1, scripts.length)]?.title ? `## ${scripts[i % scripts.length].title}\n\n${scripts[i % scripts.length].hook}` : "");
+      const format = typeof a.format === "string" ? a.format : "short_video";
+      const platform = typeof a.platform === "string" ? a.platform : input.trafficSource;
+      return {
+        organization_id: organizationId,
+        campaign_id: campaignId,
+        platform,
+        format,
+        status: "draft",
+        headline: String(headline).slice(0, 120),
+        primary_text: String(primary_text).slice(0, 600),
+        script_markdown: String(script_markdown),
+        metadata: { pipeline_run_id: pipelineRunId, trace_id: traceId, index: i, worker_run_id: adDesigner.runId },
+        updated_at: nowIso(),
+      };
+    });
     const { data: adCreatives, error: adErr } = await admin.from("ad_creatives" as never).insert(adRows as never).select("id");
     if (!adErr) {
       for (const r of (adCreatives ?? []) as any[]) createdRecords.push({ table: "ad_creatives", id: String(r.id), label: "ad_creative" });
@@ -797,23 +977,73 @@ export async function runMarketingPipeline(params: {
       await log("creation", "warn", "Failed to insert ad_creatives (non-fatal)", { error: adErr.message });
     }
 
-    // Email templates (5)
+    // Email templates (5) from Email Writer output
     const emailTemplateIds: string[] = [];
+    const templatesOut = Array.isArray(asRecord(emailWriter.output).templates) ? (asRecord(emailWriter.output).templates as unknown[]) : [];
     for (let i = 0; i < 5; i += 1) {
+      const t = asRecord(templatesOut[i] ?? {});
+      const name = typeof t.name === "string" ? t.name : `Pipeline email ${i + 1} · ${input.goal}`;
+      const subject = typeof t.subject === "string" ? t.subject : `Step ${i + 1}: ${input.goal}`;
+      const body_markdown =
+        typeof t.body_markdown === "string"
+          ? t.body_markdown
+          : `Draft email ${i + 1} for ${input.audience}.\n\nGoal: ${input.goal}\nURL: ${input.url}`;
       const tpl = await toolOk<any>({
         ...envelopeBase,
         campaign_id: campaignId,
         tool_name: "create_email_template",
         input: {
           organizationId,
-          name: `Pipeline email ${i + 1} · ${input.goal}`.slice(0, 120),
-          subject: `Step ${i + 1}: ${input.goal}`.slice(0, 120),
-          body_markdown: `Draft email ${i + 1} for ${input.audience}.\n\nGoal: ${input.goal}\nURL: ${input.url}`,
+          name: String(name).slice(0, 120),
+          subject: String(subject).slice(0, 120),
+          body_markdown: String(body_markdown),
           status: "draft",
         },
       });
       emailTemplateIds.push(String(tpl.id));
       createdRecords.push({ table: "email_templates", id: String(tpl.id), label: tpl.name });
+    }
+
+    // Lead magnet (draft record)
+    const leadMagnetName = `Lead magnet · ${input.goal}`.slice(0, 120);
+    const { data: lm, error: lmErr } = await admin
+      .from("lead_magnets" as never)
+      .insert({
+        organization_id: organizationId,
+        name: leadMagnetName,
+        description: `Draft lead magnet for ${input.audience} (${input.trafficSource}).`,
+        storage_path: null,
+        metadata: { pipeline_run_id: pipelineRunId, trace_id: traceId },
+        updated_at: nowIso(),
+      } as never)
+      .select("id")
+      .single();
+    if (!lmErr && lm) createdRecords.push({ table: "lead_magnets", id: String((lm as any).id), label: leadMagnetName });
+
+    // CTA variants (draft records; destination updated later when tracking link exists)
+    const ctaRows = [
+      { name: "Primary CTA", button_text: "Get the next step", destination_type: "external_url", destination_value: input.url },
+      { name: "Soft CTA", button_text: "See how it works", destination_type: "external_url", destination_value: input.url },
+      { name: "Proof CTA", button_text: "Show me the proof", destination_type: "external_url", destination_value: input.url },
+    ];
+    const { data: ctas, error: ctaErr } = await admin
+      .from("cta_variants" as never)
+      .insert(
+        ctaRows.map((r) => ({
+          organization_id: organizationId,
+          funnel_id: funnelId,
+          name: r.name,
+          button_text: r.button_text,
+          destination_type: r.destination_type,
+          destination_value: r.destination_value,
+          is_active: true,
+          metadata: { pipeline_run_id: pipelineRunId, trace_id: traceId },
+          updated_at: nowIso(),
+        })) as never,
+      )
+      .select("id");
+    if (!ctaErr) {
+      for (const r of (ctas ?? []) as any[]) createdRecords.push({ table: "cta_variants", id: String(r.id), label: "cta_variant" });
     }
 
     await insertStageOutput({
@@ -826,6 +1056,14 @@ export async function runMarketingPipeline(params: {
         bridge_copy: bridgeCopy,
         hooks,
         scripts,
+        worker_run_ids: {
+          creative_director: creativeDirector.runId,
+          copywriter: copywriter.runId,
+          scriptwriter: scriptwriter.runId,
+          ad_designer: adDesigner.runId,
+          email_writer: emailWriter.runId,
+          page_designer: pageDesigner.runId,
+        },
         counts: {
           content_assets: createdContentAssetIds.length,
           ad_creatives: 10,
