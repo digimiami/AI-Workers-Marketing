@@ -1426,6 +1426,80 @@ export async function runMarketingPipeline(params: {
     stages.optimization.status = "running";
     await log("optimization", "info", "Optimization stage started");
 
+    // Optimization workers (real agent_runs + outputs)
+    const optimizationContext = {
+      url: input.url,
+      mode: input.mode,
+      goal: input.goal,
+      audience: input.audience,
+      trafficSource: input.trafficSource,
+      research,
+      strategy,
+      campaignId,
+      funnelId,
+      pipelineRunId,
+    };
+
+    const analyticsAnalyst = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "optimization",
+      workerKey: "analytics_analyst",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: optimizationContext,
+      schemaHint: "Return JSON with keys: kpi_baseline{}, event_checklist[], weekly_metrics_to_watch[].",
+      prompt: `Define KPI baseline + measurement plan for goal=${input.goal} traffic=${input.trafficSource}.`,
+      fallback: {
+        kpi_baseline: { goal: input.goal, traffic: input.trafficSource, at: nowIso() },
+        event_checklist: ["page_view", "cta_click", "lead_submit", "affiliate_click"],
+        weekly_metrics_to_watch: ["CTR", "Lead CVR", "CPL", "CTA clicks"],
+      },
+    });
+
+    const croWorker = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "optimization",
+      workerKey: "cro_worker",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { ...optimizationContext, analytics: analyticsAnalyst.output },
+      schemaHint: "Return JSON with keys: test_plan[], prioritized_changes[].",
+      prompt: "Propose CRO tests for landing/bridge/form/CTA (measurable, single-variable).",
+      fallback: { test_plan: ["Test 3 hooks", "Test 2 CTAs", "Test headline variants"], prioritized_changes: [] },
+    });
+
+    const reportWorker = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "optimization",
+      workerKey: "report_worker",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { ...optimizationContext, analytics: analyticsAnalyst.output, cro: croWorker.output },
+      schemaHint: "Return JSON with keys: weekly_report_markdown, outline_sections[].",
+      prompt: "Draft a weekly report (markdown): status, KPIs, wins, blockers, next actions.",
+      fallback: { weekly_report_markdown: `## Weekly report (draft)\n\nGoal: ${input.goal}\nTraffic: ${input.trafficSource}\n\n### Next actions\n- Approve drafts\n- Publish funnel\n- Activate sequence`, outline_sections: ["KPIs", "Tests", "Next actions"] },
+    });
+
+    const recommendationWorker = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "optimization",
+      workerKey: "recommendation_worker",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { ...optimizationContext, analytics: analyticsAnalyst.output, cro: croWorker.output, report: reportWorker.output },
+      schemaHint: "Return JSON with keys: recommendations[5]{title,rationale,next_step,requires_approval:boolean}, diagnosis{}, scaling_suggestions[].",
+      prompt: "Generate prioritized next actions, weak funnel diagnosis, and scaling suggestions.",
+      fallback: { recommendations: [], diagnosis: {}, scaling_suggestions: [] },
+    });
+
     // Analytics baseline event
     await toolOk<any>({
       ...envelopeBase,
@@ -1441,8 +1515,11 @@ export async function runMarketingPipeline(params: {
       },
     });
 
-    // Recommendation record
-    const recMarkdown = `## Starting baseline\n\n- Goal: ${input.goal}\n- Audience: ${input.audience}\n- Traffic: ${input.trafficSource}\n\n## Testing plan\n\n- Test 3 hooks first\n- Test CTA copy on landing\n- Iterate top 2 creatives\n\n## Next actions\n\n- Approve drafts\n- Publish funnel\n- Activate sequence\n- Turn on ads (after approvals)`;
+    // Recommendation record (from Recommendation Worker)
+    const recMarkdown =
+      typeof (recommendationWorker.output as any)?.recommendation_markdown === "string"
+        ? String((recommendationWorker.output as any).recommendation_markdown)
+        : `## Starting baseline\n\n- Goal: ${input.goal}\n- Audience: ${input.audience}\n- Traffic: ${input.trafficSource}\n\n## Testing plan\n\n- Test 3 hooks first\n- Test CTA copy on landing\n- Iterate top 2 creatives\n\n## Next actions\n\n- Approve drafts\n- Publish funnel\n- Activate sequence\n- Turn on ads (after approvals)`;
     const { data: rec, error: recErr } = await admin
       .from("campaign_recommendations" as never)
       .insert({
@@ -1452,10 +1529,14 @@ export async function runMarketingPipeline(params: {
         title: `Pipeline recommendations · ${input.goal}`.slice(0, 120),
         recommendation_markdown: recMarkdown,
         recommendation_json: {
-          baseline: { goal: input.goal, audience: input.audience, trafficSource: input.trafficSource },
-          tests: [{ type: "hook", count: 3 }, { type: "cta", count: 2 }, { type: "creative", count: 2 }],
+          baseline: (analyticsAnalyst.output as any)?.kpi_baseline ?? { goal: input.goal, audience: input.audience, trafficSource: input.trafficSource },
+          event_checklist: (analyticsAnalyst.output as any)?.event_checklist ?? ["page_view", "cta_click", "lead_submit", "affiliate_click"],
+          tests: (croWorker.output as any)?.test_plan ?? [{ type: "hook", count: 3 }],
+          recommendations: (recommendationWorker.output as any)?.recommendations ?? [],
+          diagnosis: (recommendationWorker.output as any)?.diagnosis ?? {},
+          scaling_suggestions: (recommendationWorker.output as any)?.scaling_suggestions ?? [],
         },
-        created_by_agent_run_id: null,
+        created_by_agent_run_id: recommendationWorker.runId,
       } as never)
       .select("id")
       .single();
@@ -1463,15 +1544,59 @@ export async function runMarketingPipeline(params: {
       createdRecords.push({ table: "campaign_recommendations", id: String((rec as any).id), label: "recommendation" });
     }
 
+    // Weekly report (draft artifact)
+    const today = new Date();
+    const day = today.getUTCDay(); // 0=Sun
+    const diffToMon = (day + 6) % 7;
+    const weekStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - diffToMon));
+    const weekEnd = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate() + 6));
+    const weekStartStr = weekStart.toISOString().slice(0, 10);
+    const weekEndStr = weekEnd.toISOString().slice(0, 10);
+    const reportMarkdown = typeof (reportWorker.output as any)?.weekly_report_markdown === "string" ? String((reportWorker.output as any).weekly_report_markdown) : "";
+    const { data: wr, error: wrErr } = await admin
+      .from("weekly_reports" as never)
+      .upsert(
+        {
+          organization_id: organizationId,
+          campaign_id: campaignId,
+          week_start: weekStartStr,
+          week_end: weekEndStr,
+          status: "draft",
+          report_markdown: reportMarkdown,
+          report_json: {
+            pipeline_run_id: pipelineRunId,
+            analytics: analyticsAnalyst.output,
+            cro: croWorker.output,
+            recommendations: recommendationWorker.output,
+          },
+          generated_by_agent_run_id: reportWorker.runId,
+          updated_at: nowIso(),
+        } as never,
+        { onConflict: "organization_id,campaign_id,week_start" },
+      )
+      .select("id")
+      .single();
+    if (!wrErr && wr) createdRecords.push({ table: "weekly_reports", id: String((wr as any).id), label: "weekly_report" });
+
     await insertStageOutput({
       organizationId,
       pipelineRunId,
       stageId: stages.optimization.id,
       outputType: "optimization.output",
       content: {
-        kpi_baseline: { goal: input.goal, traffic: input.trafficSource, at: nowIso() },
-        testing_plan: ["Hook test", "CTA test", "Creative iteration"],
-        next_actions: ["Approve drafts", "Publish funnel", "Activate email sequence", "Activate ads (after approvals)"],
+        kpi_baseline: (analyticsAnalyst.output as any)?.kpi_baseline ?? { goal: input.goal, traffic: input.trafficSource, at: nowIso() },
+        testing_plan: (croWorker.output as any)?.test_plan ?? ["Hook test", "CTA test"],
+        next_actions: ((recommendationWorker.output as any)?.recommendations ?? [])
+          .map((r: any) => String(r?.next_step ?? r?.title ?? ""))
+          .filter(Boolean)
+          .slice(0, 5),
+        worker_run_ids: {
+          analytics_analyst: analyticsAnalyst.runId,
+          cro_worker: croWorker.runId,
+          report_worker: reportWorker.runId,
+          recommendation_worker: recommendationWorker.runId,
+        },
+        recommendation_id: rec ? String((rec as any).id) : null,
       },
       createdRecordRefs: createdRecords,
     });
