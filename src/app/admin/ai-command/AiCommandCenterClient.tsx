@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { toast } from "sonner";
+import { ArrowRight, CheckCircle2, Loader2, Rocket, ShieldAlert, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { PipelineStepper } from "@/components/ai/PipelineStepper";
 
 const providerSchema = z.enum(["openclaw", "internal_llm", "hybrid"]);
 const modeSchema = z.enum([
@@ -89,6 +91,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
   const [approvalMode, setApprovalMode] = React.useState<"required" | "auto_draft">("auto_draft");
   const [orgMode, setOrgMode] = React.useState<"existing" | "create">("existing");
   const [orgName, setOrgName] = React.useState("");
+  const [cockpitStep, setCockpitStep] = React.useState<1 | 2 | 3>(1);
 
   const [planOverride, setPlanOverride] = React.useState<string>("");
   const [approvedPlan, setApprovedPlan] = React.useState<Plan | null>(null);
@@ -273,34 +276,313 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
   const canApprove = Boolean(
     parsedPlan && Array.isArray(parsedPlan.steps) && parsedPlan.steps.length > 0,
   );
+  const canGeneratePlan = Boolean(
+    url.trim() && goal.trim() && audience.trim() && trafficSource.trim() && (orgMode !== "create" || orgName.trim().length >= 2),
+  );
 
   return (
     <div className="space-y-6">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">AI Command Center</h1>
-        <p className="text-sm text-muted-foreground">
-          Simple run flow: Research → Strategy → Creation → Execution. Drafts are created via safe tools; risky actions stay approval-gated.
-        </p>
+        <p className="text-sm text-muted-foreground">URL → AI Plan → Campaign Workspace → Approvals → Results</p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
-        {stageLabels.map((label) => (
-          <Card key={label}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{label}</CardTitle>
-              <CardDescription className="text-xs">
-                {label === "Research"
-                  ? "Analyze URL + inputs"
-                  : label === "Strategy"
-                    ? "Plan workflow + approvals"
-                    : label === "Creation"
-                      ? "Draft funnel/content/email/ads"
-                      : "Create approvals + handoff"}
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
+      {/* One-click Autopilot */}
+      <Card className="glass-panel border-border/60">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-5 w-5 text-primary/90" />
+            Paste a URL. AiWorkers builds the campaign.
+          </CardTitle>
+          <CardDescription>
+            Campaign, funnel, content, ads, email sequence, lead capture, analytics, and approvals — created as a connected workspace.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <ShieldAlert className="h-4 w-4" />
+            High‑risk actions stay approval‑gated.
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              onClick={() => {
+                setCockpitStep(2);
+                toast.message("AI Plan ready", { description: "Review the pipeline plan, then launch the workspace." });
+              }}
+              disabled={!canGeneratePlan}
+            >
+              Generate AI Plan
+              <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setCockpitStep(1)}>
+              Edit inputs
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Cockpit steps */}
+      <Card className="glass-panel border-border/60">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">
+            Step {cockpitStep}: {cockpitStep === 1 ? "Give AI the URL" : cockpitStep === 2 ? "Review AI plan" : "Launch workspace"}
+          </CardTitle>
+          <CardDescription>
+            {cockpitStep === 1
+              ? "Paste the URL and define goal, audience, and traffic source."
+              : cockpitStep === 2
+                ? "Review what AI will build across the 5 stages."
+                : "Launching the connected workspace (pipeline)."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {cockpitStep === 1 ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label>URL</Label>
+                <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" />
+              </div>
+              <div className="space-y-2">
+                <Label>Campaign type</Label>
+                <Select value={campaignType} onValueChange={(v) => setCampaignType(v === "client" ? "client" : "affiliate")}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pick campaign type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="affiliate">Affiliate</SelectItem>
+                    <SelectItem value="client">Client</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Approval mode</Label>
+                <Select value={approvalMode} onValueChange={(v) => setApprovalMode(v === "required" ? "required" : "auto_draft")}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pick approval mode" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto_draft">Auto drafts (approvals for risky actions)</SelectItem>
+                    <SelectItem value="required">Require approval before execution</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Goal</Label>
+                <Textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={3} placeholder="Generate leads + clicks from TikTok." />
+              </div>
+              <div className="space-y-2">
+                <Label>Audience</Label>
+                <Input value={audience} onChange={(e) => setAudience(e.target.value)} placeholder="small business owners" />
+              </div>
+              <div className="space-y-2">
+                <Label>Traffic source</Label>
+                <Input value={trafficSource} onChange={(e) => setTrafficSource(e.target.value)} placeholder="TikTok" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Notes (optional)</Label>
+                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+              </div>
+              <div className="md:col-span-2 flex items-center justify-end gap-2">
+                <Button type="button" onClick={() => setCockpitStep(2)} disabled={!canGeneratePlan}>
+                  Continue to AI Plan
+                  <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {cockpitStep === 2 ? (
+            <div className="space-y-4">
+              <PipelineStepper
+                compact
+                stages={[
+                  { key: "research", status: "pending", summary: "Analyze URL + offer + competition" },
+                  { key: "strategy", status: "pending", summary: "Define funnel + messaging + build plan" },
+                  { key: "creation", status: "pending", summary: "Draft pages, ads, emails, CTAs" },
+                  { key: "execution", status: approvalMode === "required" ? "needs_approval" : "pending", summary: "Wire tracking, lead capture, sequences, approvals" },
+                  { key: "optimization", status: "pending", summary: "Baseline metrics + tests + recommendations" },
+                ]}
+              />
+
+              <div className="grid gap-3 md:grid-cols-5">
+                {[
+                  {
+                    k: "research",
+                    title: "Research",
+                    body: ["Analyze the URL + offer", "Audience + objections", "Competitor/angle scan"],
+                    approvals: "No",
+                  },
+                  {
+                    k: "strategy",
+                    title: "Strategy",
+                    body: ["Campaign strategy + funnel map", "Build checklist", "Draft approvals needed"],
+                    approvals: "No",
+                  },
+                  {
+                    k: "creation",
+                    title: "Creation",
+                    body: ["Landing/bridge copy", "Ad creatives + hooks", "Email templates + sequence draft"],
+                    approvals: "Drafts only",
+                  },
+                  {
+                    k: "execution",
+                    title: "Execution",
+                    body: ["Tracking link + events", "Lead capture form", "Approvals created (publish/send/activate)"],
+                    approvals: approvalMode === "required" ? "Yes (before activation)" : "Yes (risky actions)",
+                  },
+                  {
+                    k: "optimization",
+                    title: "Optimization",
+                    body: ["Baseline KPIs", "Test plan + CRO ideas", "Recommendations + weekly report draft"],
+                    approvals: "No",
+                  },
+                ].map((s) => (
+                  <Card key={s.k} className="border-border/60 bg-background/40">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">{s.title}</CardTitle>
+                      <CardDescription className="text-xs">
+                        Approvals: <span className="font-medium">{s.approvals}</span>
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <ul className="text-xs text-muted-foreground space-y-1">
+                        {s.body.map((b) => (
+                          <li key={b} className="flex gap-2">
+                            <CheckCircle2 className="h-4 w-4 text-primary/70 shrink-0" />
+                            <span>{b}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Button variant="secondary" onClick={() => setCockpitStep(1)}>
+                  Back
+                </Button>
+                <Button
+                  onClick={() => {
+                    setCockpitStep(3);
+                    pipelineMutation.mutate();
+                  }}
+                  disabled={pipelineMutation.isPending || !canGeneratePlan}
+                >
+                  <Rocket className="h-4 w-4 mr-2" />
+                  Launch workspace
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {cockpitStep === 3 ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <Card className="border-border/60 bg-background/40">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Execution</CardTitle>
+                    <CardDescription className="text-xs">Pipeline run status</CardDescription>
+                  </CardHeader>
+                  <CardContent className="text-sm text-muted-foreground">
+                    {pipelineMutation.isPending ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Launching…
+                      </div>
+                    ) : activePipelineRunId ? (
+                      <div className="space-y-1">
+                        <div className="text-xs">
+                          Run: <span className="font-mono">{activePipelineRunId}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-xs">No run yet.</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/60 bg-background/40">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Workspace</CardTitle>
+                    <CardDescription className="text-xs">Open campaign + pipeline</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {lastPipeline?.campaignId ? (
+                      <>
+                        <a
+                          className="inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                          href={`/admin/campaigns/${lastPipeline.campaignId}`}
+                        >
+                          Open campaign
+                          <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
+                        </a>
+                        <a
+                          className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border/60 bg-accent/40 px-4 text-sm font-medium hover:bg-accent/60"
+                          href={`/admin/campaigns/${lastPipeline.campaignId}/pipeline`}
+                        >
+                          Open pipeline view
+                          <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
+                        </a>
+                      </>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">Campaign appears after Strategy stage.</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/60 bg-background/40">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Approvals</CardTitle>
+                    <CardDescription className="text-xs">Review gated actions</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <a
+                      className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border/60 bg-background/40 px-4 text-sm font-medium hover:bg-accent/40"
+                      href="/admin/approvals"
+                    >
+                      Go to approvals
+                      <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
+                    </a>
+                    <div className="text-xs text-muted-foreground">Approve publish/send/activate actions when ready.</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-background/30 p-3">
+                <div className="text-sm font-medium">What AI is doing</div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Researching URL → Creating campaign → Building funnel → Generating content → Creating emails → Setting lead capture → Creating approvals → Initializing analytics
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <details className="rounded-xl border border-border/60 bg-card/40 px-3 py-2">
+        <summary className="cursor-pointer select-none text-sm font-medium">
+          Advanced / legacy tools
+        </summary>
+        <div className="mt-3 space-y-6">
+          <div className="grid gap-3 md:grid-cols-4">
+            {stageLabels.map((label) => (
+              <Card key={label}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">{label}</CardTitle>
+                  <CardDescription className="text-xs">
+                    {label === "Research"
+                      ? "Analyze URL + inputs"
+                      : label === "Strategy"
+                        ? "Plan workflow + approvals"
+                        : label === "Creation"
+                          ? "Draft funnel/content/email/ads"
+                          : "Create approvals + handoff"}
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            ))}
+          </div>
 
       <Card>
         <CardHeader>
@@ -800,6 +1082,8 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
           </CardContent>
         </Card>
       </div>
+        </div>
+      </details>
     </div>
   );
 }
