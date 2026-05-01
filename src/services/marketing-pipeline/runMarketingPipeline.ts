@@ -1088,10 +1088,107 @@ export async function runMarketingPipeline(params: {
     stages.execution.status = "running";
     await log("execution", "info", "Execution stage started");
 
+    // Run execution workers (real agent_runs + outputs)
+    const executionContext = {
+      url: input.url,
+      mode: input.mode,
+      goal: input.goal,
+      audience: input.audience,
+      trafficSource: input.trafficSource,
+      research,
+      strategy,
+      creation: {
+        // minimal pointers; the worker can infer from campaign/funnel records too
+        campaignId,
+        funnelId,
+        funnelStepIds,
+      },
+    };
+
+    const trackingWorker = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "execution",
+      workerKey: "tracking_worker",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: executionContext,
+      schemaHint: "Return JSON with keys: utm_defaults{utm_source,utm_campaign}, label, cta_click_url_hint.",
+      prompt: `Create tracking plan for ${input.trafficSource} goal=${input.goal} url=${input.url}.`,
+      fallback: { utm_defaults: { utm_source: input.trafficSource, utm_campaign: `mp-${pipelineRunId.slice(0, 8)}` }, label: `${input.goal} · ${input.trafficSource}` },
+    });
+
+    const leadCaptureWorker = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "execution",
+      workerKey: "lead_capture_worker",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: executionContext,
+      schemaHint: "Return JSON with keys: form_schema{fields[]}, integration_draft{}.",
+      prompt: `Design a lead capture form schema for audience=${input.audience} with minimal friction.`,
+      fallback: {
+        form_schema: {
+          fields: [
+            { key: "email", type: "email", label: "Email", required: true },
+            { key: "name", type: "text", label: "Name", required: false },
+          ],
+        },
+        integration_draft: { email_sequence: "pending_activation" },
+      },
+    });
+
+    const emailAutomationWorker = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "execution",
+      workerKey: "email_automation_worker",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: executionContext,
+      schemaHint: "Return JSON with keys: sequence{name,description,is_active}, step_delays_minutes[5].",
+      prompt: `Create an email automation plan: sequence name/description and 5 step delays (minutes). Keep inactive by default.`,
+      fallback: { sequence: { name: `Pipeline sequence · ${input.goal}`, description: "Auto-drafted. Requires approval.", is_active: false }, step_delays_minutes: [0, 1440, 2880, 4320, 5760] },
+    });
+
+    const funnelPublisher = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "execution",
+      workerKey: "funnel_publisher",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: executionContext,
+      schemaHint: "Return JSON with keys: publish_checklist[], approvals_needed[].",
+      prompt: "Prepare publish readiness checklist and approvals needed (do NOT publish).",
+      fallback: { publish_checklist: ["Landing renders", "Bridge renders", "CTA wired"], approvals_needed: ["content_publishing", "affiliate_cta_activation"] },
+    });
+
+    const performanceMarketer = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "execution",
+      workerKey: "performance_marketer",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: executionContext,
+      schemaHint: "Return JSON with keys: launch_checklist[], kpis[], starting_budget_assumptions{}, tests_first[].",
+      prompt: `Create a launch checklist + KPIs for traffic=${input.trafficSource}. No activation.`,
+      fallback: { launch_checklist: ["Approve creatives", "Publish funnel", "Enable tracking"], kpis: ["cta_clicks", "lead_submits"], tests_first: ["Hook test", "CTA test"], starting_budget_assumptions: {} },
+    });
+
     // Lead capture form record (bind to funnel form step)
     const formStepId = funnelStepIds["form"];
     let leadCaptureFormId: string | null = null;
     if (formStepId) {
+      const schema = asRecord(asRecord(leadCaptureWorker.output).form_schema);
+      const integrations = asRecord(asRecord(leadCaptureWorker.output).integration_draft);
       const { data: form, error: fErr } = await admin
         .from("lead_capture_forms" as never)
         .insert({
@@ -1101,14 +1198,9 @@ export async function runMarketingPipeline(params: {
           funnel_step_id: formStepId,
           name: `Lead capture · ${input.goal}`.slice(0, 120),
           status: "draft",
-          schema: {
-            fields: [
-              { key: "email", type: "email", label: "Email", required: true },
-              { key: "name", type: "text", label: "Name", required: false },
-            ],
-          },
-          integrations: { email_sequence: "pending_activation", notes: "bind on approval" },
-          metadata: { pipeline_run_id: pipelineRunId, trace_id: traceId },
+          schema: Object.keys(schema).length ? schema : { fields: [{ key: "email", type: "email", label: "Email", required: true }] },
+          integrations: { ...integrations, notes: "bind on approval" },
+          metadata: { pipeline_run_id: pipelineRunId, trace_id: traceId, worker_run_id: leadCaptureWorker.runId },
           updated_at: nowIso(),
         } as never)
         .select("id")
@@ -1122,6 +1214,11 @@ export async function runMarketingPipeline(params: {
     }
 
     // Tracking link (affiliate/client)
+    const utmDefaults = asRecord(asRecord(trackingWorker.output).utm_defaults);
+    const trackingLabel =
+      typeof (trackingWorker.output as any)?.label === "string"
+        ? String((trackingWorker.output as any).label)
+        : `${input.goal} · ${input.trafficSource}`;
     const tracking = await toolOk<any>({
       ...envelopeBase,
       campaign_id: campaignId,
@@ -1129,14 +1226,51 @@ export async function runMarketingPipeline(params: {
       input: {
         organizationId,
         destination_url: input.url,
-        label: `${input.goal} · ${input.trafficSource}`.slice(0, 120),
+        label: trackingLabel.slice(0, 120),
         campaign_id: campaignId,
-        utm_defaults: { utm_source: input.trafficSource, utm_campaign: `mp-${pipelineRunId.slice(0, 8)}` },
+        utm_defaults: Object.keys(utmDefaults).length ? utmDefaults : { utm_source: input.trafficSource, utm_campaign: `mp-${pipelineRunId.slice(0, 8)}` },
       },
     });
     createdRecords.push({ table: "affiliate_links", id: String(tracking.id), label: "tracking_link" });
 
+    // Wire CTA step to affiliate click route
+    const ctaStepId = funnelStepIds["cta"];
+    if (ctaStepId) {
+      await toolOk<any>({
+        ...envelopeBase,
+        campaign_id: campaignId,
+        tool_name: "update_funnel_step",
+        input: {
+          organizationId,
+          step_id: ctaStepId,
+          metadata: {
+            cta: {
+              click_url: `/api/affiliate/click/${String(tracking.id)}`,
+              affiliate_link_id: String(tracking.id),
+              destination_url: input.url,
+              label: trackingLabel,
+            },
+          },
+        },
+      });
+    }
+
+    // Update CTA variants to point to click route
+    await admin
+      .from("cta_variants" as never)
+      .update({
+        destination_type: "external_url",
+        destination_value: `/api/affiliate/click/${String(tracking.id)}`,
+        updated_at: nowIso(),
+      } as never)
+      .eq("organization_id", organizationId)
+      .eq("funnel_id", funnelId);
+
     // Email sequence (connect templates)
+    const seqPlan = asRecord(asRecord(emailAutomationWorker.output).sequence);
+    const seqName = typeof seqPlan.name === "string" ? seqPlan.name : `Pipeline sequence · ${input.goal}`;
+    const seqDesc = typeof seqPlan.description === "string" ? seqPlan.description : `Auto-drafted by marketing pipeline. Requires approval before activation.`;
+    const seqActive = typeof seqPlan.is_active === "boolean" ? seqPlan.is_active : false;
     const sequence = await toolOk<any>({
       ...envelopeBase,
       campaign_id: campaignId,
@@ -1144,9 +1278,9 @@ export async function runMarketingPipeline(params: {
       input: {
         organizationId,
         campaign_id: campaignId,
-        name: `Pipeline sequence · ${input.goal}`.slice(0, 120),
-        description: `Auto-drafted by marketing pipeline. Requires approval before activation.`,
-        is_active: false,
+        name: String(seqName).slice(0, 120),
+        description: String(seqDesc).slice(0, 400),
+        is_active: Boolean(seqActive) && input.approvalMode !== "required",
       },
     });
     createdRecords.push({ table: "email_sequences", id: String(sequence.id), label: sequence.name });
@@ -1159,6 +1293,8 @@ export async function runMarketingPipeline(params: {
       .order("created_at", { ascending: false })
       .limit(5);
     const templateIds = (templates ?? []).map((t: any) => String(t.id)).reverse();
+    const delays = asStringArray(asRecord(emailAutomationWorker.output).step_delays_minutes).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n >= 0);
+    const delayMinutes = delays.length ? delays : [0, 1440, 2880, 4320, 5760];
     for (let i = 0; i < templateIds.length; i += 1) {
       const step = await toolOk<any>({
         ...envelopeBase,
@@ -1168,7 +1304,7 @@ export async function runMarketingPipeline(params: {
           organizationId,
           sequence_id: String(sequence.id),
           template_id: templateIds[i],
-          delay_minutes: i * 60 * 24,
+          delay_minutes: delayMinutes[i] ?? i * 60 * 24,
         },
       });
       createdRecords.push({ table: "email_sequence_steps", id: String(step.id), label: `step_${i + 1}` });
@@ -1214,10 +1350,32 @@ export async function runMarketingPipeline(params: {
       return a;
     };
 
-    await approvalTool("content_publishing", { reason: "Review landing/bridge + content drafts before publishing", pipeline_run_id: pipelineRunId });
-    await approvalTool("email_sending", { reason: "Review sequence before activation", sequence_id: String(sequence.id), pipeline_run_id: pipelineRunId });
-    await approvalTool("ads_activation", { reason: "Review ad creatives before activating ads", pipeline_run_id: pipelineRunId });
-    await approvalTool("affiliate_cta_activation", { reason: "Review tracking link/CTA before activation", link_id: String(tracking.id), pipeline_run_id: pipelineRunId });
+    await approvalTool("content_publishing", {
+      reason: "Review landing/bridge + content drafts before publishing",
+      pipeline_run_id: pipelineRunId,
+      target_entity_type: "campaign",
+      target_entity_id: campaignId,
+    });
+    await approvalTool("email_sending", {
+      reason: "Review sequence before activation",
+      sequence_id: String(sequence.id),
+      pipeline_run_id: pipelineRunId,
+      target_entity_type: "email_sequence",
+      target_entity_id: String(sequence.id),
+    });
+    await approvalTool("ads_activation", {
+      reason: "Review ad creatives before activating ads",
+      pipeline_run_id: pipelineRunId,
+      target_entity_type: "campaign",
+      target_entity_id: campaignId,
+    });
+    await approvalTool("affiliate_cta_activation", {
+      reason: "Review tracking link/CTA before activation",
+      link_id: String(tracking.id),
+      pipeline_run_id: pipelineRunId,
+      target_entity_type: "tracking_link",
+      target_entity_id: String(tracking.id),
+    });
 
     await insertStageOutput({
       organizationId,
@@ -1230,6 +1388,15 @@ export async function runMarketingPipeline(params: {
         email_sequence_id: String(sequence.id),
         automation_rule_count: rules?.length ?? 0,
         approval_count: approvalItems.length,
+        worker_run_ids: {
+          tracking_worker: trackingWorker.runId,
+          lead_capture_worker: leadCaptureWorker.runId,
+          email_automation_worker: emailAutomationWorker.runId,
+          funnel_publisher: funnelPublisher.runId,
+          performance_marketer: performanceMarketer.runId,
+        },
+        publish_checklist: asStringArray(asRecord(funnelPublisher.output).publish_checklist),
+        launch_checklist: asStringArray(asRecord(performanceMarketer.output).launch_checklist),
       },
       createdRecordRefs: createdRecords,
     });
