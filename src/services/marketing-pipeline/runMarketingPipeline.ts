@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { executeOpenClawTool } from "@/lib/openclaw/tools/executor";
 import { env } from "@/lib/env";
 import { writeAuditLog } from "@/services/audit/auditService";
+import { runWorkerAndPersist } from "@/services/marketing-pipeline/workerRunner";
 
 import {
   marketingPipelineStageKeySchema,
@@ -441,24 +442,78 @@ export async function runMarketingPipeline(params: {
     // ---------------- Stage 1: RESEARCH ----------------
     await log("research", "info", "Research stage started", { url: input.url, goal: input.goal, audience: input.audience });
     const researchFallback = stubResearch(input);
-    const researchRes = await maybeInternalLlmJson({
+    const offer = await runWorkerAndPersist({
+      organizationId,
+      campaignId: null,
+      pipelineRunId,
+      stageKey: "research",
+      workerKey: "offer_analyst",
+      actorUserId: params.actorUserId,
       provider: input.provider,
-      prompt: `Generate RESEARCH output JSON for URL=${input.url} audience=${input.audience} goal=${input.goal} traffic=${input.trafficSource}.`,
-      schemaHint:
-        "Return JSON with keys: offer_summary, competitor_angles[], pain_points[], icp{audience,goal,traffic_source}, hook_opportunities[], landing_page_notes[].",
+      input: { url: input.url, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource, notes: input.notes ?? null },
+      schemaHint: "Return JSON with keys: offer_summary, pain_points[], objections[], mechanism, cta_recommendations{primary,secondary}.",
+      prompt: `Analyze URL=${input.url}. Mode=${input.mode}. Audience=${input.audience}. Goal=${input.goal}. Traffic=${input.trafficSource}.`,
       fallback: researchFallback,
     });
-    const research = researchRes.json as Record<string, unknown>;
+    const ads = await runWorkerAndPersist({
+      organizationId,
+      campaignId: null,
+      pipelineRunId,
+      stageKey: "research",
+      workerKey: "ads_analyst",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { url: input.url, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource },
+      schemaHint: "Return JSON with keys: platform_constraints{}, angle_themes[], hook_starters[], targeting_hypotheses[].",
+      prompt: `Analyze platform=${input.trafficSource} for audience=${input.audience} goal=${input.goal}.`,
+      fallback: { provider_mode: "stub" },
+    });
+    const comp = await runWorkerAndPersist({
+      organizationId,
+      campaignId: null,
+      pipelineRunId,
+      stageKey: "research",
+      workerKey: "competitor_researcher",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { url: input.url, audience: input.audience, goal: input.goal },
+      schemaHint: "Return JSON with keys: competitor_angle_themes[], common_promises[], differentiation_opportunities[], risk_notes[].",
+      prompt: `Summarize competitor messaging patterns relevant to ${input.url} and audience=${input.audience}.`,
+      fallback: { provider_mode: "stub" },
+    });
+    const lp = await runWorkerAndPersist({
+      organizationId,
+      campaignId: null,
+      pipelineRunId,
+      stageKey: "research",
+      workerKey: "landing_page_analyst",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { offer: offer.output, ads: ads.output, competitors: comp.output },
+      schemaHint: "Return JSON with keys: headline_options[], section_outline[], cta_plan[], notes[].",
+      prompt: `Create landing page analysis for traffic=${input.trafficSource} goal=${input.goal}.`,
+      fallback: { provider_mode: "stub" },
+    });
+
+    const research = {
+      offer: offer.output,
+      ads: ads.output,
+      competitors: comp.output,
+      landing: lp.output,
+      icp: { audience: input.audience, goal: input.goal, traffic_source: input.trafficSource },
+      provider_mode: offer.meta?.provider ?? "stub",
+    } as Record<string, unknown>;
+
     await upsertSkillOutput({
       organizationId,
       pipelineRunId,
       stageId: stages.research.id,
-      skillKey: "offer_analyst",
-      status: "completed",
+      skillKey: "research_bundle",
+      status: offer.ok ? "completed" : "failed",
       input: { url: input.url, goal: input.goal, audience: input.audience },
       output: research,
       provider: String(input.provider),
-      metadata: { planner_meta: researchRes.meta },
+      metadata: { worker_run_ids: { offer: offer.runId, ads: ads.runId, competitor: comp.runId, landing: lp.runId } },
     });
     await insertStageOutput({
       organizationId,
@@ -483,25 +538,56 @@ export async function runMarketingPipeline(params: {
     await setStageStatus({ organizationId, pipelineRunId, stageId: stages.strategy.id, stageKey: "strategy", status: "running" });
     stages.strategy.status = "running";
     await log("strategy", "info", "Strategy stage started", { provider: input.provider });
-    const strategyFallback = stubStrategy(input, research);
-    const strategyRes = await maybeInternalLlmJson({
+    const head = await runWorkerAndPersist({
+      organizationId,
+      campaignId: null,
+      pipelineRunId,
+      stageKey: "strategy",
+      workerKey: "head_of_marketing",
+      actorUserId: params.actorUserId,
       provider: input.provider,
-      prompt: `Generate STRATEGY output JSON from research. Provide campaign_strategy, funnel_plan, brand_angle, cta_strategy, traffic_plan.`,
-      schemaHint:
-        "Return JSON with keys: campaign_strategy{}, funnel_plan{steps[]}, brand_angle, cta_strategy{primary,secondary}, traffic_plan{source,content_types[]}.",
-      fallback: strategyFallback,
+      input: { research, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource },
+      schemaHint: "Return JSON with keys: campaign_strategy{}, funnel_plan{steps[]}, traffic_plan{}, risk_checklist[].",
+      prompt: `Create strategy from research for goal=${input.goal} traffic=${input.trafficSource}.`,
+      fallback: stubStrategy(input, research),
     });
-    const strategy = strategyRes.json as Record<string, unknown>;
+    const brand = await runWorkerAndPersist({
+      organizationId,
+      campaignId: null,
+      pipelineRunId,
+      stageKey: "strategy",
+      workerKey: "brand_strategist",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { research, strategy: head.output },
+      schemaHint: "Return JSON with keys: tone, messaging_pillars[], words_to_use[], words_to_avoid[], credibility_needs[].",
+      prompt: "Generate brand voice + messaging pillars.",
+      fallback: { provider_mode: "stub" },
+    });
+    const planner = await runWorkerAndPersist({
+      organizationId,
+      campaignId: null,
+      pipelineRunId,
+      stageKey: "strategy",
+      workerKey: "campaign_planner",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { research, strategy: head.output, brand: brand.output },
+      schemaHint: "Return JSON with keys: build_checklist[], asset_counts{}, approvals_to_request[].",
+      prompt: "Convert strategy into concrete build checklist and asset counts.",
+      fallback: { provider_mode: "stub" },
+    });
+    const strategy = { head: head.output, brand: brand.output, plan: planner.output } as Record<string, unknown>;
     await upsertSkillOutput({
       organizationId,
       pipelineRunId,
       stageId: stages.strategy.id,
-      skillKey: "head_of_marketing",
-      status: "completed",
+      skillKey: "strategy_bundle",
+      status: head.ok ? "completed" : "failed",
       input: { research },
       output: strategy,
       provider: String(input.provider),
-      metadata: { planner_meta: strategyRes.meta },
+      metadata: { worker_run_ids: { head: head.runId, brand: brand.runId, planner: planner.runId } },
     });
 
     // Create campaign + funnel (safe tool layer)
@@ -518,7 +604,7 @@ export async function runMarketingPipeline(params: {
         status: "draft",
         target_audience: input.audience,
         description: [input.notes, `URL: ${input.url}`].filter(Boolean).join("\n"),
-        metadata: { marketing_pipeline: { run_id: pipelineRunId, trace_id: traceId, strategy } },
+        metadata: { marketing_pipeline: { run_id: pipelineRunId, trace_id: traceId, strategy_bundle: strategy } },
       },
     });
     campaignId = String(campaign.id);
@@ -703,9 +789,9 @@ export async function runMarketingPipeline(params: {
       metadata: { pipeline_run_id: pipelineRunId, trace_id: traceId, index: i },
       updated_at: nowIso(),
     }));
-    const { data: ads, error: adErr } = await admin.from("ad_creatives" as never).insert(adRows as never).select("id");
+    const { data: adCreatives, error: adErr } = await admin.from("ad_creatives" as never).insert(adRows as never).select("id");
     if (!adErr) {
-      for (const r of (ads ?? []) as any[]) createdRecords.push({ table: "ad_creatives", id: String(r.id), label: "ad_creative" });
+      for (const r of (adCreatives ?? []) as any[]) createdRecords.push({ table: "ad_creatives", id: String(r.id), label: "ad_creative" });
     } else {
       warnings.push(`ad_creatives insert failed (kept going): ${adErr.message}`);
       await log("creation", "warn", "Failed to insert ad_creatives (non-fatal)", { error: adErr.message });
