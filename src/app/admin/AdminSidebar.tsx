@@ -49,6 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/ai-command", label: "AI Command", icon: Bot, description: "Plan + launch pipeline" },
       { href: "/admin/launch", label: "Autopilot Launch", icon: Rocket, description: "One-click workspace" },
+      { href: "/admin/creation-hub", label: "Creation Hub", icon: LayoutGrid, description: "See, test, delete" },
       { href: "/admin/campaigns", label: "Campaigns", icon: Megaphone, description: "Workspaces + pipeline" },
       { href: "/admin/approvals", label: "Approvals", icon: CheckCircle2, description: "Review high-risk actions" },
       { href: "/admin", label: "Overview", icon: LayoutGrid, description: "Status + next actions" },
@@ -214,4 +215,3 @@ export function AdminSidebar(props: {
     </div>
   );
 }
-
