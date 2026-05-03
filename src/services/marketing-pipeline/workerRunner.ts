@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
 
@@ -17,6 +19,62 @@ export type WorkerRunParams = {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function titleCaseWorkerKey(key: string) {
+  return key
+    .split("_")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** Marketing OS worker keys (e.g. offer_analyst) are not always in OPENCLAW_AGENT_REGISTRY; ensure a real FK row exists. */
+async function ensureAgentIdForWorkerKey(
+  admin: SupabaseClient,
+  organizationId: string,
+  workerKey: string,
+): Promise<string> {
+  const { data: existing, error: selErr } = await admin
+    .from("agents" as never)
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("key", workerKey)
+    .maybeSingle();
+  if (selErr) throw new Error(selErr.message);
+  if (existing) return String((existing as { id: string }).id);
+
+  const name = titleCaseWorkerKey(workerKey);
+  const { data: upserted, error: upErr } = await admin
+    .from("agents" as never)
+    .upsert(
+      {
+        organization_id: organizationId,
+        key: workerKey,
+        name: name || workerKey,
+        description: "Marketing pipeline worker (auto-provisioned for this organization).",
+        status: "enabled",
+        approval_required: false,
+        allowed_tools: [],
+        input_schema: {},
+        output_schema: {},
+      } as never,
+      { onConflict: "organization_id,key" },
+    )
+    .select("id")
+    .single();
+
+  if (upErr || !upserted) {
+    const { data: again } = await admin
+      .from("agents" as never)
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("key", workerKey)
+      .maybeSingle();
+    if (again) return String((again as { id: string }).id);
+    throw new Error(upErr?.message ?? "Failed to provision pipeline worker agent");
+  }
+  return String((upserted as { id: string }).id);
 }
 
 function extractJsonObject(text: string): string | null {
@@ -109,20 +167,13 @@ export async function runWorkerAndPersist(params: WorkerRunParams): Promise<{
 }> {
   const admin = createSupabaseAdminClient();
 
-  // best-effort agent lookup by key; if missing, use a placeholder id-less run by writing to outputs only
-  const { data: agent } = await admin
-    .from("agents" as never)
-    .select("id")
-    .eq("organization_id", params.organizationId)
-    .eq("key", params.workerKey)
-    .maybeSingle();
-  const agentId = agent ? String((agent as any).id) : null;
+  const agentId = await ensureAgentIdForWorkerKey(admin, params.organizationId, params.workerKey);
 
   const { data: run, error: runErr } = await admin
     .from("agent_runs" as never)
     .insert({
       organization_id: params.organizationId,
-      agent_id: agentId ?? "00000000-0000-0000-0000-000000000000",
+      agent_id: agentId,
       campaign_id: params.campaignId,
       status: "running",
       input: {
