@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
+import { fetchWorkspaceDisplayBundle } from "@/services/workspace/workspaceDisplayBundle";
 
 const qSchema = z.object({ organizationId: z.string().uuid() });
 
@@ -21,7 +22,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ campaignId:
 
   const orgId = parsed.data.organizationId;
 
-  const [campaign, funnel, steps, content, templates, sequences, seqSteps, agents, approvals, logs, toolCalls, runs, outputs] =
+  const [campaign, funnel, content, templates, sequences, seqSteps, agents, approvals, logs, toolCalls, runs, outputs] =
     await Promise.all([
       ctxOrg.supabase
         .from("campaigns" as never)
@@ -37,12 +38,6 @@ export async function GET(request: Request, ctx: { params: Promise<{ campaignId:
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      ctxOrg.supabase
-        .from("funnel_steps" as never)
-        .select("id,funnel_id,step_index,name,step_type,slug,metadata,created_at,updated_at")
-        .eq("organization_id", orgId)
-        .order("step_index", { ascending: true })
-        .limit(200),
       ctxOrg.supabase
         .from("content_assets" as never)
         .select("id,title,status,platform,campaign_id,funnel_id,created_at,updated_at")
@@ -112,6 +107,22 @@ export async function GET(request: Request, ctx: { params: Promise<{ campaignId:
   if (campaign.error) return NextResponse.json({ ok: false, message: campaign.error.message }, { status: 500 });
   if (!campaign.data) return NextResponse.json({ ok: false, message: "Campaign not found" }, { status: 404 });
 
+  const funnelRow = funnel.data as { id?: string } | null;
+  const funnelId = funnelRow?.id;
+  const steps = funnelId
+    ? await ctxOrg.supabase
+        .from("funnel_steps" as never)
+        .select("id,funnel_id,step_index,name,step_type,slug,metadata,created_at,updated_at")
+        .eq("organization_id", orgId)
+        .eq("funnel_id", funnelId)
+        .order("step_index", { ascending: true })
+        .limit(200)
+    : { data: [] as never[], error: null };
+
+  if (steps.error) return NextResponse.json({ ok: false, message: steps.error.message }, { status: 500 });
+
+  const workspaceDisplay = await fetchWorkspaceDisplayBundle(ctxOrg.supabase, orgId, campaignId);
+
   return NextResponse.json({
     ok: true,
     campaign: campaign.data,
@@ -127,6 +138,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ campaignId:
     tool_calls: toolCalls.data ?? [],
     agent_runs: runs.data ?? [],
     agent_outputs: outputs.data ?? [],
+    workspaceDisplay,
   });
 }
 

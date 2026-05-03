@@ -41,17 +41,23 @@ type NavItem = {
   description?: string;
 };
 
-type NavGroup = { title: "CORE" | "BUILD" | "INTELLIGENCE" | "SYSTEM"; items: NavItem[] };
+type NavGroup = { title: "AI WORKSPACE" | "CORE" | "BUILD" | "INTELLIGENCE" | "SYSTEM"; items: NavItem[] };
 
 const NAV_GROUPS: NavGroup[] = [
   {
+    title: "AI WORKSPACE",
+    items: [
+      { href: "/admin/ai-command", label: "AI Command", icon: Bot, description: "Plan → build → review" },
+      { href: "/admin/campaigns", label: "Campaign workspaces", icon: Megaphone, description: "Per-campaign cockpit" },
+      { href: "/admin/approvals", label: "Approvals", icon: CheckCircle2, description: "Publish / send gates" },
+    ],
+  },
+  {
     title: "CORE",
     items: [
-      { href: "/admin/ai-command", label: "AI Command", icon: Bot, description: "Plan + launch pipeline" },
       { href: "/admin/launch", label: "Autopilot Launch", icon: Rocket, description: "One-click workspace" },
       { href: "/admin/creation-hub", label: "Creation Hub", icon: LayoutGrid, description: "See, test, delete" },
       { href: "/admin/campaigns", label: "Campaigns", icon: Megaphone, description: "Workspaces + pipeline" },
-      { href: "/admin/approvals", label: "Approvals", icon: CheckCircle2, description: "Review high-risk actions" },
       { href: "/admin", label: "Overview", icon: LayoutGrid, description: "Status + next actions" },
     ],
   },

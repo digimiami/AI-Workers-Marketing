@@ -4,6 +4,11 @@ import { z } from "zod";
 
 import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  buildRunTimeline,
+  fetchWorkspaceDisplayBundle,
+  type PipelineRunSnapshot,
+} from "@/services/workspace/workspaceDisplayBundle";
 
 const paramsSchema = z.object({ runId: z.string().uuid() });
 
@@ -79,6 +84,40 @@ export async function GET(_request: Request, ctx: { params: Promise<{ runId: str
     approvals: asRows<any>(pipelineApprovals),
   };
 
-  return NextResponse.json({ ok: true, run: out });
+  const orgId = String((run as any).organization_id);
+  const campaignId = (run as any).campaign_id ? String((run as any).campaign_id) : null;
+
+  let workspaceDisplay: Awaited<ReturnType<typeof fetchWorkspaceDisplayBundle>> | null = null;
+  if (campaignId) {
+    workspaceDisplay = await fetchWorkspaceDisplayBundle(admin, orgId, campaignId);
+  }
+
+  const stageRows = asRows<any>(stages);
+  const snapshot: PipelineRunSnapshot = {
+    status: String((run as any).status ?? "pending"),
+    current_stage: (run as any).current_stage ? String((run as any).current_stage) : null,
+    stages: stageRows.map((s: any) => ({
+      stage_key: String(s.stage_key ?? ""),
+      status: String(s.status ?? "pending"),
+      output_summary: s.output_summary ?? null,
+      error_message: s.error_message ?? null,
+    })),
+    logs: asRows<any>(logs).map((l: any) => ({
+      id: String(l.id),
+      level: String(l.level ?? "info"),
+      message: String(l.message ?? ""),
+      created_at: String(l.created_at ?? ""),
+      stage_id: l.stage_id ? String(l.stage_id) : null,
+    })),
+  };
+
+  const runTimeline = buildRunTimeline(snapshot, workspaceDisplay);
+
+  return NextResponse.json({
+    ok: true,
+    run: out,
+    workspaceDisplay,
+    runTimeline,
+  });
 }
 

@@ -3,10 +3,11 @@
 import * as React from "react";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { toast } from "sonner";
-import { ArrowRight, CheckCircle2, Loader2, Rocket, ShieldAlert, Sparkles } from "lucide-react";
+import { ArrowRight, Loader2, Rocket, ShieldAlert, Sparkles, Wand2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PipelineStepper } from "@/components/ai/PipelineStepper";
+import { cn } from "@/lib/utils";
 
 const providerSchema = z.enum(["openclaw", "internal_llm", "hybrid"]);
 const modeSchema = z.enum([
@@ -74,7 +76,13 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
+type MarketingPipelineRunApi = {
+  ok: boolean;
+  run?: Record<string, unknown>;
+};
+
 export function AiCommandCenterClient({ organizationId }: { organizationId: string }) {
+  const router = useRouter();
   const [provider, setProvider] = React.useState<Provider>("hybrid");
   const [mode, setMode] = React.useState<Mode>("create_campaign");
 
@@ -91,7 +99,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
   const [approvalMode, setApprovalMode] = React.useState<"required" | "auto_draft">("auto_draft");
   const [orgMode, setOrgMode] = React.useState<"existing" | "create">("existing");
   const [orgName, setOrgName] = React.useState("");
-  const [cockpitStep, setCockpitStep] = React.useState<1 | 2 | 3>(1);
+  const [cockpitStep, setCockpitStep] = React.useState<1 | 2>(1);
 
   const [planOverride, setPlanOverride] = React.useState<string>("");
   const [approvedPlan, setApprovedPlan] = React.useState<Plan | null>(null);
@@ -134,6 +142,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
       setPlanOverride(JSON.stringify(j.plan, null, 2));
       setPlannerMeta(j.planner ?? null);
       toast.success("Plan generated");
+      setCockpitStep(2);
 
       if (autonomous) {
         setApprovedPlan(j.plan);
@@ -219,13 +228,16 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
   const pipelineRunQuery = useQuery({
     queryKey: ["marketing-pipeline-run", activePipelineRunId],
     enabled: Boolean(activePipelineRunId),
-    refetchInterval: 2000,
+    refetchInterval: (q) => {
+      const st = String((q.state.data as MarketingPipelineRunApi | null | undefined)?.run?.status ?? "");
+      return st === "running" || st === "pending" ? 2000 : false;
+    },
     queryFn: async () => {
       const runId = activePipelineRunId;
       if (!runId) return null;
       const res = await fetch(`/api/admin/marketing-pipeline/runs/${runId}`);
       if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as unknown;
+      return (await res.json()) as MarketingPipelineRunApi;
     },
   });
 
@@ -259,7 +271,14 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
       setActivePipelineRunId(runId || null);
       setLastPipeline(runId ? { pipelineRunId: runId, campaignId: cId } : null);
       if (cId) setCampaignId(cId);
-      toast.success("Pipeline run completed");
+      const errs = asStringArray(out.errors);
+      const okFlag = out.ok !== false && errs.length === 0;
+      if (okFlag) {
+        toast.success("Pipeline run completed");
+        if (runId) router.push(`/admin/workspace/review/run/${runId}`);
+      } else {
+        toast.error(errs.length ? errs.join(" · ") : "Pipeline finished with errors");
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Pipeline run failed"),
   });
@@ -280,112 +299,170 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
     url.trim() && goal.trim() && audience.trim() && trafficSource.trim() && (orgMode !== "create" || orgName.trim().length >= 2),
   );
 
+  const planStageCards = React.useMemo(
+    () => [
+      { key: "research", title: "Research", worker: "Offer + competitor analysts", creates: "Offer summary, hooks, objections", approval: "No" },
+      { key: "strategy", title: "Strategy", worker: "Head of marketing + planners", creates: "Campaign + funnel blueprint", approval: "No" },
+      { key: "creation", title: "Build", worker: "Copy, design, email, ads", creates: "Landing, funnel, content, creatives", approval: "Drafts" },
+      { key: "execution", title: "Launch prep", worker: "Tracking + lead capture", creates: "Forms, links, approvals", approval: "Publish gates" },
+      { key: "optimization", title: "Optimize", worker: "Analytics + CRO", creates: "KPI baseline + tests", approval: "No" },
+    ],
+    [],
+  );
+
+  const applyQuickChip = (chip: string) => {
+    const g = goal.trim();
+    switch (chip) {
+      case "affiliate":
+        setCampaignType("affiliate");
+        setMode("create_campaign");
+        if (!g) setGoal("Drive affiliate clicks and conversions from paid social.");
+        break;
+      case "client":
+        setCampaignType("client");
+        setMode("create_campaign");
+        if (!g) setGoal("Generate qualified leads for a client offer.");
+        break;
+      case "lead":
+        setMode("create_campaign");
+        if (!g) setGoal("Capture leads with a high-intent landing + nurture path.");
+        break;
+      case "shortform":
+        setMode("generate_content");
+        if (!g) setGoal("Produce short-form hooks and scripts for TikTok / Shorts / Reels.");
+        break;
+      case "nurture":
+        setMode("build_email_sequence");
+        if (!g) setGoal("Build an email nurture sequence after opt-in.");
+        break;
+      case "funnel":
+        setMode("build_funnel");
+        if (!g) setGoal("Design a bridge funnel from ad click to conversion.");
+        break;
+      case "ads":
+        setMode("create_ads");
+        if (!g) setGoal("Generate ad angles and primary text for paid channels.");
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">AI Command Center</h1>
-        <p className="text-sm text-muted-foreground">URL → AI Plan → Campaign Workspace → Approvals → Results</p>
+        <p className="text-sm text-muted-foreground">URL → plan → build → live workspace with every module visible.</p>
       </div>
 
-      {/* One-click Autopilot */}
-      <Card className="glass-panel border-border/60">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="h-5 w-5 text-primary/90" />
-            Paste a URL. AiWorkers builds the campaign.
-          </CardTitle>
-          <CardDescription>
-            Campaign, funnel, content, ads, email sequence, lead capture, analytics, and approvals — created as a connected workspace.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <ShieldAlert className="h-4 w-4" />
-            High‑risk actions stay approval‑gated.
+      <Card className="glass-panel border-border/60 overflow-hidden shadow-sm">
+        <div className="border-b border-border/50 bg-gradient-to-r from-primary/10 via-transparent to-sky-500/10 px-4 py-3 md:px-6">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span>AI marketing cockpit</span>
+            <span className="text-border">|</span>
+            <ShieldAlert className="h-3.5 w-3.5" />
+            <span>Risky publish/send actions stay approval‑gated.</span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              onClick={() => {
-                setCockpitStep(2);
-                toast.message("AI Plan ready", { description: "Review the pipeline plan, then launch the workspace." });
-              }}
-              disabled={!canGeneratePlan}
-            >
-              Generate AI Plan
-              <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setCockpitStep(1)}>
-              Edit inputs
-            </Button>
+        </div>
+        <CardContent className="space-y-6 p-4 md:p-6">
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Command</Label>
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Paste affiliate link or client website…"
+              className="h-12 rounded-xl border-border/70 bg-background/80 text-base shadow-inner"
+            />
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Cockpit steps */}
-      <Card className="glass-panel border-border/60">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">
-            Step {cockpitStep}: {cockpitStep === 1 ? "Give AI the URL" : cockpitStep === 2 ? "Review AI plan" : "Launch workspace"}
-          </CardTitle>
-          <CardDescription>
-            {cockpitStep === 1
-              ? "Paste the URL and define goal, audience, and traffic source."
-              : cockpitStep === 2
-                ? "Review what AI will build across the 5 stages."
-                : "Launching the connected workspace (pipeline)."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ["affiliate", "Affiliate campaign"],
+                ["client", "Client campaign"],
+                ["lead", "Lead generation"],
+                ["shortform", "Short-form content"],
+                ["nurture", "Email nurture"],
+                ["funnel", "Funnel build"],
+                ["ads", "Ad creative"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => applyQuickChip(id)}
+                className={cn(
+                  "rounded-full border border-border/60 bg-background/60 px-3 py-1.5 text-xs font-medium transition hover:border-primary/40 hover:bg-primary/5",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {cockpitStep === 1 ? (
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2">
-                <Label>URL</Label>
-                <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" />
-              </div>
-              <div className="space-y-2">
-                <Label>Campaign type</Label>
-                <Select value={campaignType} onValueChange={(v) => setCampaignType(v === "client" ? "client" : "affiliate")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pick campaign type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="affiliate">Affiliate</SelectItem>
-                    <SelectItem value="client">Client</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Approval mode</Label>
-                <Select value={approvalMode} onValueChange={(v) => setApprovalMode(v === "required" ? "required" : "auto_draft")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pick approval mode" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto_draft">Auto drafts (approvals for risky actions)</SelectItem>
-                    <SelectItem value="required">Require approval before execution</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2 md:col-span-2">
                 <Label>Goal</Label>
-                <Textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={3} placeholder="Generate leads + clicks from TikTok." />
+                <Textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={3} placeholder="Generate leads and affiliate clicks…" />
               </div>
               <div className="space-y-2">
                 <Label>Audience</Label>
-                <Input value={audience} onChange={(e) => setAudience(e.target.value)} placeholder="small business owners" />
+                <Input value={audience} onChange={(e) => setAudience(e.target.value)} placeholder="Small business owners" />
               </div>
               <div className="space-y-2">
                 <Label>Traffic source</Label>
-                <Input value={trafficSource} onChange={(e) => setTrafficSource(e.target.value)} placeholder="TikTok" />
+                <Input value={trafficSource} onChange={(e) => setTrafficSource(e.target.value)} placeholder="TikTok + YouTube Shorts" />
               </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Notes (optional)</Label>
-                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-              </div>
-              <div className="md:col-span-2 flex items-center justify-end gap-2">
+              <details className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2 md:col-span-2">
+                <summary className="cursor-pointer select-none text-sm font-medium">Advanced</summary>
+                <div className="mt-3 grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Campaign type</Label>
+                    <Select value={campaignType} onValueChange={(v) => setCampaignType(v === "client" ? "client" : "affiliate")}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pick campaign type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="affiliate">Affiliate</SelectItem>
+                        <SelectItem value="client">Client</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Approval mode</Label>
+                    <Select value={approvalMode} onValueChange={(v) => setApprovalMode(v === "required" ? "required" : "auto_draft")}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pick approval mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto_draft">Auto drafts (risky actions only)</SelectItem>
+                        <SelectItem value="required">Require approval before execution</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Notes (optional)</Label>
+                    <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+                  </div>
+                </div>
+              </details>
+              <div className="md:col-span-2 flex flex-wrap justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    if (!canGeneratePlan) return;
+                    planMutation.mutate();
+                  }}
+                  disabled={!canGeneratePlan || planMutation.isPending}
+                >
+                  {planMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                  <span className="ml-2">Generate plan</span>
+                </Button>
                 <Button type="button" onClick={() => setCockpitStep(2)} disabled={!canGeneratePlan}>
-                  Continue to AI Plan
+                  Skip to build preview
                   <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
                 </Button>
               </div>
@@ -393,166 +470,107 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
           ) : null}
 
           {cockpitStep === 2 ? (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <PipelineStepper
                 compact
                 stages={[
-                  { key: "research", status: "pending", summary: "Analyze URL + offer + competition" },
-                  { key: "strategy", status: "pending", summary: "Define funnel + messaging + build plan" },
-                  { key: "creation", status: "pending", summary: "Draft pages, ads, emails, CTAs" },
-                  { key: "execution", status: approvalMode === "required" ? "needs_approval" : "pending", summary: "Wire tracking, lead capture, sequences, approvals" },
-                  { key: "optimization", status: "pending", summary: "Baseline metrics + tests + recommendations" },
+                  { key: "research", status: planMutation.isSuccess || parsedPlan ? "completed" : "pending", summary: "URL + market scan" },
+                  { key: "strategy", status: parsedPlan ? "completed" : "pending", summary: "Plan + worker routing" },
+                  { key: "creation", status: "pending", summary: "Assets across modules" },
+                  { key: "execution", status: approvalMode === "required" ? "needs_approval" : "pending", summary: "Tracking + approvals" },
+                  { key: "optimization", status: "pending", summary: "Measurement + tests" },
                 ]}
               />
 
-              <div className="grid gap-3 md:grid-cols-5">
-                {[
-                  {
-                    k: "research",
-                    title: "Research",
-                    body: ["Analyze the URL + offer", "Audience + objections", "Competitor/angle scan"],
-                    approvals: "No",
-                  },
-                  {
-                    k: "strategy",
-                    title: "Strategy",
-                    body: ["Campaign strategy + funnel map", "Build checklist", "Draft approvals needed"],
-                    approvals: "No",
-                  },
-                  {
-                    k: "creation",
-                    title: "Creation",
-                    body: ["Landing/bridge copy", "Ad creatives + hooks", "Email templates + sequence draft"],
-                    approvals: "Drafts only",
-                  },
-                  {
-                    k: "execution",
-                    title: "Execution",
-                    body: ["Tracking link + events", "Lead capture form", "Approvals created (publish/send/activate)"],
-                    approvals: approvalMode === "required" ? "Yes (before activation)" : "Yes (risky actions)",
-                  },
-                  {
-                    k: "optimization",
-                    title: "Optimization",
-                    body: ["Baseline KPIs", "Test plan + CRO ideas", "Recommendations + weekly report draft"],
-                    approvals: "No",
-                  },
-                ].map((s) => (
-                  <Card key={s.k} className="border-border/60 bg-background/40">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">{s.title}</CardTitle>
-                      <CardDescription className="text-xs">
-                        Approvals: <span className="font-medium">{s.approvals}</span>
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <ul className="text-xs text-muted-foreground space-y-1">
-                        {s.body.map((b) => (
-                          <li key={b} className="flex gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-primary/70 shrink-0" />
-                            <span>{b}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </CardContent>
-                  </Card>
-                ))}
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold">AI plan</h3>
+                  {plannerMeta ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      {plannerMeta.used ? `Model · ${plannerMeta.model ?? ""}` : "Planner fallback"}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  {planStageCards.map((s) => (
+                    <Card key={s.key} className="border-border/60 bg-background/50">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">{s.title}</CardTitle>
+                        <CardDescription className="text-[11px] space-y-1">
+                          <div>
+                            <span className="font-medium text-foreground/90">Worker:</span> {s.worker}
+                          </div>
+                          <div>
+                            <span className="font-medium text-foreground/90">Creates:</span> {s.creates}
+                          </div>
+                          <div>
+                            <span className="font-medium text-foreground/90">Approval:</span> {s.approval}
+                          </div>
+                        </CardDescription>
+                      </CardHeader>
+                    </Card>
+                  ))}
+                </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Button variant="secondary" onClick={() => setCockpitStep(1)}>
-                  Back
-                </Button>
-                <Button
-                  onClick={() => {
-                    setCockpitStep(3);
-                    pipelineMutation.mutate();
-                  }}
-                  disabled={pipelineMutation.isPending || !canGeneratePlan}
-                >
-                  <Rocket className="h-4 w-4 mr-2" />
-                  Launch workspace
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {cockpitStep === 3 ? (
-            <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                <Card className="border-border/60 bg-background/40">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Execution</CardTitle>
-                    <CardDescription className="text-xs">Pipeline run status</CardDescription>
-                  </CardHeader>
-                  <CardContent className="text-sm text-muted-foreground">
-                    {pipelineMutation.isPending ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Launching…
-                      </div>
-                    ) : activePipelineRunId ? (
-                      <div className="space-y-1">
-                        <div className="text-xs">
-                          Run: <span className="font-mono">{activePipelineRunId}</span>
+              {parsedPlan?.steps?.length ? (
+                <div className="rounded-xl border border-border/60 bg-muted/15 p-3 space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Detailed steps</div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {parsedPlan.steps.map((st, i) => (
+                      <div key={`${st.name}-${i}`} className="rounded-lg border border-border/50 bg-card/60 p-2 text-xs">
+                        <div className="font-medium">{st.name}</div>
+                        <div className="mt-1 text-muted-foreground">
+                          Outputs: {st.records_to_create?.join(", ") || "—"}
+                        </div>
+                        <div className="mt-1 text-muted-foreground">
+                          Tools: {(st.tools_needed ?? []).slice(0, 4).join(", ")}
+                          {(st.tools_needed?.length ?? 0) > 4 ? "…" : ""}
+                        </div>
+                        <div className="mt-1">
+                          {st.approval_required ? (
+                            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-200">
+                              Approval required
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground">No approval</span>
+                          )}
                         </div>
                       </div>
-                    ) : (
-                      <div className="text-xs">No run yet.</div>
-                    )}
-                  </CardContent>
-                </Card>
+                    ))}
+                  </div>
+                  {parsedPlan.expected_outputs?.length ? (
+                    <div className="text-[11px] text-muted-foreground">
+                      Est. outputs: {parsedPlan.expected_outputs.join(" · ")}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Generate a plan from step 1 to see worker-level detail here.</p>
+              )}
 
-                <Card className="border-border/60 bg-background/40">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Workspace</CardTitle>
-                    <CardDescription className="text-xs">Open campaign + pipeline</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {lastPipeline?.campaignId ? (
-                      <>
-                        <a
-                          className="inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                          href={`/admin/campaigns/${lastPipeline.campaignId}`}
-                        >
-                          Open campaign
-                          <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
-                        </a>
-                        <a
-                          className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border/60 bg-accent/40 px-4 text-sm font-medium hover:bg-accent/60"
-                          href={`/admin/campaigns/${lastPipeline.campaignId}/pipeline`}
-                        >
-                          Open pipeline view
-                          <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
-                        </a>
-                      </>
-                    ) : (
-                      <div className="text-xs text-muted-foreground">Campaign appears after Strategy stage.</div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="border-border/60 bg-background/40">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Approvals</CardTitle>
-                    <CardDescription className="text-xs">Review gated actions</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <a
-                      className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border/60 bg-background/40 px-4 text-sm font-medium hover:bg-accent/40"
-                      href="/admin/approvals"
-                    >
-                      Go to approvals
-                      <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
-                    </a>
-                    <div className="text-xs text-muted-foreground">Approve publish/send/activate actions when ready.</div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/30 p-3">
-                <div className="text-sm font-medium">What AI is doing</div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  Researching URL → Creating campaign → Building funnel → Generating content → Creating emails → Setting lead capture → Creating approvals → Initializing analytics
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-4">
+                <Button variant="secondary" type="button" onClick={() => setCockpitStep(1)}>
+                  Back
+                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => planMutation.mutate()}
+                    disabled={planMutation.isPending || !canGeneratePlan}
+                  >
+                    Regenerate plan
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => pipelineMutation.mutate()}
+                    disabled={pipelineMutation.isPending || !canGeneratePlan}
+                    className="min-w-[200px]"
+                  >
+                    {pipelineMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+                    <span className="ml-2">Build AI workspace</span>
+                  </Button>
                 </div>
               </div>
             </div>

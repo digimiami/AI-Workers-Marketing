@@ -11,9 +11,11 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { WorkspaceDisplayBundle } from "@/services/workspace/workspaceDisplayBundle";
 
 type WorkspaceContext = {
   ok: boolean;
+  workspaceDisplay?: WorkspaceDisplayBundle | null;
   campaign: any;
   funnel: any | null;
   funnel_steps: any[];
@@ -105,6 +107,33 @@ export function WorkspaceReviewClient({
       </div>
 
       {ctxQuery.isError ? <p className="text-sm text-destructive">Failed to load workspace context.</p> : null}
+
+      {data?.workspaceDisplay?.research && Object.keys(data.workspaceDisplay.research).length > 0 ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Research</CardTitle>
+            <p className="text-xs text-muted-foreground">Offer, audience, pain points, and positioning from the pipeline.</p>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
+            {typeof (data.workspaceDisplay.research as Record<string, unknown>).offer_summary === "string" ? (
+              <div className="rounded-lg border border-border/60 p-2">
+                <div className="text-xs text-muted-foreground">Offer summary</div>
+                <div className="mt-1">{(data.workspaceDisplay.research as Record<string, unknown>).offer_summary as string}</div>
+              </div>
+            ) : null}
+            {Array.isArray((data.workspaceDisplay.research as Record<string, unknown>).pain_points) ? (
+              <div className="rounded-lg border border-border/60 p-2 sm:col-span-2">
+                <div className="text-xs text-muted-foreground">Pain points</div>
+                <ul className="mt-1 list-disc pl-4">
+                  {((data.workspaceDisplay.research as Record<string, unknown>).pain_points as string[]).slice(0, 8).map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>

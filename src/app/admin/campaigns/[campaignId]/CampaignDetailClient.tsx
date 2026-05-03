@@ -7,7 +7,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { GeneratedWorkspaceResults } from "@/components/ai/GeneratedWorkspaceResults";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -215,8 +217,33 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
   });
   const [funnelType, setFunnelType] = React.useState("");
   const [activeTab, setActiveTab] = React.useState<
-    "overview" | "landing" | "funnel" | "content" | "ads" | "emails" | "leads"
+    | "overview"
+    | "pipeline"
+    | "research"
+    | "landing"
+    | "funnel"
+    | "content"
+    | "ads"
+    | "emails"
+    | "leads"
+    | "analytics"
+    | "approvals"
+    | "logs"
   >("overview");
+
+  const workspaceQuery = useQuery({
+    queryKey: ["workspace-api", props.organizationId, props.campaignId],
+    queryFn: async () => {
+      const res = await fetch(`/api/workspace/${props.campaignId}?organizationId=${props.organizationId}`);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as {
+        ok: boolean;
+        workspaceDisplay?: import("@/services/workspace/workspaceDisplayBundle").WorkspaceDisplayBundle;
+        logs?: Array<{ id: string; level: string; message: string; created_at: string }>;
+        approvals?: Array<{ id: string; approval_type: string; status: string; created_at: string }>;
+      };
+    },
+  });
 
   const funnelStepsQuery = useQuery({
     queryKey: ["campaign-funnel-steps", props.organizationId, props.campaignId, campaignQuery.data?.funnel_id],
@@ -313,11 +340,28 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
     <div className="space-y-6">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Campaign</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{c.name}</h1>
+            <Badge variant="outline">{c.status}</Badge>
+            <Badge variant="secondary" className="font-normal">
+              Goal: {c.description?.slice(0, 48) || c.target_audience?.slice(0, 48) || "—"}
+              {(c.description?.length ?? 0) > 48 ? "…" : ""}
+            </Badge>
+          </div>
           <p className="text-sm text-muted-foreground">
             <span className="font-mono text-xs">{c.id}</span>
+            {c.target_audience ? (
+              <>
+                {" "}
+                · Audience: <span className="text-foreground/90">{c.target_audience}</span>
+              </>
+            ) : null}
           </p>
           <div className="flex flex-wrap items-center gap-3 text-sm">
+            <Link className="text-primary underline" href={`/admin/workspace/review/${c.id}`}>
+              Results
+            </Link>
+            <span className="text-muted-foreground">•</span>
             <Link
               className="text-primary underline"
               href={`/admin/campaigns/${c.id}/pipeline`}
@@ -350,18 +394,37 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
         </Button>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList variant="line" className="w-full justify-start">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+        <TabsList variant="line" className="w-full flex-wrap justify-start gap-1 h-auto py-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
+          <TabsTrigger value="research">Research</TabsTrigger>
           <TabsTrigger value="landing">Landing</TabsTrigger>
           <TabsTrigger value="funnel">Funnel</TabsTrigger>
           <TabsTrigger value="content">Content</TabsTrigger>
           <TabsTrigger value="ads">Ads</TabsTrigger>
           <TabsTrigger value="emails">Emails</TabsTrigger>
-          <TabsTrigger value="leads">Lead capture</TabsTrigger>
+          <TabsTrigger value="leads">Leads</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="approvals">Approvals</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="pt-4 space-y-6">
+          <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+            <CardHeader>
+              <CardTitle className="text-base">Workspace snapshot</CardTitle>
+              <CardDescription>Live records created for this campaign (from the database).</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <GeneratedWorkspaceResults
+                bundle={workspaceQuery.data?.workspaceDisplay ?? null}
+                organizationId={props.organizationId}
+                campaignId={props.campaignId}
+                pipelineRunId={workspaceQuery.data?.workspaceDisplay?.latestPipelineRun?.id ?? null}
+              />
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Basics</CardTitle>
@@ -391,6 +454,40 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
                   placeholder="What this campaign is for..."
                 />
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="pipeline" className="pt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Pipeline board</CardTitle>
+              <CardDescription>Research → Strategy → Creation → Execution → Optimization</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <FunnelFlow steps={funnelStepsQuery.data?.steps ?? []} />
+              <Link className={buttonVariants({ variant: "default", size: "sm" })} href={`/admin/campaigns/${c.id}/pipeline`}>
+                Open full pipeline
+              </Link>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="research" className="pt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Research outputs</CardTitle>
+              <CardDescription>From the latest marketing pipeline run.</CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm space-y-2">
+              {workspaceQuery.data?.workspaceDisplay?.research &&
+              Object.keys(workspaceQuery.data.workspaceDisplay.research).length > 0 ? (
+                <pre className="max-h-[420px] overflow-auto rounded-lg border border-border/60 bg-muted/30 p-3 text-xs">
+                  {JSON.stringify(workspaceQuery.data.workspaceDisplay.research, null, 2)}
+                </pre>
+              ) : (
+                <p className="text-muted-foreground">No research payload yet. Run AI Command → Build workspace for this URL.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -438,6 +535,19 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
         </TabsContent>
 
         <TabsContent value="funnel" className="pt-4 space-y-6">
+          {(funnelStepsQuery.data?.steps?.length ?? 0) === 0 ? (
+            <Card className="border-dashed border-primary/30 bg-primary/5">
+              <CardHeader>
+                <CardTitle className="text-base">No funnel yet</CardTitle>
+                <CardDescription>Build landing → bridge → capture from AI Command.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/admin/ai-command" className={buttonVariants({ variant: "default" })}>
+                  Build funnel
+                </Link>
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Funnel</CardTitle>
@@ -463,6 +573,21 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
         </TabsContent>
 
         <TabsContent value="content" className="pt-4 space-y-6">
+          {(workspaceQuery.data?.workspaceDisplay?.contentAssets?.length ?? 0) === 0 &&
+          !hooksText.trim() &&
+          !scriptsText.trim() ? (
+            <Card className="border-dashed border-primary/30 bg-primary/5">
+              <CardHeader>
+                <CardTitle className="text-base">No content yet</CardTitle>
+                <CardDescription>Generate hooks and scripts from this campaign with AI Command.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/admin/ai-command" className={buttonVariants({ variant: "default" })}>
+                  Ask AI to generate content
+                </Link>
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Content hooks & scripts</CardTitle>
@@ -601,6 +726,19 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
         </TabsContent>
 
         <TabsContent value="emails" className="pt-4 space-y-6">
+          {(workspaceQuery.data?.workspaceDisplay?.emailSequenceSteps?.length ?? 0) === 0 && emailSequence.length === 0 ? (
+            <Card className="border-dashed border-primary/30 bg-primary/5">
+              <CardHeader>
+                <CardTitle className="text-base">No nurture sequence yet</CardTitle>
+                <CardDescription>Ask AI to draft a short sequence tied to this campaign.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/admin/ai-command" className={buttonVariants({ variant: "default" })}>
+                  Create sequence
+                </Link>
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Email sequence</CardTitle>
@@ -668,6 +806,68 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
               >
                 Add email step
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="analytics" className="pt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Tracking</CardTitle>
+              <CardDescription>Affiliate / campaign tracking links.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {(workspaceQuery.data?.workspaceDisplay?.affiliateLinks?.length ?? 0) === 0 ? (
+                <p className="text-muted-foreground">No tracking links yet.</p>
+              ) : (
+                (workspaceQuery.data?.workspaceDisplay?.affiliateLinks ?? []).map((l) => (
+                  <div key={String(l.id)} className="rounded-lg border border-border/60 p-2 font-mono text-xs break-all">
+                    {String(l.destination_url ?? "")}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="approvals" className="pt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Approvals</CardTitle>
+              <CardDescription>Gated actions for this campaign.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {(workspaceQuery.data?.approvals?.length ?? 0) === 0 ? (
+                <p className="text-muted-foreground">No approvals yet.</p>
+              ) : (
+                (workspaceQuery.data?.approvals ?? []).slice(0, 30).map((a) => (
+                  <div key={String(a.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-2 py-1.5">
+                    <span className="font-mono text-xs">{String(a.approval_type)}</span>
+                    <Badge variant="outline">{String(a.status)}</Badge>
+                  </div>
+                ))
+              )}
+              <Link href="/admin/approvals" className={buttonVariants({ variant: "outline", size: "sm" })}>
+                Open approvals queue
+              </Link>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="logs" className="pt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Recent AI activity</CardTitle>
+              <CardDescription>Latest agent logs for your organization (not strictly filtered to this campaign).</CardDescription>
+            </CardHeader>
+            <CardContent className="max-h-[480px] overflow-auto rounded-lg border border-border/60 bg-muted/20 p-2 font-mono text-[11px] space-y-1">
+              {(workspaceQuery.data?.logs ?? []).slice(0, 80).map((l) => (
+                <div key={String(l.id)}>
+                  <span className="text-muted-foreground">{String(l.created_at ?? "").slice(0, 19)}</span>{" "}
+                  <span className={l.level === "error" ? "text-destructive" : ""}>{String(l.message ?? "")}</span>
+                </div>
+              ))}
+              {(workspaceQuery.data?.logs?.length ?? 0) === 0 ? <p className="text-muted-foreground font-sans text-sm">No logs.</p> : null}
             </CardContent>
           </Card>
         </TabsContent>
