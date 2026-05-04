@@ -533,7 +533,7 @@ export async function runMarketingPipeline(params: {
       v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
     // ---------------- Stage 1: RESEARCH ----------------
-    const research = stubResearch(input) as Record<string, unknown>;
+    let research = stubResearch(input) as Record<string, unknown>;
     if (startStage === "research") {
       await log("research", "info", "Research stage started", { url: input.url, goal: input.goal, audience: input.audience });
       const researchFallback = stubResearch(input);
@@ -590,7 +590,7 @@ export async function runMarketingPipeline(params: {
       fallback: { provider_mode: "stub" },
     });
 
-    const research = {
+    research = {
       offer: offer.output,
       ads: ads.output,
       competitors: comp.output,

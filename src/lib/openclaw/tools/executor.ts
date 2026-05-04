@@ -369,7 +369,7 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
       // best-effort logging only
     }
 
-    return err(traceId, "INTERNAL_ERROR", "Tool failed");
+    return err(traceId, "INTERNAL_ERROR", `${env.tool_name}: ${msg}`);
   }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unhandled tool error";

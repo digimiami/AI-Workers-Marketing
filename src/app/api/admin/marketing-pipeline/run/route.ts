@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 import { setCurrentOrgIdCookie } from "@/lib/cookies";
+import { getSupabaseAdminConfigError } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getAuthedUser } from "@/services/auth/authService";
 import { runMarketingPipeline } from "@/services/marketing-pipeline/runMarketingPipeline";
@@ -40,6 +41,11 @@ export async function POST(request: Request) {
       if (!organizationId) return NextResponse.json({ ok: false, message: "organizationId required" }, { status: 400 });
       const orgCtx = await withOrgOperator(organizationId);
       if (orgCtx.error) return orgCtx.error;
+    }
+
+    const adminCfgErr = getSupabaseAdminConfigError();
+    if (adminCfgErr) {
+      return NextResponse.json({ ok: false, message: adminCfgErr }, { status: 503 });
     }
 
     const supabase = await createSupabaseServerClient();
