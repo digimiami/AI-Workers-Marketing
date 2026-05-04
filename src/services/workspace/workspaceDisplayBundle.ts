@@ -150,7 +150,9 @@ export async function fetchWorkspaceDisplayBundle(
         .maybeSingle(),
       supabase
         .from("approvals" as never)
-        .select("id,approval_type,status,created_at,updated_at,campaign_id,payload")
+        .select(
+          "id,approval_type,status,created_at,updated_at,campaign_id,payload,target_entity_id,target_entity_type,action,metadata",
+        )
         .eq("organization_id", organizationId)
         .eq("campaign_id", campaignId)
         .order("created_at", { ascending: false })

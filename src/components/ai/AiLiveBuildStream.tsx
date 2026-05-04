@@ -20,8 +20,9 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ExecutionStepUi, WorkspaceDisplayBundle } from "@/services/workspace/workspaceDisplayBundle";
+import BuildStepCard from "@/components/ai/BuildStepCard";
 
-type UiStep = { key: string; status: "pending" | "running" | "complete" | "failed"; message?: string };
+type UiStep = { key: string; label?: string; status: "pending" | "running" | "complete" | "failed"; message?: string };
 
 type RunPoll = {
   ok: boolean;
@@ -192,49 +193,65 @@ export function AiLiveBuildStream(props: {
   steps?: UiStep[];
   isRunning?: boolean;
   errors?: Array<{ step?: string; message: string }>;
+  /** 0–1 completed build steps (excluding terminal done) */
+  progress?: number;
+  onRetry?: () => void;
+  /** Optional live previews keyed by step id (e.g. research, campaign, lead_capture) */
+  stepPreviews?: Partial<Record<string, React.ReactNode>>;
   className?: string;
 }) {
   if (props.steps) {
+    const pct = Math.round(Math.min(1, Math.max(0, props.progress ?? 0)) * 100);
     return (
       <Card className={cn("border-border/60 bg-card/40 backdrop-blur-sm", props.className)}>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">{props.isRunning ? "AI Building…" : "Live build"}</CardTitle>
+          <CardTitle className="text-base">{props.isRunning ? "AI workspace build" : "Build timeline"}</CardTitle>
           <CardDescription>
-            {props.isRunning ? "Streaming progress…" : "Waiting for run…"}
+            {props.isRunning ? "Streaming live results as each module is ready." : "Progress and step status."}
           </CardDescription>
+          {props.progress !== undefined ? (
+            <div className="pt-3">
+              <div className="mb-1 flex justify-between text-[11px] text-muted-foreground">
+                <span>Progress</span>
+                <span>{pct}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted/50">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-sky-500 to-primary transition-[width] duration-500 ease-out"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
         </CardHeader>
-        <CardContent className="space-y-2">
-          <ul className="space-y-2">
-            {props.steps.map((s) => (
-              <li key={s.key} className="flex items-start gap-2 text-sm">
-                <span
-                  className={cn(
-                    "mt-0.5",
-                    s.status === "complete"
-                      ? "text-emerald-500"
-                      : s.status === "running"
-                        ? "text-sky-500"
-                        : s.status === "failed"
-                          ? "text-rose-500"
-                          : "text-muted-foreground",
-                  )}
-                >
-                  {s.status === "complete" ? "✔" : s.status === "failed" ? "✖" : "•"}
-                </span>
-                <span className={cn(s.status === "complete" ? "text-emerald-500" : s.status === "failed" ? "text-rose-500" : "")}>
-                  {s.message || s.key}
-                </span>
-              </li>
-            ))}
-          </ul>
+        <CardContent className="max-h-[min(72vh,860px)] space-y-2 overflow-y-auto pr-1">
+          {props.steps.map((s) => (
+            <BuildStepCard
+              key={s.key}
+              label={s.label ?? s.key}
+              status={s.status}
+              message={s.message}
+            >
+              {props.stepPreviews?.[s.key] ?? undefined}
+            </BuildStepCard>
+          ))}
 
           {(props.errors ?? []).length ? (
             <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-200/90">
-              {(props.errors ?? []).slice(-3).map((e, i) => (
-                <div key={i}>
-                  {e.step ? <span className="font-mono">{e.step}</span> : "error"}: {e.message}
+              {(props.errors ?? []).slice(-5).map((e, i) => (
+                <div key={i} className="font-medium">
+                  {e.step ? <span className="font-mono">{e.step}</span> : "Error"}: {e.message}
                 </div>
               ))}
+              {props.onRetry ? (
+                <button
+                  type="button"
+                  onClick={props.onRetry}
+                  className="mt-2 rounded-lg border border-rose-400/40 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
+                >
+                  Retry
+                </button>
+              ) : null}
             </div>
           ) : null}
         </CardContent>

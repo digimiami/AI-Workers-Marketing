@@ -1104,22 +1104,52 @@ export const TOOLS: AnyToolDef[] = [
                   ? { type: "funnel_step", id: payload.funnel_step_id }
                   : null;
       const admin = createSupabaseAdminClient();
-      const { data, error } = await admin
+      const metadata = {
+        ...(typeof input.metadata === "object" && input.metadata && !Array.isArray(input.metadata)
+          ? (input.metadata as Record<string, unknown>)
+          : {}),
+      };
+      const fullRow = {
+        organization_id: input.organizationId,
+        campaign_id: input.campaign_id ?? null,
+        status: "pending",
+        approval_type: input.approval_type,
+        reason_required: input.reason_required ?? true,
+        requested_by_user_id: input.requested_by_user_id ?? null,
+        target_entity_type: target?.type ?? null,
+        target_entity_id: target?.id ?? null,
+        action: input.action ?? input.approval_type,
+        metadata,
+        payload,
+      };
+      let { data, error } = await admin
         .from("approvals" as never)
-        .insert({
-          organization_id: input.organizationId,
-          campaign_id: input.campaign_id ?? null,
-          status: "pending",
-          approval_type: input.approval_type,
-          reason_required: input.reason_required ?? true,
-          requested_by_user_id: input.requested_by_user_id ?? null,
-          target_entity_type: target?.type ?? null,
-          target_entity_id: target?.id ?? null,
-          payload,
-        } as never)
+        .insert(fullRow as never)
         .select("id,status,approval_type")
         .single();
-      if (error || !data) throw new Error(error?.message ?? "Failed to create approval item");
+      const msg = String((error as { message?: string } | null)?.message ?? "");
+      const missingColumn =
+        /column .* does not exist/i.test(msg) ||
+        /Could not find the '.*' column of '.*' in the schema cache/i.test(msg) ||
+        /schema cache/i.test(msg);
+      if (error && missingColumn) {
+        ({ data, error } = await admin
+          .from("approvals" as never)
+          .insert({
+            organization_id: input.organizationId,
+            campaign_id: input.campaign_id ?? null,
+            status: "pending",
+            approval_type: input.approval_type,
+            reason_required: input.reason_required ?? true,
+            requested_by_user_id: input.requested_by_user_id ?? null,
+            target_entity_type: target?.type ?? null,
+            target_entity_id: target?.id ?? null,
+            payload,
+          } as never)
+          .select("id,status,approval_type")
+          .single());
+      }
+      if (error || !data) throw new Error((error as { message?: string } | null)?.message ?? "Failed to create approval item");
       return data as any;
     },
   },

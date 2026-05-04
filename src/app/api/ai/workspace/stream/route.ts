@@ -7,6 +7,19 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchWorkspaceDisplayBundle, buildRunTimeline } from "@/services/workspace/workspaceDisplayBundle";
 import { beginMarketingPipelineRun, runMarketingPipeline } from "@/services/marketing-pipeline/runMarketingPipeline";
+import {
+  parseRunInput,
+  buildResearchStreamPayload,
+  buildCampaignStreamPayload,
+  buildLandingStreamPayload,
+  buildFunnelStreamPayload,
+  buildContentStreamPayload,
+  buildAdsStreamPayload,
+  buildEmailsStreamPayload,
+  buildLeadCaptureStreamPayload,
+  buildAnalyticsStreamPayload,
+  buildApprovalsStreamPayload,
+} from "@/services/ai/workspaceStreamPayloads";
 
 export const runtime = "nodejs";
 
@@ -195,22 +208,24 @@ async function handleStream(request: Request, parsed: z.infer<typeof querySchema
     start: async (ctrl) => {
       const send = (event: string, data: unknown) => ctrl.enqueue(encoder.encode(sseEvent(event, data)));
 
-      send("step", { step: "init", status: "running", message: "Starting AI workspace build…" });
-      send("result", { module: "run", data: { runId } });
+      send("step", { step: "research", status: "running", message: "Starting AI workspace build…" });
+      send("result", { module: "run", data: { runId, campaignId: null } });
 
-      const sentModules = new Set<string>();
-      const stepStatus = new Map<string, string>();
+      const lastModuleJson = new Map<string, string>();
+      const stepSig = new Map<string, string>();
 
       const emitStep = (key: string, status: "pending" | "running" | "complete" | "failed", message: string) => {
-        const prev = stepStatus.get(key);
-        if (prev === status) return;
-        stepStatus.set(key, status);
+        const sig = `${status}|${message}`;
+        if (stepSig.get(key) === sig) return;
+        stepSig.set(key, sig);
         send("step", { step: key, status, message });
       };
 
       const emitModule = (module: string, data: unknown) => {
-        if (sentModules.has(module)) return;
-        sentModules.add(module);
+        if (data == null) return;
+        const serialized = JSON.stringify(data);
+        if (lastModuleJson.get(module) === serialized) return;
+        lastModuleJson.set(module, serialized);
         send("result", { module, data });
       };
 
@@ -236,19 +251,46 @@ async function handleStream(request: Request, parsed: z.infer<typeof querySchema
           emitStep("lead_capture", (bundle?.leadCaptureForms?.length ?? 0) ? "complete" : currentStage === "execution" ? "running" : "pending", (bundle?.leadCaptureForms?.length ?? 0) ? "Lead capture setup" : "Setting up lead capture…");
           emitStep("analytics", (bundle?.analyticsHints?.trackingLinks?.length ?? 0) ? "complete" : currentStage === "execution" || currentStage === "optimization" ? "running" : "pending", (bundle?.analyticsHints?.trackingLinks?.length ?? 0) ? "Analytics initialized" : "Initializing analytics…");
           emitStep("approvals", (bundle?.approvals?.length ?? 0) ? "complete" : currentStage === "execution" ? "running" : "pending", (bundle?.approvals?.length ?? 0) ? "Approvals created" : "Creating approvals…");
-          emitStep("logs", (snap.logs?.length ?? 0) ? "complete" : "running", (snap.logs?.length ?? 0) ? "Logs ready" : "Streaming logs…");
 
-          // Results (real data)
-          if (bundle?.research) emitModule("research", bundle.research);
-          if (bundle?.campaign) emitModule("campaign", bundle.campaign);
-          if ((bundle?.landingPages?.length ?? 0) > 0) emitModule("landing", bundle!.landingPages?.[0] ?? null);
-          if (bundle?.funnel) emitModule("funnel", { funnel: bundle.funnel, steps: bundle.funnelSteps });
-          if ((bundle?.contentAssets?.length ?? 0) > 0) emitModule("content", bundle!.contentAssets);
-          if ((bundle?.adCreatives?.length ?? 0) > 0) emitModule("ads", bundle!.adCreatives);
-          if ((bundle?.emailSequenceSteps?.length ?? 0) > 0) emitModule("emails", { steps: bundle!.emailSequenceSteps, templates: bundle!.emailTemplates });
-          if ((bundle?.leadCaptureForms?.length ?? 0) > 0) emitModule("leadCapture", bundle!.leadCaptureForms);
-          if ((bundle?.analyticsHints?.trackingLinks?.length ?? 0) > 0) emitModule("analytics", bundle!.analyticsHints);
-          if ((bundle?.approvals?.length ?? 0) > 0) emitModule("approvals", bundle!.approvals);
+          const runInput = parseRunInput(snap.run);
+          const campaignIdStr = (snap.run as any).campaign_id ? String((snap.run as any).campaign_id) : null;
+          emitModule("run", { runId, campaignId: campaignIdStr });
+
+          const researchPayload = buildResearchStreamPayload((bundle?.research ?? null) as Record<string, unknown> | null);
+          if (researchPayload) emitModule("research", researchPayload);
+
+          const campaignPayload = buildCampaignStreamPayload(bundle, snap.run, runInput);
+          if (campaignPayload) emitModule("campaign", campaignPayload);
+
+          const landingPayload = buildLandingStreamPayload(bundle?.landingPages?.[0] as Record<string, unknown> | undefined);
+          if (landingPayload) emitModule("landing", landingPayload);
+
+          const funnelPayload = buildFunnelStreamPayload(bundle);
+          if (funnelPayload) emitModule("funnel", funnelPayload);
+
+          const contentPayload = buildContentStreamPayload(bundle?.contentAssets);
+          if (contentPayload) emitModule("content", contentPayload);
+
+          const adsPayload = buildAdsStreamPayload(bundle?.adCreatives);
+          if (adsPayload) emitModule("ads", adsPayload);
+
+          const emailsPayload = buildEmailsStreamPayload(bundle);
+          if (emailsPayload) emitModule("emails", emailsPayload);
+
+          const leadPayload = buildLeadCaptureStreamPayload(bundle?.leadCaptureForms);
+          if (leadPayload) emitModule("leadCapture", leadPayload);
+
+          const executionTouched =
+            currentStage === "execution" ||
+            currentStage === "optimization" ||
+            st("execution") === "running" ||
+            st("execution") === "completed" ||
+            st("execution") === "failed" ||
+            st("execution") === "needs_approval";
+          emitModule("analytics", buildAnalyticsStreamPayload(bundle, { executionActive: executionTouched }));
+
+          const approvalsPayload = buildApprovalsStreamPayload(bundle?.approvals);
+          if (approvalsPayload) emitModule("approvals", approvalsPayload);
 
           // Errors
           const runErrors = asRows<string>((snap.run as any).errors);

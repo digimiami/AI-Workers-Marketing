@@ -144,6 +144,10 @@ const createApprovalIn = z.object({
   requested_by_user_id: id.nullish(),
   payload: z.record(z.string(), z.unknown()).default({}),
   reason_required: z.boolean().optional(),
+  /** Optional queue label (e.g. publish, send) */
+  action: z.string().min(1).max(200).optional(),
+  /** Extra structured context (merged into row.metadata) */
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 const approvalOut = z.object({ id, status: z.string(), approval_type: z.string() });
 

@@ -13,35 +13,65 @@ export type StreamStepKey =
   | "lead_capture"
   | "analytics"
   | "approvals"
-  | "logs"
   | "done";
 
 export type StreamStepStatus = "pending" | "running" | "complete" | "failed";
 
+/** Build phases counted for progress (excludes terminal `done`). */
+export const AI_WORKSPACE_BUILD_STEP_COUNT = 10;
+
+const BUILD_STEP_KEYS: StreamStepKey[] = [
+  "research",
+  "campaign",
+  "landing",
+  "funnel",
+  "content",
+  "ads",
+  "emails",
+  "lead_capture",
+  "analytics",
+  "approvals",
+  "done",
+];
+
+const STEP_LABELS: Record<StreamStepKey, string> = {
+  research: "Research",
+  campaign: "Campaign",
+  landing: "Landing",
+  funnel: "Funnel",
+  content: "Content",
+  ads: "Ads",
+  emails: "Emails",
+  lead_capture: "Lead capture",
+  analytics: "Analytics",
+  approvals: "Approvals",
+  done: "Done",
+};
+
+export type AiWorkspaceResults = {
+  run?: { runId?: string; campaignId?: string | null };
+  research?: unknown;
+  campaign?: unknown;
+  landing?: unknown;
+  funnel?: unknown;
+  content?: unknown;
+  ads?: unknown;
+  emails?: unknown;
+  leadCapture?: unknown;
+  analytics?: unknown;
+  approvals?: unknown;
+};
+
 export type AiWorkspaceStreamState = {
   steps: Array<{ key: StreamStepKey; label: string; status: StreamStepStatus; message?: string }>;
-  results: Record<string, unknown>;
+  results: AiWorkspaceResults;
   runId: string | null;
   reviewUrl: string | null;
   campaignId: string | null;
+  finalStatus: string | null;
   errors: Array<{ step?: string; message: string }>;
   active: boolean;
 };
-
-const DEFAULT_STEPS: Array<{ key: StreamStepKey; label: string }> = [
-  { key: "research", label: "Research" },
-  { key: "campaign", label: "Campaign" },
-  { key: "landing", label: "Landing" },
-  { key: "funnel", label: "Funnel" },
-  { key: "content", label: "Content" },
-  { key: "ads", label: "Ads" },
-  { key: "emails", label: "Emails" },
-  { key: "lead_capture", label: "Lead capture" },
-  { key: "analytics", label: "Analytics" },
-  { key: "approvals", label: "Approvals" },
-  { key: "logs", label: "Logs" },
-  { key: "done", label: "Done" },
-];
 
 export type AiWorkspaceStreamInput = {
   url: string;
@@ -53,15 +83,55 @@ export type AiWorkspaceStreamInput = {
   mode?: "affiliate" | "client";
 };
 
+function initialSteps() {
+  return BUILD_STEP_KEYS.map((key) => ({
+    key,
+    label: STEP_LABELS[key],
+    status: "pending" as StreamStepStatus,
+  }));
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+function normalizeModuleKey(m: string): keyof AiWorkspaceResults | "run" | null {
+  if (m === "lead_capture") return "leadCapture";
+  if (m === "run") return "run";
+  const allowed: (keyof AiWorkspaceResults)[] = [
+    "research",
+    "campaign",
+    "landing",
+    "funnel",
+    "content",
+    "ads",
+    "emails",
+    "leadCapture",
+    "analytics",
+    "approvals",
+  ];
+  if (allowed.includes(m as keyof AiWorkspaceResults)) return m as keyof AiWorkspaceResults;
+  return null;
+}
+
+function normalizeUrl(raw: string): string {
+  const t = raw.trim();
+  if (!t) return t;
+  if (/^https?:\/\//i.test(t)) return t;
+  return `https://${t}`;
+}
+
 export function useAiWorkspaceStream() {
   const esRef = React.useRef<EventSource | null>(null);
+  const lastInputRef = React.useRef<AiWorkspaceStreamInput | null>(null);
 
   const [state, setState] = React.useState<AiWorkspaceStreamState>(() => ({
-    steps: DEFAULT_STEPS.map((s) => ({ ...s, status: "pending" })),
+    steps: initialSteps(),
     results: {},
     runId: null,
     reviewUrl: null,
     campaignId: null,
+    finalStatus: null,
     errors: [],
     active: false,
   }));
@@ -69,12 +139,14 @@ export function useAiWorkspaceStream() {
   const reset = React.useCallback(() => {
     esRef.current?.close();
     esRef.current = null;
+    lastInputRef.current = null;
     setState({
-      steps: DEFAULT_STEPS.map((s) => ({ ...s, status: "pending" })),
+      steps: initialSteps(),
       results: {},
       runId: null,
       reviewUrl: null,
       campaignId: null,
+      finalStatus: null,
       errors: [],
       active: false,
     });
@@ -86,11 +158,38 @@ export function useAiWorkspaceStream() {
     setState((s) => ({ ...s, active: false }));
   }, []);
 
-  const start = React.useCallback((input: AiWorkspaceStreamInput) => {
-    reset();
+  const start = React.useCallback((input: AiWorkspaceStreamInput, options?: { preserveResults?: boolean }) => {
+    lastInputRef.current = input;
+    esRef.current?.close();
+    esRef.current = null;
+
+    const preserve = options?.preserveResults ?? false;
+    const url = normalizeUrl(input.url);
+
+    if (!preserve) {
+      setState({
+        steps: initialSteps(),
+        results: {},
+        runId: null,
+        reviewUrl: null,
+        campaignId: null,
+        finalStatus: null,
+        errors: [],
+        active: true,
+      });
+    } else {
+      setState((s) => ({
+        ...s,
+        steps: initialSteps(),
+        errors: [],
+        finalStatus: null,
+        reviewUrl: null,
+        active: true,
+      }));
+    }
 
     const qs = new URLSearchParams({
-      url: input.url,
+      url,
       goal: input.goal,
       audience: input.audience,
       trafficSource: input.trafficSource,
@@ -101,12 +200,13 @@ export function useAiWorkspaceStream() {
 
     const es = new EventSource(`/api/ai/workspace/stream?${qs.toString()}`);
     esRef.current = es;
-    setState((s) => ({ ...s, active: true }));
 
     const updateStep = (step: string, status: StreamStepStatus, message?: string) => {
+      const sk = step as StreamStepKey;
+      if (!BUILD_STEP_KEYS.includes(sk)) return;
       setState((prev) => ({
         ...prev,
-        steps: prev.steps.map((s) => (s.key === (step as StreamStepKey) ? { ...s, status, message } : s)),
+        steps: prev.steps.map((s) => (s.key === sk ? { ...s, status, message } : s)),
       }));
     };
 
@@ -122,12 +222,29 @@ export function useAiWorkspaceStream() {
     es.addEventListener("result", (ev) => {
       try {
         const d = JSON.parse((ev as MessageEvent).data) as { module: string; data: unknown };
+        const nk = normalizeModuleKey(d.module);
         setState((prev) => {
-          const runId = d.module === "run" ? String((d.data as any)?.runId ?? prev.runId ?? "") : prev.runId;
+          if (nk === "run") {
+            const runData = asRecord(d.data);
+            const rid = runData.runId != null ? String(runData.runId) : prev.runId;
+            const cid = runData.campaign_id != null ? String(runData.campaign_id) : runData.campaignId != null ? String(runData.campaignId) : prev.campaignId;
+            return {
+              ...prev,
+              runId: rid,
+              campaignId: cid,
+              results: {
+                ...prev.results,
+                run: {
+                  runId: rid ?? undefined,
+                  campaignId: cid ?? undefined,
+                },
+              },
+            };
+          }
+          if (!nk) return prev;
           return {
             ...prev,
-            runId: runId || prev.runId,
-            results: { ...prev.results, [d.module]: d.data },
+            results: { ...prev.results, [nk]: d.data },
           };
         });
       } catch {
@@ -137,14 +254,22 @@ export function useAiWorkspaceStream() {
 
     es.addEventListener("done", (ev) => {
       try {
-        const d = JSON.parse((ev as MessageEvent).data) as { runId: string; campaignId?: string | null; reviewUrl?: string | null };
+        const d = JSON.parse((ev as MessageEvent).data) as {
+          runId: string;
+          campaignId?: string | null;
+          reviewUrl?: string | null;
+          status?: string;
+        };
         setState((prev) => ({
           ...prev,
           runId: d.runId ?? prev.runId,
           campaignId: d.campaignId ? String(d.campaignId) : prev.campaignId,
           reviewUrl: d.reviewUrl ? String(d.reviewUrl) : prev.reviewUrl,
+          finalStatus: d.status ? String(d.status) : prev.finalStatus,
           active: false,
-          steps: prev.steps.map((s) => (s.key === "done" ? { ...s, status: "complete" } : s)),
+          steps: prev.steps.map((s) =>
+            s.key === "done" ? { ...s, status: "complete" as const, message: "Workspace ready" } : s,
+          ),
         }));
       } finally {
         es.close();
@@ -153,7 +278,6 @@ export function useAiWorkspaceStream() {
     });
 
     es.addEventListener("error", (ev) => {
-      // EventSource also fires "error" on disconnect; we only treat JSON payloads as real errors.
       const me = ev as MessageEvent;
       if (typeof me.data !== "string" || !me.data.trim().startsWith("{")) return;
       try {
@@ -169,10 +293,15 @@ export function useAiWorkspaceStream() {
         esRef.current = null;
       }
     });
-  }, [reset]);
+  }, []);
+
+  const retry = React.useCallback(() => {
+    const last = lastInputRef.current;
+    if (!last) return;
+    start(last, { preserveResults: true });
+  }, [start]);
 
   React.useEffect(() => () => cancel(), [cancel]);
 
-  return { state, start, cancel, reset };
+  return { state, start, cancel, reset, retry };
 }
-
