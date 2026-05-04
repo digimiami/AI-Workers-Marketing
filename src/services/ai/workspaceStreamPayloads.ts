@@ -160,12 +160,55 @@ export function buildContentStreamPayload(assets: Array<Record<string, unknown>>
     }
     if (hooks.length >= 12) break;
   }
+  const scriptsPreview: string[] = [];
+  for (const a of assets) {
+    const md = typeof a.script_markdown === "string" ? a.script_markdown.trim() : "";
+    if (md) scriptsPreview.push(md.slice(0, 320));
+    if (scriptsPreview.length >= 2) break;
+  }
   return {
     totalCount: assets.length,
     hooksPreview: hooks.slice(0, 3),
     hooksCount: hooks.length,
     firstTitle: str(assets[0]?.title) || undefined,
+    scriptsPreview,
   };
+}
+
+/** Map persisted workspace bundle → same card shapes as the live SSE stream (for campaign overview, etc.). */
+export function bundleToAiWorkspaceResults(bundle: WorkspaceDisplayBundle | null): Record<string, unknown> {
+  if (!bundle) return {};
+  const runInput = null;
+  const run = null;
+  const out: Record<string, unknown> = {};
+  const r = buildResearchStreamPayload((bundle.research ?? null) as Record<string, unknown> | null);
+  if (r) out.research = r;
+  const camp = buildCampaignStreamPayload(bundle, run, runInput);
+  if (camp) out.campaign = camp;
+  const land = buildLandingStreamPayload(bundle.landingPages?.[0] as Record<string, unknown> | undefined);
+  if (land) out.landing = land;
+  const fun = buildFunnelStreamPayload(bundle);
+  if (fun) out.funnel = fun;
+  const cont = buildContentStreamPayload(bundle.contentAssets);
+  if (cont) out.content = cont;
+  const ads = buildAdsStreamPayload(bundle.adCreatives);
+  if (ads) out.ads = ads;
+  const em = buildEmailsStreamPayload(bundle);
+  if (em) out.emails = em;
+  const lc = buildLeadCaptureStreamPayload(bundle.leadCaptureForms);
+  if (lc) out.leadCapture = lc;
+  out.analytics = buildAnalyticsStreamPayload(bundle, {
+    executionActive: (bundle.analyticsHints?.trackingLinks?.length ?? 0) > 0,
+  });
+  const ap = buildApprovalsStreamPayload(bundle.approvals);
+  if (ap) out.approvals = ap;
+  if (bundle.latestPipelineRun?.id) {
+    out.run = {
+      runId: bundle.latestPipelineRun.id,
+      campaignId: bundle.campaignId,
+    };
+  }
+  return out;
 }
 
 export function buildAdsStreamPayload(ads: Array<Record<string, unknown>> | undefined) {

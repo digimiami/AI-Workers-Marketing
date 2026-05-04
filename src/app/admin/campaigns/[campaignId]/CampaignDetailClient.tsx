@@ -3,12 +3,13 @@
 import * as React from "react";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { toast } from "sonner";
 
-import { GeneratedWorkspaceResults } from "@/components/ai/GeneratedWorkspaceResults";
-import { PipelineStepper } from "@/components/ai/PipelineStepper";
+import { AiWorkspaceResultsPanel } from "@/components/ai/AiWorkspaceResultsPanel";
+import type { AiWorkspaceResults } from "@/components/ai/useAiWorkspaceStream";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { bundleToAiWorkspaceResults } from "@/services/ai/workspaceStreamPayloads";
 
 const CampaignType = z.enum(["affiliate", "lead_gen", "internal_test", "client"]);
 const CampaignStatus = z.enum(["draft", "active", "paused", "completed"]);
@@ -68,7 +70,11 @@ type FunnelStepRow = {
 
 function FunnelFlow({ steps }: { steps: FunnelStepRow[] }) {
   if (steps.length === 0) {
-    return <p className="text-sm text-muted-foreground">No funnel steps found for this campaign yet.</p>;
+    return (
+      <div className="rounded-xl border border-dashed border-primary/25 bg-primary/5 px-4 py-6 text-center text-sm text-muted-foreground animate-pulse">
+        AI is generating your funnel steps…
+      </div>
+    );
   }
   return (
     <div className="overflow-x-auto">
@@ -218,20 +224,14 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
     meta_description: "",
   });
   const [funnelType, setFunnelType] = React.useState("");
-  const [activeTab, setActiveTab] = React.useState<
-    | "overview"
-    | "pipeline"
-    | "research"
-    | "landing"
-    | "funnel"
-    | "content"
-    | "ads"
-    | "emails"
-    | "leads"
-    | "analytics"
-    | "approvals"
-    | "logs"
-  >("overview");
+  const [activeTab, setActiveTab] = React.useState<"overview" | "funnel" | "content" | "emails">("overview");
+  const searchParams = useSearchParams();
+  const urlTab = searchParams.get("tab");
+  React.useEffect(() => {
+    if (urlTab === "funnel" || urlTab === "content" || urlTab === "emails" || urlTab === "overview") {
+      setActiveTab(urlTab);
+    }
+  }, [urlTab]);
 
   const workspaceQuery = useQuery({
     queryKey: ["workspace-api", props.organizationId, props.campaignId],
@@ -246,6 +246,11 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
       };
     },
   });
+
+  const liveWorkspaceResults = React.useMemo((): AiWorkspaceResults => {
+    const b = workspaceQuery.data?.workspaceDisplay ?? null;
+    return bundleToAiWorkspaceResults(b) as AiWorkspaceResults;
+  }, [workspaceQuery.data?.workspaceDisplay]);
 
   const funnelStepsQuery = useQuery({
     queryKey: ["campaign-funnel-steps", props.organizationId, props.campaignId, campaignQuery.data?.funnel_id],
@@ -364,11 +369,8 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
               Results
             </Link>
             <span className="text-muted-foreground">•</span>
-            <Link
-              className="text-primary underline"
-              href={`/admin/campaigns/${c.id}/pipeline`}
-            >
-              Pipeline
+            <Link className="text-primary underline" href={`/admin/campaigns/${c.id}/pipeline`}>
+              Pipeline board
             </Link>
             <span className="text-muted-foreground">•</span>
             <Link
@@ -378,12 +380,12 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
               Automation
             </Link>
             <span className="text-muted-foreground">•</span>
-            <Link className="text-primary underline" href="/admin/content">
+            <Link className="text-primary underline" href={`/admin/campaigns/${c.id}?tab=content`}>
               Content
             </Link>
             <span className="text-muted-foreground">•</span>
-            <Link className="text-primary underline" href="/admin/email">
-              Email
+            <Link className="text-primary underline" href={`/admin/campaigns/${c.id}?tab=emails`}>
+              Emails
             </Link>
             <span className="text-muted-foreground">•</span>
             <Link className="text-primary underline" href="/admin/leads">
@@ -399,17 +401,9 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
         <TabsList variant="line" className="w-full flex-wrap justify-start gap-1 h-auto py-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
-          <TabsTrigger value="research">Research</TabsTrigger>
-          <TabsTrigger value="landing">Landing</TabsTrigger>
           <TabsTrigger value="funnel">Funnel</TabsTrigger>
           <TabsTrigger value="content">Content</TabsTrigger>
-          <TabsTrigger value="ads">Ads</TabsTrigger>
           <TabsTrigger value="emails">Emails</TabsTrigger>
-          <TabsTrigger value="leads">Leads</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="approvals">Approvals</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="pt-4 space-y-6">
@@ -451,7 +445,7 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Link
-                        href={`/admin/ai-command?${qs.toString()}`}
+                        href={`/admin/workspace?${qs.toString()}`}
                         className={buttonVariants({ variant: "default" })}
                       >
                         Ask AiWorkers
@@ -466,18 +460,87 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
             </CardContent>
           </Card>
 
-          <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+          <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent shadow-[0_0_32px_-12px_rgba(56,189,248,0.25)]">
             <CardHeader>
-              <CardTitle className="text-base">Workspace snapshot</CardTitle>
-              <CardDescription>Live records created for this campaign (from the database).</CardDescription>
+              <CardTitle className="text-base">AI workspace</CardTitle>
+              <CardDescription>Everything this build created — open modules or jump into the live run.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <GeneratedWorkspaceResults
-                bundle={workspaceQuery.data?.workspaceDisplay ?? null}
-                organizationId={props.organizationId}
-                campaignId={props.campaignId}
-                pipelineRunId={workspaceQuery.data?.workspaceDisplay?.latestPipelineRun?.id ?? null}
-              />
+            <CardContent className="space-y-6">
+              {workspaceQuery.isFetching ? (
+                <p className="text-sm text-muted-foreground animate-pulse">Refreshing workspace…</p>
+              ) : null}
+              {workspaceQuery.data?.workspaceDisplay?.latestPipelineRun?.id ? (
+                <Link
+                  href={`/admin/workspace/${workspaceQuery.data.workspaceDisplay.latestPipelineRun.id}`}
+                  className={buttonVariants({ variant: "default", size: "sm" })}
+                >
+                  Open live workspace run
+                </Link>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No pipeline run yet — start from{" "}
+                  <Link href="/admin/workspace" className="text-primary underline underline-offset-4">
+                    Workspace
+                  </Link>{" "}
+                  to stream a full build.
+                </p>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("overview")}
+                  className="rounded-xl border border-border/60 bg-card/50 p-4 text-left text-sm transition hover:border-primary/40 hover:shadow-[0_0_24px_-8px_rgba(56,189,248,0.35)]"
+                >
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Campaign</div>
+                  <div className="mt-1 font-semibold">Overview &amp; basics</div>
+                </button>
+                <Link
+                  href={`/f/${props.campaignId}`}
+                  className="rounded-xl border border-border/60 bg-card/50 p-4 text-left text-sm transition hover:border-primary/40 hover:shadow-[0_0_24px_-8px_rgba(56,189,248,0.35)]"
+                >
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Landing</div>
+                  <div className="mt-1 font-semibold">Live preview</div>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("funnel")}
+                  className="rounded-xl border border-border/60 bg-card/50 p-4 text-left text-sm transition hover:border-primary/40 hover:shadow-[0_0_24px_-8px_rgba(56,189,248,0.35)]"
+                >
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Funnel</div>
+                  <div className="mt-1 font-semibold">Steps &amp; flow</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("content")}
+                  className="rounded-xl border border-border/60 bg-card/50 p-4 text-left text-sm transition hover:border-primary/40 hover:shadow-[0_0_24px_-8px_rgba(56,189,248,0.35)]"
+                >
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Content</div>
+                  <div className="mt-1 font-semibold">Hooks &amp; scripts</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("emails")}
+                  className="rounded-xl border border-border/60 bg-card/50 p-4 text-left text-sm transition hover:border-primary/40 hover:shadow-[0_0_24px_-8px_rgba(56,189,248,0.35)]"
+                >
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Emails</div>
+                  <div className="mt-1 font-semibold">Sequences</div>
+                </button>
+                <Link
+                  href="/admin/analytics"
+                  className="rounded-xl border border-border/60 bg-card/50 p-4 text-left text-sm transition hover:border-primary/40 hover:shadow-[0_0_24px_-8px_rgba(56,189,248,0.35)]"
+                >
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Analytics</div>
+                  <div className="mt-1 font-semibold">Events</div>
+                </Link>
+                <Link
+                  href="/admin/approvals"
+                  className="rounded-xl border border-border/60 bg-card/50 p-4 text-left text-sm transition hover:border-primary/40 hover:shadow-[0_0_24px_-8px_rgba(56,189,248,0.35)]"
+                >
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Approvals</div>
+                  <div className="mt-1 font-semibold">Publish queue</div>
+                </Link>
+              </div>
+              <AiWorkspaceResultsPanel results={liveWorkspaceResults} campaignId={props.campaignId} />
             </CardContent>
           </Card>
           <Card>
@@ -513,177 +576,16 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
           </Card>
         </TabsContent>
 
-        <TabsContent value="pipeline" className="pt-4 space-y-6">
-          {(() => {
-            const bundle = workspaceQuery.data?.workspaceDisplay ?? null;
-            const latest = bundle?.latestPipelineRun ?? null;
-            const pendingApprovals = (bundle?.approvals ?? []).filter((a) => asString(asRecord(a).status) === "pending");
-            const needsApproval =
-              pendingApprovals.length > 0 ||
-              asString(latest?.status) === "needs_approval" ||
-              asString(latest?.current_stage) === "execution";
-
-            const researchDone = Boolean(bundle?.research && Object.keys(bundle.research).length > 0);
-            const strategyDone = Boolean(bundle?.campaign);
-            const creationDone = Boolean(
-              (bundle?.landingPages?.length ?? 0) > 0 ||
-                (bundle?.funnelSteps?.length ?? 0) > 0 ||
-                (bundle?.contentAssets?.length ?? 0) > 0 ||
-                (bundle?.emailSequenceSteps?.length ?? 0) > 0,
-            );
-            const executionDone = asString(latest?.status) === "complete" || asString(latest?.status) === "completed";
-
-            const goal =
-              asString(asRecord((campaignQuery.data as any)?.metadata).goal) ||
-              asString(asRecord((campaignQuery.data as any)?.metadata).objective);
-
-            return (
-              <Card className="border-border/60 bg-gradient-to-br from-card/80 to-card/40 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <CardTitle className="text-base">{campaignQuery.data?.name ?? "Campaign"}</CardTitle>
-                      <CardDescription>
-                        <span className="font-mono">{asString(campaignQuery.data?.status)}</span>
-                        {goal ? <span className="text-muted-foreground"> · </span> : null}
-                        {goal ? <span>Goal: {goal}</span> : null}
-                      </CardDescription>
-                    </div>
-                    {needsApproval ? (
-                      <Badge variant="outline" className="border-amber-500/60">
-                        Execution pending approval
-                      </Badge>
-                    ) : executionDone ? (
-                      <Badge variant="secondary">Execution complete</Badge>
-                    ) : (
-                      <Badge variant="outline">In progress</Badge>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pipeline</div>
-                    <PipelineStepper
-                      compact
-                      stages={[
-                        { key: "research", status: researchDone ? "completed" : "pending", summary: "Research" },
-                        { key: "strategy", status: strategyDone ? "completed" : "pending", summary: "Strategy" },
-                        { key: "creation", status: creationDone ? "completed" : "pending", summary: "Creation" },
-                        {
-                          key: "execution",
-                          status: needsApproval ? "needs_approval" : executionDone ? "completed" : "pending",
-                          summary: "Execution",
-                        },
-                      ]}
-                    />
-                  </div>
-
-                  {needsApproval ? (
-                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
-                      <div className="text-sm font-medium">Next action</div>
-                      <div className="mt-1 text-sm text-muted-foreground">
-                        Approve landing page + emails to launch.
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button type="button" onClick={() => setActiveTab("approvals")}>
-                          Review &amp; Approve
-                        </Button>
-                        <Link href="/admin/approvals" className={buttonVariants({ variant: "outline", size: "default" })}>
-                          Open approvals queue
-                        </Link>
-                      </div>
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            );
-          })()}
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Pipeline board</CardTitle>
-              <CardDescription>Research → Strategy → Creation → Execution → Optimization</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <FunnelFlow steps={funnelStepsQuery.data?.steps ?? []} />
-              <Link className={buttonVariants({ variant: "default", size: "sm" })} href={`/admin/campaigns/${c.id}/pipeline`}>
-                Open full pipeline
-              </Link>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="research" className="pt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Research outputs</CardTitle>
-              <CardDescription>From the latest marketing pipeline run.</CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm space-y-2">
-              {workspaceQuery.data?.workspaceDisplay?.research &&
-              Object.keys(workspaceQuery.data.workspaceDisplay.research).length > 0 ? (
-                <pre className="max-h-[420px] overflow-auto rounded-lg border border-border/60 bg-muted/30 p-3 text-xs">
-                  {JSON.stringify(workspaceQuery.data.workspaceDisplay.research, null, 2)}
-                </pre>
-              ) : (
-                <p className="text-muted-foreground">No research payload yet. Run AI Command → Build workspace for this URL.</p>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="landing" className="pt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Landing Page</CardTitle>
-              <CardDescription>Landing URL, CTA button text, and meta title/description (stored in metadata).</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
-                <Label>Landing URL</Label>
-                <Input
-                  value={landingSettings.landing_url}
-                  onChange={(e) => setLandingSettings((s) => ({ ...s, landing_url: e.target.value }))}
-                  placeholder="https://dulcediaz.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>CTA button text</Label>
-                <Input
-                  value={landingSettings.cta_button_text}
-                  onChange={(e) => setLandingSettings((s) => ({ ...s, cta_button_text: e.target.value }))}
-                  placeholder="Get your free report"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Meta title</Label>
-                <Input
-                  value={landingSettings.meta_title}
-                  onChange={(e) => setLandingSettings((s) => ({ ...s, meta_title: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Meta description</Label>
-                <Textarea
-                  value={landingSettings.meta_description}
-                  onChange={(e) => setLandingSettings((s) => ({ ...s, meta_description: e.target.value }))}
-                  rows={3}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="funnel" className="pt-4 space-y-6">
           {(funnelStepsQuery.data?.steps?.length ?? 0) === 0 ? (
             <Card className="border-dashed border-primary/30 bg-primary/5">
               <CardHeader>
-                <CardTitle className="text-base">No funnel yet</CardTitle>
-                <CardDescription>Build landing → bridge → capture from AI Command.</CardDescription>
+                <CardTitle className="text-base">Funnel in progress</CardTitle>
+                <CardDescription>AI is generating steps for this campaign.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Link href="/admin/ai-command" className={buttonVariants({ variant: "default" })}>
-                  Build funnel
+                <Link href="/admin/workspace" className={buttonVariants({ variant: "default" })}>
+                  Open Workspace to build
                 </Link>
               </CardContent>
             </Card>
@@ -718,12 +620,12 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
           !scriptsText.trim() ? (
             <Card className="border-dashed border-primary/30 bg-primary/5">
               <CardHeader>
-                <CardTitle className="text-base">No content yet</CardTitle>
-                <CardDescription>Generate hooks and scripts from this campaign with AI Command.</CardDescription>
+                <CardTitle className="text-base">Content in progress</CardTitle>
+                <CardDescription>AI is generating hooks and scripts for this campaign.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Link href="/admin/ai-command" className={buttonVariants({ variant: "default" })}>
-                  Ask AI to generate content
+                <Link href="/admin/workspace" className={buttonVariants({ variant: "default" })}>
+                  Open Workspace
                 </Link>
               </CardContent>
             </Card>
@@ -751,130 +653,16 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
           </Card>
         </TabsContent>
 
-        <TabsContent value="ads" className="pt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Ad templates</CardTitle>
-              <CardDescription>Each with name, platform, type, hooks, CTA, target.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {adTemplates.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No ad templates yet.</p>
-              ) : null}
-              <div className="space-y-3">
-                {adTemplates.map((a, idx) => (
-                  <div key={idx} className="rounded-lg border border-border/60 p-3 space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-medium">Ad #{idx + 1}</div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setAdTemplates((rows) => rows.filter((_, i) => i !== idx))}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div className="space-y-1">
-                        <Label>Ad name</Label>
-                        <Input
-                          value={a.ad_name}
-                          onChange={(e) =>
-                            setAdTemplates((rows) =>
-                              rows.map((r, i) => (i === idx ? { ...r, ad_name: e.target.value } : r)),
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Platform</Label>
-                        <Input
-                          value={a.platform}
-                          onChange={(e) =>
-                            setAdTemplates((rows) =>
-                              rows.map((r, i) => (i === idx ? { ...r, platform: e.target.value } : r)),
-                            )
-                          }
-                          placeholder="facebook"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Type</Label>
-                        <Input
-                          value={a.type}
-                          onChange={(e) =>
-                            setAdTemplates((rows) =>
-                              rows.map((r, i) => (i === idx ? { ...r, type: e.target.value } : r)),
-                            )
-                          }
-                          placeholder="image / video / carousel"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>CTA</Label>
-                        <Input
-                          value={a.cta}
-                          onChange={(e) =>
-                            setAdTemplates((rows) =>
-                              rows.map((r, i) => (i === idx ? { ...r, cta: e.target.value } : r)),
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <Label>Target audience</Label>
-                        <Input
-                          value={a.target_audience}
-                          onChange={(e) =>
-                            setAdTemplates((rows) =>
-                              rows.map((r, i) => (i === idx ? { ...r, target_audience: e.target.value } : r)),
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <Label>Hooks</Label>
-                        <Textarea
-                          value={a.hooks}
-                          onChange={(e) =>
-                            setAdTemplates((rows) =>
-                              rows.map((r, i) => (i === idx ? { ...r, hooks: e.target.value } : r)),
-                            )
-                          }
-                          rows={3}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  setAdTemplates((rows) => [
-                    ...rows,
-                    { ad_name: "", platform: "facebook", type: "image", hooks: "", cta: "", target_audience: draftAudience },
-                  ])
-                }
-              >
-                Add ad template
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="emails" className="pt-4 space-y-6">
           {(workspaceQuery.data?.workspaceDisplay?.emailSequenceSteps?.length ?? 0) === 0 && emailSequence.length === 0 ? (
             <Card className="border-dashed border-primary/30 bg-primary/5">
               <CardHeader>
-                <CardTitle className="text-base">No nurture sequence yet</CardTitle>
-                <CardDescription>Ask AI to draft a short sequence tied to this campaign.</CardDescription>
+                <CardTitle className="text-base">Emails in progress</CardTitle>
+                <CardDescription>AI is generating your nurture sequence.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Link href="/admin/ai-command" className={buttonVariants({ variant: "default" })}>
-                  Create sequence
+                <Link href="/admin/workspace" className={buttonVariants({ variant: "default" })}>
+                  Open Workspace
                 </Link>
               </CardContent>
             </Card>
@@ -886,7 +674,7 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
             </CardHeader>
             <CardContent className="space-y-3">
               {emailSequence.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No sequence defined yet.</p>
+                <p className="text-sm text-muted-foreground">AI is generating your sequence steps…</p>
               ) : null}
               <div className="space-y-2">
                 {emailSequence.map((s, idx) => (
@@ -946,112 +734,6 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
               >
                 Add email step
               </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="analytics" className="pt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Tracking</CardTitle>
-              <CardDescription>Affiliate / campaign tracking links.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {(workspaceQuery.data?.workspaceDisplay?.affiliateLinks?.length ?? 0) === 0 ? (
-                <p className="text-muted-foreground">No tracking links yet.</p>
-              ) : (
-                (workspaceQuery.data?.workspaceDisplay?.affiliateLinks ?? []).map((l) => (
-                  <div key={String(l.id)} className="rounded-lg border border-border/60 p-2 font-mono text-xs break-all">
-                    {String(l.destination_url ?? "")}
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="approvals" className="pt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Approvals</CardTitle>
-              <CardDescription>Gated actions for this campaign.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {(workspaceQuery.data?.approvals?.length ?? 0) === 0 ? (
-                <p className="text-muted-foreground">No approvals yet.</p>
-              ) : (
-                (workspaceQuery.data?.approvals ?? []).slice(0, 30).map((a) => (
-                  <div key={String(a.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-2 py-1.5">
-                    <span className="font-mono text-xs">{String(a.approval_type)}</span>
-                    <Badge variant="outline">{String(a.status)}</Badge>
-                  </div>
-                ))
-              )}
-              <Link href="/admin/approvals" className={buttonVariants({ variant: "outline", size: "sm" })}>
-                Open approvals queue
-              </Link>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="logs" className="pt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Recent AI activity</CardTitle>
-              <CardDescription>Latest agent logs for your organization (not strictly filtered to this campaign).</CardDescription>
-            </CardHeader>
-            <CardContent className="max-h-[480px] overflow-auto rounded-lg border border-border/60 bg-muted/20 p-2 font-mono text-[11px] space-y-1">
-              {(workspaceQuery.data?.logs ?? []).slice(0, 80).map((l) => (
-                <div key={String(l.id)}>
-                  <span className="text-muted-foreground">{String(l.created_at ?? "").slice(0, 19)}</span>{" "}
-                  <span className={l.level === "error" ? "text-destructive" : ""}>{String(l.message ?? "")}</span>
-                </div>
-              ))}
-              {(workspaceQuery.data?.logs?.length ?? 0) === 0 ? <p className="text-muted-foreground font-sans text-sm">No logs.</p> : null}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="leads" className="pt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Lead capture settings</CardTitle>
-              <CardDescription>Form fields, incentive, autoresponder (stored in metadata).</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Form fields (comma-separated)</Label>
-                <Input
-                  value={leadCapture.form_fields.join(", ")}
-                  onChange={(e) =>
-                    setLeadCapture((s) => ({
-                      ...s,
-                      form_fields: e.target.value
-                        .split(",")
-                        .map((x) => x.trim())
-                        .filter(Boolean),
-                    }))
-                  }
-                  placeholder="email, full_name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Incentive</Label>
-                <Input
-                  value={leadCapture.incentive}
-                  onChange={(e) => setLeadCapture((s) => ({ ...s, incentive: e.target.value }))}
-                  placeholder="Free home value report"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Autoresponder</Label>
-                <Textarea
-                  value={leadCapture.autoresponder}
-                  onChange={(e) => setLeadCapture((s) => ({ ...s, autoresponder: e.target.value }))}
-                  rows={4}
-                  placeholder="Thanks for requesting... (draft)"
-                />
-              </div>
             </CardContent>
           </Card>
         </TabsContent>

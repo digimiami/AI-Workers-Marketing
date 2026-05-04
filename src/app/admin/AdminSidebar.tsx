@@ -40,7 +40,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "CORE",
     items: [
-      { href: "/admin/ai-command", label: "AI Command", icon: Bot, description: "Plan → build → review" },
+      { href: "/admin/workspace", label: "Workspace", icon: Bot, description: "Live AI build + results" },
       { href: "/admin/campaigns", label: "Campaigns", icon: Megaphone, description: "Workspaces + pipeline" },
       { href: "/admin/approvals", label: "Approvals", icon: CheckCircle2, description: "Publish / send gates" },
     ],
