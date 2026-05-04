@@ -12,7 +12,8 @@ export const runtime = "nodejs";
 
 const querySchema = z.object({
   runId: z.string().uuid().optional(),
-  url: z.string().url().optional(),
+  // Accept bare domains; we'll normalize to https:// before validation.
+  url: z.string().min(1).optional(),
   goal: z.string().min(1).optional(),
   audience: z.string().min(1).optional(),
   trafficSource: z.string().min(1).optional(),
@@ -35,6 +36,14 @@ function asRows<T>(v: unknown): T[] {
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+function normalizeUrl(raw: string): string {
+  const t = raw.trim();
+  if (!t) return t;
+  if (/^https?:\/\//i.test(t)) return t;
+  // If user pasted a domain like "example.com/path", default to https.
+  return `https://${t}`;
 }
 
 async function fetchRunSnapshot(admin: ReturnType<typeof createSupabaseAdminClient>, runId: string) {
@@ -129,6 +138,11 @@ async function handleStream(request: Request, parsed: z.infer<typeof querySchema
   let runPromise: Promise<unknown> | null = null;
 
   if (!runId) {
+    const normalized = {
+      ...parsed,
+      url: parsed.url ? normalizeUrl(parsed.url) : parsed.url,
+    };
+
     const required = z
       .object({
         url: z.string().url(),
@@ -136,9 +150,12 @@ async function handleStream(request: Request, parsed: z.infer<typeof querySchema
         audience: z.string().min(1),
         trafficSource: z.string().min(1),
       })
-      .safeParse(parsed);
+      .safeParse(normalized);
     if (!required.success) {
-      return NextResponse.json({ ok: false, message: "Missing required params: url, goal, audience, trafficSource" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, message: "Invalid params", issues: required.error.flatten() },
+        { status: 400 },
+      );
     }
 
     const begin = await beginMarketingPipelineRun({
