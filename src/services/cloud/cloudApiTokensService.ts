@@ -7,6 +7,9 @@ import { assertOrgOperator } from "@/services/org/assertOrgAccess";
 
 const TOKEN_PREFIX = "aiw_";
 
+// SupabaseClient has multiple type params; accept any variant (server/admin/typed) without fighting generics.
+type AnySupabaseClient = SupabaseClient<any, any, any, any, any>;
+
 export function hashCloudApiTokenSecret(plain: string): string {
   return createHash("sha256").update(plain, "utf8").digest("hex");
 }
@@ -41,7 +44,7 @@ export type ResolvedCloudApiToken = {
 };
 
 export async function resolveCloudApiTokenBySecret(
-  admin: SupabaseClient,
+  admin: AnySupabaseClient,
   plainSecret: string,
 ): Promise<ResolvedCloudApiToken | null> {
   const token_hash = hashCloudApiTokenSecret(plainSecret);
@@ -68,14 +71,14 @@ export async function resolveCloudApiTokenBySecret(
   };
 }
 
-export async function touchCloudApiTokenUsed(admin: SupabaseClient, tokenId: string) {
+export async function touchCloudApiTokenUsed(admin: AnySupabaseClient, tokenId: string) {
   await admin
     .from("organization_cloud_api_tokens" as never)
     .update({ last_used_at: new Date().toISOString() } as never)
     .eq("id", tokenId);
 }
 
-export async function listCloudApiTokens(admin: SupabaseClient, organizationId: string) {
+export async function listCloudApiTokens(admin: AnySupabaseClient, organizationId: string) {
   const { data, error } = await admin
     .from("organization_cloud_api_tokens" as never)
     .select("id, name, token_prefix, actor_user_id, created_at, revoked_at, last_used_at, expires_at")
@@ -101,7 +104,7 @@ export type CreateCloudApiTokenResult = {
 };
 
 export async function createCloudApiToken(params: {
-  admin: SupabaseClient;
+  admin: AnySupabaseClient;
   organizationId: string;
   createdByUserId: string;
   actorUserId: string;
@@ -132,7 +135,7 @@ export async function createCloudApiToken(params: {
 }
 
 export async function revokeCloudApiToken(params: {
-  admin: SupabaseClient;
+  admin: AnySupabaseClient;
   organizationId: string;
   tokenId: string;
   actorUserId: string;

@@ -35,8 +35,9 @@ export async function POST(request: Request) {
   const { data: apptRow, error: apptErr } = await admin
     .from("appointments" as never)
     .select("id,organization_id,lead_id")
-    .eq("organization_id", parsed.data.organizationId)
-    .eq("id", parsed.data.appointmentId)
+    // Database types may lag migrations; keep this filter but bypass overly-strict generated typing.
+    .eq("organization_id" as never, parsed.data.organizationId as never)
+    .eq("id" as never, parsed.data.appointmentId as never)
     .maybeSingle();
   if (apptErr || !apptRow) {
     return NextResponse.json({ ok: false, message: apptErr?.message ?? "Appointment not found" }, { status: 404 });
@@ -49,8 +50,8 @@ export async function POST(request: Request) {
     const { data: leadCheck, error: leadCheckErr } = await admin
       .from("leads" as never)
       .select("email")
-      .eq("organization_id", parsed.data.organizationId)
-      .eq("id", resolvedLeadId)
+      .eq("organization_id" as never, parsed.data.organizationId as never)
+      .eq("id" as never, resolvedLeadId as never)
       .maybeSingle();
     if (leadCheckErr || !leadCheck) {
       return NextResponse.json({ ok: false, message: "Lead not found" }, { status: 400 });
@@ -67,8 +68,8 @@ export async function POST(request: Request) {
     const { data: leadRow, error: leadErr } = await admin
       .from("leads" as never)
       .select("id,email")
-      .eq("organization_id", parsed.data.organizationId)
-      .eq("id", resolvedLeadId)
+      .eq("organization_id" as never, parsed.data.organizationId as never)
+      .eq("id" as never, resolvedLeadId as never)
       .maybeSingle();
     if (leadErr || !leadRow || !(leadRow as any).email) {
       return NextResponse.json({ ok: false, message: "Lead not found or missing email" }, { status: 400 });
@@ -91,8 +92,8 @@ export async function POST(request: Request) {
     const { data: leadRow2 } = await admin
       .from("leads" as never)
       .select("email")
-      .eq("organization_id", parsed.data.organizationId)
-      .eq("id", apptLeadId)
+      .eq("organization_id" as never, parsed.data.organizationId as never)
+      .eq("id" as never, apptLeadId as never)
       .maybeSingle();
     const expected = String((leadRow2 as any)?.email ?? "")
       .trim()
@@ -134,8 +135,8 @@ export async function POST(request: Request) {
   await admin
     .from("email_logs" as never)
     .update({ metadata: { kind: "appointment_invite", appointment_id: parsed.data.appointmentId, gated, body_markdown: parsed.data.bodyMarkdown } } as never)
-    .eq("organization_id", parsed.data.organizationId)
-    .eq("id", (emailLog as any).id);
+    .eq("organization_id" as never, parsed.data.organizationId as never)
+    .eq("id" as never, (emailLog as any).id as never);
 
   if (gated && parsed.data.approvalMode === "enforced") {
     const { data: approval, error: aErr } = await admin
