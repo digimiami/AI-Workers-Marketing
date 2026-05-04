@@ -61,9 +61,7 @@ export function buildCampaignStreamPayload(
         ? String(runRec.campaign_id)
         : null;
   const id = bundle?.campaignId ?? cidFromRun ?? (c && typeof c.id === "string" ? String(c.id) : null);
-  if (!id && !c) return null;
   const meta = c ? asRecord(c.metadata) : {};
-  const name = (c && str(c.name)) || "Campaign";
   const goal =
     str(runInput?.goal) ||
     str(meta.goal) ||
@@ -76,6 +74,17 @@ export function buildCampaignStreamPayload(
     str(meta.audience) ||
     "";
   const trafficSource = str(runInput?.trafficSource) || str(runInput?.traffic) || str(meta.trafficSource) || undefined;
+  if (!id && !c) {
+    if (!runInput || (!goal.trim() && !audience.trim())) return null;
+    return {
+      id: null,
+      name: "Campaign",
+      goal: goal || "Defining positioning from your goal…",
+      audience: audience || "Audience from your brief",
+      trafficSource,
+    };
+  }
+  const name = (c && str(c.name)) || "Campaign";
   return { id: id ?? (c && typeof c.id === "string" ? String(c.id) : null), name, goal, audience, trafficSource };
 }
 
@@ -103,9 +112,13 @@ export function buildLandingStreamPayload(lp: Record<string, unknown> | null | u
   };
 }
 
+const DEFAULT_FUNNEL_FLOW = ["Landing", "Bridge", "Capture", "CTA", "Thank You"] as const;
+
 const FUNNEL_LABEL: Record<string, string> = {
   landing: "Landing",
-  form: "Lead",
+  form: "Capture",
+  lead: "Capture",
+  squeeze: "Capture",
   bridge: "Bridge",
   cta: "CTA",
   thank_you: "Thank You",
@@ -114,12 +127,12 @@ const FUNNEL_LABEL: Record<string, string> = {
 
 export function buildFunnelStreamPayload(bundle: WorkspaceDisplayBundle | null) {
   const funnel = bundle?.funnel;
-  if (!funnel && !(bundle?.funnelSteps?.length ?? 0)) return null;
-  const rows = [...(bundle?.funnelSteps ?? [])].sort((a, b) => Number(a.step_index ?? 0) - Number(b.step_index ?? 0));
-  const flow = rows.map((s) => {
+  const rows = bundle ? [...(bundle.funnelSteps ?? [])].sort((a, b) => Number(a.step_index ?? 0) - Number(b.step_index ?? 0)) : [];
+  const flowFromRows = rows.map((s) => {
     const t = String(s.step_type ?? "");
-    return FUNNEL_LABEL[t] || (t ? t : "Step");
+    return FUNNEL_LABEL[t] || (t ? t.replace(/_/g, " ") : "Step");
   });
+  const flow = flowFromRows.length ? flowFromRows : [...DEFAULT_FUNNEL_FLOW];
   const steps = rows.map((s) => ({
     id: str(s.id),
     name: str(s.name) || FUNNEL_LABEL[String(s.step_type)] || "Step",
@@ -131,7 +144,6 @@ export function buildFunnelStreamPayload(bundle: WorkspaceDisplayBundle | null) 
     id: funnel && typeof funnel.id === "string" ? funnel.id : null,
     name: funnel && str(funnel.name) ? str(funnel.name) : "Funnel",
     flow,
-    /** Visual labels for: Landing → Lead → … */
     flowDiagram: flow.join(" → "),
     steps,
   };
@@ -168,7 +180,7 @@ export function buildContentStreamPayload(assets: Array<Record<string, unknown>>
   }
   return {
     totalCount: assets.length,
-    hooksPreview: hooks.slice(0, 3),
+    hooksPreview: hooks.slice(0, 10),
     hooksCount: hooks.length,
     firstTitle: str(assets[0]?.title) || undefined,
     scriptsPreview,
@@ -187,8 +199,7 @@ export function bundleToAiWorkspaceResults(bundle: WorkspaceDisplayBundle | null
   if (camp) out.campaign = camp;
   const land = buildLandingStreamPayload(bundle.landingPages?.[0] as Record<string, unknown> | undefined);
   if (land) out.landing = land;
-  const fun = buildFunnelStreamPayload(bundle);
-  if (fun) out.funnel = fun;
+  out.funnel = buildFunnelStreamPayload(bundle);
   const cont = buildContentStreamPayload(bundle.contentAssets);
   if (cont) out.content = cont;
   const ads = buildAdsStreamPayload(bundle.adCreatives);

@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import { Loader2, Pencil, Rocket, Sparkles } from "lucide-react";
 
 import { AiLiveBuildStream } from "@/components/ai/AiLiveBuildStream";
-import { AiWorkspaceResultsPanel } from "@/components/ai/AiWorkspaceResultsPanel";
+import { AiWorkspaceLiveOutputGrid } from "@/components/ai/AiWorkspaceLiveOutputGrid";
+import { AiWorkspaceThinkingPanel } from "@/components/ai/AiWorkspaceThinkingPanel";
 import {
   AdsCard,
   AnalyticsCard,
@@ -215,6 +216,8 @@ export function UnifiedAiWorkspaceClient(props: Props) {
             </div>
           </Card>
 
+          <AiWorkspaceThinkingPanel lines={stream.state.thinking} active={stream.state.active} />
+
           {!stream.state.active && stream.state.reviewUrl ? (
             <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-card to-card p-6 shadow-[0_0_40px_-12px_rgba(16,185,129,0.35)]">
               <div className="text-2xl font-semibold tracking-tight">Your AI workspace is ready</div>
@@ -255,19 +258,24 @@ export function UnifiedAiWorkspaceClient(props: Props) {
             </div>
           ) : null}
 
+          <AiWorkspaceLiveOutputGrid
+            results={stream.state.results}
+            steps={stream.state.steps}
+            campaignId={resolvedCampaignId}
+            modulePulseAt={stream.state.modulePulseAt}
+            heading={!stream.state.active && stream.state.reviewUrl ? "Everything AI built" : "Live output"}
+          />
+
           <div className="space-y-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Live build</h2>
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[400px_1fr]">
-              <AiLiveBuildStream
-                steps={stream.state.steps}
-                isRunning={stream.state.active}
-                errors={stream.state.errors}
-                progress={progress}
-                onRetry={stream.retry}
-                stepPreviews={stepPreviews}
-              />
-              <AiWorkspaceResultsPanel results={stream.state.results} campaignId={resolvedCampaignId} />
-            </div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Build timeline</h2>
+            <AiLiveBuildStream
+              steps={stream.state.steps}
+              isRunning={stream.state.active}
+              errors={stream.state.errors}
+              progress={progress}
+              onRetry={stream.retry}
+              stepPreviews={stepPreviews}
+            />
           </div>
 
           <div className="space-y-3">

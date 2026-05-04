@@ -36,7 +36,7 @@ export function EmailCard(props: { data?: unknown; campaignId: string | null; cl
           </div>
         ))}
         {props.campaignId ? (
-          <Link href={`/admin/campaigns/${props.campaignId}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <Link href={`/admin/campaigns/${props.campaignId}?tab=emails`} className={buttonVariants({ variant: "outline", size: "sm" })}>
             Open emails
           </Link>
         ) : null}

@@ -62,9 +62,20 @@ export type AiWorkspaceResults = {
   approvals?: unknown;
 };
 
+export type AiWorkspaceThinkingLine = {
+  id: string;
+  step: string;
+  message: string;
+  at: number;
+};
+
 export type AiWorkspaceStreamState = {
   steps: Array<{ key: StreamStepKey; label: string; status: StreamStepStatus; message?: string }>;
   results: AiWorkspaceResults;
+  /** Monotonic clock ticks when a module result payload updates (for glow / emphasis). */
+  modulePulseAt: Partial<Record<string, number>>;
+  /** Step messages from the stream (reasoning / status narration). */
+  thinking: AiWorkspaceThinkingLine[];
   runId: string | null;
   reviewUrl: string | null;
   campaignId: string | null;
@@ -131,6 +142,19 @@ function attachStreamListeners(
     try {
       const d = JSON.parse((ev as MessageEvent).data) as { step: string; status: StreamStepStatus; message?: string };
       updateStep(d.step, d.status, d.message);
+      const msg = typeof d.message === "string" ? d.message.trim() : "";
+      if (!msg) return;
+      setState((prev) => {
+        const last = prev.thinking[prev.thinking.length - 1];
+        if (last && last.step === d.step && last.message === msg) return prev;
+        const line: AiWorkspaceThinkingLine = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          step: d.step,
+          message: msg,
+          at: Date.now(),
+        };
+        return { ...prev, thinking: [...prev.thinking.slice(-160), line] };
+      });
     } catch {
       // ignore
     }
@@ -167,6 +191,7 @@ function attachStreamListeners(
         return {
           ...prev,
           results: { ...prev.results, [nk]: d.data },
+          modulePulseAt: { ...prev.modulePulseAt, [nk]: Date.now() },
         };
       });
     } catch {
@@ -225,6 +250,8 @@ export function useAiWorkspaceStream() {
   const [state, setState] = React.useState<AiWorkspaceStreamState>(() => ({
     steps: initialSteps(),
     results: {},
+    modulePulseAt: {},
+    thinking: [],
     runId: null,
     reviewUrl: null,
     campaignId: null,
@@ -244,6 +271,8 @@ export function useAiWorkspaceStream() {
     setState({
       steps: initialSteps(),
       results: {},
+      modulePulseAt: {},
+      thinking: [],
       runId: null,
       reviewUrl: null,
       campaignId: null,
@@ -281,6 +310,8 @@ export function useAiWorkspaceStream() {
         setState({
           steps: initialSteps(),
           results: {},
+          modulePulseAt: {},
+          thinking: [],
           runId: null,
           reviewUrl: null,
           campaignId: null,
@@ -329,6 +360,8 @@ export function useAiWorkspaceStream() {
         setState({
           steps: initialSteps(),
           results: {},
+          modulePulseAt: {},
+          thinking: [],
           runId,
           reviewUrl: null,
           campaignId: null,

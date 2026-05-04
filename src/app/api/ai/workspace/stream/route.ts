@@ -51,6 +51,10 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
 function normalizeUrl(raw: string): string {
   const t = raw.trim();
   if (!t) return t;
@@ -258,6 +262,18 @@ async function handleStream(request: Request, parsed: z.infer<typeof querySchema
 
           const researchPayload = buildResearchStreamPayload((bundle?.research ?? null) as Record<string, unknown> | null);
           if (researchPayload) emitModule("research", researchPayload);
+          else if (runInput && runStatus !== "completed" && runStatus !== "failed") {
+            const aud = str(runInput.audience);
+            const goalLine = str(runInput.goal);
+            if (aud || goalLine) {
+              emitModule("research", {
+                audience: aud || undefined,
+                painPoints: [] as string[],
+                hooks: [] as string[],
+                offerSummary: "Synthesizing ICP, pains, and hook angles from your brief…",
+              });
+            }
+          }
 
           const campaignPayload = buildCampaignStreamPayload(bundle, snap.run, runInput);
           if (campaignPayload) emitModule("campaign", campaignPayload);
@@ -265,8 +281,7 @@ async function handleStream(request: Request, parsed: z.infer<typeof querySchema
           const landingPayload = buildLandingStreamPayload(bundle?.landingPages?.[0] as Record<string, unknown> | undefined);
           if (landingPayload) emitModule("landing", landingPayload);
 
-          const funnelPayload = buildFunnelStreamPayload(bundle);
-          if (funnelPayload) emitModule("funnel", funnelPayload);
+          emitModule("funnel", buildFunnelStreamPayload(bundle));
 
           const contentPayload = buildContentStreamPayload(bundle?.contentAssets);
           if (contentPayload) emitModule("content", contentPayload);
