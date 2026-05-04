@@ -340,11 +340,24 @@ async function maybeInternalLlmJson(params: {
   }
 }
 
-export async function runMarketingPipeline(params: {
+export type MarketingPipelineBodyState = {
+  params: { supabase: SupabaseClient; actorUserId: string; input: RunMarketingPipelineInput };
+  admin: SupabaseClient;
+  input: RunMarketingPipelineInput;
+  organizationId: string;
+  pipelineRunId: string;
+  stages: Record<MarketingPipelineStageKey, StageRow>;
+  stageOrder: MarketingPipelineStageKey[];
+  startStage: MarketingPipelineStageKey;
+  stopAfterStage: MarketingPipelineStageKey | null;
+  startIdx: number;
+};
+
+export async function beginMarketingPipelineRun(params: {
   supabase: SupabaseClient;
   actorUserId: string;
   input: RunMarketingPipelineInput;
-}): Promise<RunMarketingPipelineOutput> {
+}): Promise<MarketingPipelineBodyState> {
   const parsed = runMarketingPipelineInputSchema.safeParse(params.input);
   if (!parsed.success) throw new Error(parsed.error.message);
 
@@ -357,15 +370,15 @@ export async function runMarketingPipeline(params: {
     : null;
   const startIdx = Math.max(0, stageOrder.indexOf(startStage));
 
-  // --- Resolve organization ---
   let organizationId = input.organizationId ?? "";
   if (input.organizationMode === "create") {
     const name = input.organizationName ?? "New Organization";
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "")
-      .slice(0, 48) || `org-${crypto.randomUUID().slice(0, 8)}`;
+    const slug =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "")
+        .slice(0, 48) || `org-${crypto.randomUUID().slice(0, 8)}`;
     const { data: org, error } = await params.supabase.rpc("create_organization_with_owner" as never, {
       org_name: name,
       org_slug: slug,
@@ -375,7 +388,13 @@ export async function runMarketingPipeline(params: {
   }
   if (!organizationId) throw new Error("organizationId required");
 
-  // --- Create pipeline run + stage rows ---
+  const persistedInput = (() => {
+    const row = { ...input } as Record<string, unknown>;
+    delete row.defer;
+    delete row.resumePipelineRunId;
+    return row;
+  })();
+
   const { data: runRow, error: runErr } = await admin
     .from("marketing_pipeline_runs" as never)
     .insert({
@@ -383,7 +402,7 @@ export async function runMarketingPipeline(params: {
       campaign_id: (input as any).campaignId ?? null,
       provider: input.provider,
       approval_mode: input.approvalMode,
-      input,
+      input: persistedInput,
       status: "running",
       current_stage: startStage,
       started_at: nowIso(),
@@ -417,6 +436,81 @@ export async function runMarketingPipeline(params: {
     if (sErr || !sRow) throw new Error(sErr?.message ?? `Failed to create stage ${stageKey}`);
     stages[stageKey] = { id: String((sRow as any).id), stage_key: stageKey, status: String((sRow as any).status) as any };
   }
+
+  return { params, admin, input, organizationId, pipelineRunId, stages, stageOrder, startStage, stopAfterStage, startIdx };
+}
+
+async function loadMarketingPipelineForResume(params: {
+  supabase: SupabaseClient;
+  actorUserId: string;
+  input: RunMarketingPipelineInput;
+}): Promise<MarketingPipelineBodyState> {
+  const resumeId = params.input.resumePipelineRunId;
+  if (!resumeId) throw new Error("resumePipelineRunId required");
+
+  const admin = createSupabaseAdminClient();
+  const { data: runRow, error: runErr } = await admin
+    .from("marketing_pipeline_runs" as never)
+    .select("id,organization_id,campaign_id,input,status")
+    .eq("id", resumeId)
+    .maybeSingle();
+  if (runErr || !runRow) throw new Error(runErr?.message ?? "Pipeline run not found for resume");
+
+  const organizationId = String((runRow as any).organization_id);
+  if (params.input.organizationId && String(params.input.organizationId) !== organizationId) {
+    throw new Error("organizationId mismatch for resumed pipeline run");
+  }
+
+  const { data: stRows, error: stErr } = await admin
+    .from("marketing_pipeline_stages" as never)
+    .select("id,stage_key,status")
+    .eq("pipeline_run_id", resumeId)
+    .order("created_at", { ascending: true });
+  if (stErr || !(stRows as any[])?.length) throw new Error(stErr?.message ?? "Missing pipeline stages");
+
+  const stages: Record<MarketingPipelineStageKey, StageRow> = {} as any;
+  for (const sk of marketingPipelineStageKeySchema.options) {
+    const row = (stRows as any[]).find((r) => String(r.stage_key) === sk);
+    if (!row) throw new Error(`Missing stage row: ${sk}`);
+    stages[sk] = { id: String(row.id), stage_key: sk, status: String(row.status) as any };
+  }
+
+  const rawInput = (runRow as any).input;
+  const merged = {
+    ...(typeof rawInput === "object" && rawInput && !Array.isArray(rawInput) ? (rawInput as Record<string, unknown>) : {}),
+    organizationMode: "existing" as const,
+    organizationId,
+    defer: undefined,
+    resumePipelineRunId: undefined,
+  };
+
+  const inputParsed = runMarketingPipelineInputSchema.safeParse(merged);
+  if (!inputParsed.success) throw new Error(inputParsed.error.message);
+  const input = inputParsed.data;
+
+  const stageOrder: MarketingPipelineStageKey[] = ["research", "strategy", "creation", "execution", "optimization"];
+  const startStage = (input as any).startStage ? (String((input as any).startStage) as MarketingPipelineStageKey) : "research";
+  const stopAfterStage = (input as any).stopAfterStage
+    ? (String((input as any).stopAfterStage) as MarketingPipelineStageKey)
+    : null;
+  const startIdx = Math.max(0, stageOrder.indexOf(startStage));
+
+  return {
+    params: { supabase: params.supabase, actorUserId: params.actorUserId, input },
+    admin,
+    input,
+    organizationId,
+    pipelineRunId: resumeId,
+    stages,
+    stageOrder,
+    startStage,
+    stopAfterStage,
+    startIdx,
+  };
+}
+
+async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): Promise<RunMarketingPipelineOutput> {
+  const { params, admin, input, organizationId, pipelineRunId, stages, stageOrder, startStage, stopAfterStage, startIdx } = state;
 
   const createdRecords: Array<{ table: string; id: string; label?: string }> = [];
   const approvalItems: Array<{ id: string; approval_type?: string }> = [];
@@ -1875,4 +1969,15 @@ export async function runMarketingPipeline(params: {
       providerMeta: { traceId, provider: input.provider, failed: true },
     };
   }
+}
+
+export async function runMarketingPipeline(params: {
+  supabase: SupabaseClient;
+  actorUserId: string;
+  input: RunMarketingPipelineInput;
+}): Promise<RunMarketingPipelineOutput> {
+  if (params.input.resumePipelineRunId) {
+    return executeMarketingPipelineBody(await loadMarketingPipelineForResume(params));
+  }
+  return executeMarketingPipelineBody(await beginMarketingPipelineRun(params));
 }

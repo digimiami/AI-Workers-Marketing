@@ -8,6 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 
 import { GeneratedWorkspaceResults } from "@/components/ai/GeneratedWorkspaceResults";
+import { PipelineStepper } from "@/components/ai/PipelineStepper";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -204,6 +205,7 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
   const [hooksText, setHooksText] = React.useState("");
   const [scriptsText, setScriptsText] = React.useState("");
   const [emailSequence, setEmailSequence] = React.useState<EmailStep[]>([]);
+  const [askText, setAskText] = React.useState("");
   const [leadCapture, setLeadCapture] = React.useState<LeadCapture>({
     form_fields: ["email", "full_name"],
     incentive: "",
@@ -411,6 +413,59 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
         </TabsList>
 
         <TabsContent value="overview" className="pt-4 space-y-6">
+          <Card className="border-border/60 bg-card/50 backdrop-blur-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">🤖 Ask AiWorkers</CardTitle>
+              <CardDescription>Ask for changes. We’ll route you to the right AI run.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(() => {
+                const prompt = askText.trim();
+                const qs = new URLSearchParams();
+                qs.set("campaignId", props.campaignId);
+                if (prompt) qs.set("prompt", prompt);
+                return (
+                  <>
+                    <Input
+                      value={askText}
+                      onChange={(e) => setAskText(e.target.value)}
+                      placeholder="Improve this funnel…"
+                      className="h-11"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "Improve this funnel",
+                        "Generate 10 new hooks",
+                        "Fix landing page",
+                        "Analyze campaign",
+                      ].map((ex) => (
+                        <button
+                          key={ex}
+                          type="button"
+                          onClick={() => setAskText(ex)}
+                          className="rounded-full border border-border/60 bg-background/60 px-3 py-1.5 text-xs font-medium transition hover:border-primary/40 hover:bg-primary/5"
+                        >
+                          {ex}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        href={`/admin/ai-command?${qs.toString()}`}
+                        className={buttonVariants({ variant: "default" })}
+                      >
+                        Ask AiWorkers
+                      </Link>
+                      <Button type="button" variant="outline" onClick={() => setAskText("")}>
+                        Clear
+                      </Button>
+                    </div>
+                  </>
+                );
+              })()}
+            </CardContent>
+          </Card>
+
           <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
             <CardHeader>
               <CardTitle className="text-base">Workspace snapshot</CardTitle>
@@ -459,6 +514,91 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
         </TabsContent>
 
         <TabsContent value="pipeline" className="pt-4 space-y-6">
+          {(() => {
+            const bundle = workspaceQuery.data?.workspaceDisplay ?? null;
+            const latest = bundle?.latestPipelineRun ?? null;
+            const pendingApprovals = (bundle?.approvals ?? []).filter((a) => asString(asRecord(a).status) === "pending");
+            const needsApproval =
+              pendingApprovals.length > 0 ||
+              asString(latest?.status) === "needs_approval" ||
+              asString(latest?.current_stage) === "execution";
+
+            const researchDone = Boolean(bundle?.research && Object.keys(bundle.research).length > 0);
+            const strategyDone = Boolean(bundle?.campaign);
+            const creationDone = Boolean(
+              (bundle?.landingPages?.length ?? 0) > 0 ||
+                (bundle?.funnelSteps?.length ?? 0) > 0 ||
+                (bundle?.contentAssets?.length ?? 0) > 0 ||
+                (bundle?.emailSequenceSteps?.length ?? 0) > 0,
+            );
+            const executionDone = asString(latest?.status) === "complete" || asString(latest?.status) === "completed";
+
+            const goal =
+              asString(asRecord((campaignQuery.data as any)?.metadata).goal) ||
+              asString(asRecord((campaignQuery.data as any)?.metadata).objective);
+
+            return (
+              <Card className="border-border/60 bg-gradient-to-br from-card/80 to-card/40 backdrop-blur-sm">
+                <CardHeader className="pb-2">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base">{campaignQuery.data?.name ?? "Campaign"}</CardTitle>
+                      <CardDescription>
+                        <span className="font-mono">{asString(campaignQuery.data?.status)}</span>
+                        {goal ? <span className="text-muted-foreground"> · </span> : null}
+                        {goal ? <span>Goal: {goal}</span> : null}
+                      </CardDescription>
+                    </div>
+                    {needsApproval ? (
+                      <Badge variant="outline" className="border-amber-500/60">
+                        Execution pending approval
+                      </Badge>
+                    ) : executionDone ? (
+                      <Badge variant="secondary">Execution complete</Badge>
+                    ) : (
+                      <Badge variant="outline">In progress</Badge>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pipeline</div>
+                    <PipelineStepper
+                      compact
+                      stages={[
+                        { key: "research", status: researchDone ? "completed" : "pending", summary: "Research" },
+                        { key: "strategy", status: strategyDone ? "completed" : "pending", summary: "Strategy" },
+                        { key: "creation", status: creationDone ? "completed" : "pending", summary: "Creation" },
+                        {
+                          key: "execution",
+                          status: needsApproval ? "needs_approval" : executionDone ? "completed" : "pending",
+                          summary: "Execution",
+                        },
+                      ]}
+                    />
+                  </div>
+
+                  {needsApproval ? (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                      <div className="text-sm font-medium">Next action</div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        Approve landing page + emails to launch.
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button type="button" onClick={() => setActiveTab("approvals")}>
+                          Review &amp; Approve
+                        </Button>
+                        <Link href="/admin/approvals" className={buttonVariants({ variant: "outline", size: "default" })}>
+                          Open approvals queue
+                        </Link>
+                      </div>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            );
+          })()}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Pipeline board</CardTitle>

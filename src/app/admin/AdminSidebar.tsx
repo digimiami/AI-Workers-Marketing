@@ -5,25 +5,18 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Activity,
-  BadgeCheck,
   BarChart3,
   Bot,
-  Building2,
   CheckCircle2,
-  Database,
   FileBarChart2,
   FileText,
   Inbox,
-  LayoutGrid,
   LayoutTemplate,
   LogOut,
   Mail,
   Megaphone,
   PanelLeft,
-  Rocket,
   Settings,
-  Sparkles,
   Users,
   Wand2,
 } from "lucide-react";
@@ -41,52 +34,39 @@ type NavItem = {
   description?: string;
 };
 
-type NavGroup = { title: "AI WORKSPACE" | "CORE" | "BUILD" | "INTELLIGENCE" | "SYSTEM"; items: NavItem[] };
+type NavGroup = { title: "CORE" | "BUILD" | "INTELLIGENCE" | "SYSTEM"; items: NavItem[] };
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    title: "AI WORKSPACE",
-    items: [
-      { href: "/admin/ai-command", label: "AI Command", icon: Bot, description: "Plan → build → review" },
-      { href: "/admin/campaigns", label: "Campaign workspaces", icon: Megaphone, description: "Per-campaign cockpit" },
-      { href: "/admin/approvals", label: "Approvals", icon: CheckCircle2, description: "Publish / send gates" },
-    ],
-  },
-  {
     title: "CORE",
     items: [
-      { href: "/admin/launch", label: "Autopilot Launch", icon: Rocket, description: "One-click workspace" },
-      { href: "/admin/creation-hub", label: "Creation Hub", icon: LayoutGrid, description: "See, test, delete" },
+      { href: "/admin/ai-command", label: "AI Command", icon: Bot, description: "Plan → build → review" },
       { href: "/admin/campaigns", label: "Campaigns", icon: Megaphone, description: "Workspaces + pipeline" },
-      { href: "/admin", label: "Overview", icon: LayoutGrid, description: "Status + next actions" },
+      { href: "/admin/approvals", label: "Approvals", icon: CheckCircle2, description: "Publish / send gates" },
     ],
   },
   {
     title: "BUILD",
     items: [
-      { href: "/admin/funnels", label: "Funnels", icon: LayoutTemplate },
-      { href: "/admin/content", label: "Content", icon: FileText },
-      { href: "/admin/ad-creative", label: "Ad Creative", icon: Sparkles },
-      { href: "/admin/email", label: "Email", icon: Mail },
-      { href: "/admin/leads", label: "Leads", icon: Users },
+      { href: "/admin/funnels", label: "Funnel", icon: LayoutTemplate, description: "Steps + routing" },
+      { href: "/admin/content", label: "Content", icon: FileText, description: "Hooks, scripts, assets" },
+      { href: "/admin/email", label: "Emails", icon: Mail, description: "Sequences + templates" },
+      { href: "/admin/leads", label: "Leads", icon: Users, description: "Captured contacts" },
     ],
   },
   {
     title: "INTELLIGENCE",
     items: [
-      { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
-      { href: "/admin/reports", label: "Reports", icon: FileBarChart2 },
-      { href: "/admin/ai-workers", label: "AI Workers", icon: Wand2 },
-      { href: "/admin/ai-workers/runs", label: "Agent Runs", icon: Activity },
-      { href: "/admin/data-sources", label: "Data Sources", icon: Database },
+      { href: "/admin/analytics", label: "Analytics", icon: BarChart3, description: "Events + performance" },
+      { href: "/admin/reports", label: "Reports", icon: FileBarChart2, description: "Exports + summaries" },
+      { href: "/admin/ai-workers", label: "AI Workers", icon: Wand2, description: "Agents + skills" },
     ],
   },
   {
     title: "SYSTEM",
     items: [
-      { href: "/admin/organizations", label: "Organizations", icon: Building2 },
-      { href: "/admin/settings", label: "Settings", icon: Settings },
-      { href: "/admin/logs", label: "Logs", icon: Inbox },
+      { href: "/admin/settings", label: "Settings", icon: Settings, description: "Org + preferences" },
+      { href: "/admin/logs", label: "Logs", icon: Inbox, description: "Audit trail" },
     ],
   },
 ];

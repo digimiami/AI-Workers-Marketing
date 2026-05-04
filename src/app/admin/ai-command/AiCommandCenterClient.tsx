@@ -2,9 +2,8 @@
 
 import * as React from "react";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowRight, Loader2, Rocket, ShieldAlert, Sparkles, Wand2 } from "lucide-react";
@@ -17,6 +16,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { PipelineStepper } from "@/components/ai/PipelineStepper";
 import { cn } from "@/lib/utils";
+import { useAiWorkspaceStream } from "@/components/ai/useAiWorkspaceStream";
+import BuildStepCard from "@/components/ai/BuildStepCard";
+import LiveResultCard from "@/components/ai/LiveResultCard";
 
 const providerSchema = z.enum(["openclaw", "internal_llm", "hybrid"]);
 const modeSchema = z.enum([
@@ -53,17 +55,6 @@ type PlannerMeta = {
   httpStatus?: number;
 };
 
-type RunResult = {
-  ok: boolean;
-  runId: string;
-  plan: Plan;
-  createdRecords: Record<string, unknown>;
-  updatedRecords: Record<string, unknown>;
-  approvalItems: Array<{ id: string; status: string; approval_type: string }>;
-  warnings: string[];
-  errors: string[];
-};
-
 function asRows<T>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
 }
@@ -76,13 +67,8 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
-type MarketingPipelineRunApi = {
-  ok: boolean;
-  run?: Record<string, unknown>;
-};
-
 export function AiCommandCenterClient({ organizationId }: { organizationId: string }) {
-  const router = useRouter();
+  const searchParams = useSearchParams();
   const [provider, setProvider] = React.useState<Provider>("hybrid");
   const [mode, setMode] = React.useState<Mode>("create_campaign");
 
@@ -103,16 +89,26 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
 
   const [planOverride, setPlanOverride] = React.useState<string>("");
   const [approvedPlan, setApprovedPlan] = React.useState<Plan | null>(null);
-  const [lastRun, setLastRun] = React.useState<RunResult | null>(null);
-  const [activeRunId, setActiveRunId] = React.useState<string | null>(null);
-  const [activePipelineRunId, setActivePipelineRunId] = React.useState<string | null>(null);
-  const [lastPipeline, setLastPipeline] = React.useState<{ pipelineRunId: string; campaignId: string | null } | null>(null);
   const [plannerMeta, setPlannerMeta] = React.useState<PlannerMeta | null>(null);
+  const stream = useAiWorkspaceStream();
 
   const stageLabels = React.useMemo(
     () => ["Research", "Strategy", "Creation", "Execution"] as const,
     [],
   );
+
+  React.useEffect(() => {
+    // Optional deep-link from “Ask AiWorkers” or campaign pages.
+    const cid = searchParams.get("campaignId");
+    const prompt = searchParams.get("prompt");
+    if (cid && !campaignId) {
+      setCampaignId(cid);
+      setMode("improve_campaign");
+    }
+    if (prompt && !notes.trim()) {
+      setNotes(prompt);
+    }
+  }, [searchParams, campaignId, notes]);
 
   const planMutation = useMutation({
     mutationFn: async () => {
@@ -188,100 +184,25 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
         errors: asStringArray(raw.errors),
       };
     },
-    onSuccess: (j) => {
-      setLastRun(j);
-      setActiveRunId(j.runId);
+    onSuccess: () => {
       toast.success("Run completed");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Run failed"),
   });
 
-  const runStatusQuery = useQuery({
-    queryKey: ["ai-command-run", organizationId, activeRunId],
-    enabled: Boolean(activeRunId),
-    refetchInterval: 2000,
-    queryFn: async () => {
-      const runId = activeRunId;
-      if (!runId) return null;
-      const res = await fetch(
-        `/api/admin/ai-command/runs/${runId}?organizationId=${encodeURIComponent(organizationId)}`,
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const j = (await res.json()) as Record<string, unknown>;
-      return {
-        ok: Boolean(j.ok),
-        run: (j.run ?? null) as {
-          id: string;
-          status: string;
-          output_summary: string | null;
-          error_message: string | null;
-        } | null,
-        logs: asRows<{ id: string; created_at: string; level: string; message: string; data?: unknown }>(j.logs),
-        outputs: asRows<{ id: string; output_type: string; content: Record<string, unknown>; created_at: string }>(
-          j.outputs,
-        ),
-        approvals: asRows<{ id: string; status: string; approval_type: string; created_at: string }>(j.approvals),
-      };
-    },
-  });
-
-  const pipelineRunQuery = useQuery({
-    queryKey: ["marketing-pipeline-run", activePipelineRunId],
-    enabled: Boolean(activePipelineRunId),
-    refetchInterval: (q) => {
-      const st = String((q.state.data as MarketingPipelineRunApi | null | undefined)?.run?.status ?? "");
-      return st === "running" || st === "pending" ? 2000 : false;
-    },
-    queryFn: async () => {
-      const runId = activePipelineRunId;
-      if (!runId) return null;
-      const res = await fetch(`/api/admin/marketing-pipeline/runs/${runId}`);
-      if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as MarketingPipelineRunApi;
-    },
-  });
-
-  const pipelineMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/admin/marketing-pipeline/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          organizationMode: orgMode,
-          organizationId: orgMode === "existing" ? organizationId : undefined,
-          organizationName: orgMode === "create" ? orgName : undefined,
-          url,
-          mode: campaignType === "client" ? "client" : "affiliate",
-          goal,
-          audience,
-          trafficSource,
-          notes: notes || undefined,
-          provider,
-          approvalMode,
-          async: false,
-        }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as unknown;
-    },
-    onSuccess: (j) => {
-      const out = asRecord(j);
-      const runId = String(out.pipelineRunId ?? "");
-      const cId = typeof out.campaignId === "string" && out.campaignId.length ? String(out.campaignId) : null;
-      setActivePipelineRunId(runId || null);
-      setLastPipeline(runId ? { pipelineRunId: runId, campaignId: cId } : null);
-      if (cId) setCampaignId(cId);
-      const errs = asStringArray(out.errors);
-      const okFlag = out.ok !== false && errs.length === 0;
-      if (okFlag) {
-        toast.success("Pipeline run completed");
-        if (runId) router.push(`/admin/workspace/review/run/${runId}`);
-      } else {
-        toast.error(errs.length ? errs.join(" · ") : "Pipeline finished with errors");
-      }
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Pipeline run failed"),
-  });
+  const startStreamBuild = () => {
+    if (!canGeneratePlan) return;
+    stream.start({
+      url,
+      goal,
+      audience,
+      trafficSource,
+      provider,
+      approvalMode,
+      mode: campaignType === "client" ? "client" : "affiliate",
+    });
+    toast.success("AI build started — streaming live progress.");
+  };
 
   const parsedPlan = React.useMemo(() => {
     try {
@@ -352,7 +273,7 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
     <div className="space-y-6">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">AI Command Center</h1>
-        <p className="text-sm text-muted-foreground">URL → plan → build → live workspace with every module visible.</p>
+        <p className="text-sm text-muted-foreground">Paste URL → Generate → watch the live build below.</p>
       </div>
 
       <Card className="glass-panel border-border/60 overflow-hidden shadow-sm">
@@ -366,39 +287,20 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
           </div>
         </div>
         <CardContent className="space-y-6 p-4 md:p-6">
-          <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Command</Label>
-            <Input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="Paste affiliate link or client website…"
-              className="h-12 rounded-xl border-border/70 bg-background/80 text-base shadow-inner"
-            />
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ["affiliate", "Affiliate campaign"],
-                ["client", "Client campaign"],
-                ["lead", "Lead generation"],
-                ["shortform", "Short-form content"],
-                ["nurture", "Email nurture"],
-                ["funnel", "Funnel build"],
-                ["ads", "Ad creative"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => applyQuickChip(id)}
-                className={cn(
-                  "rounded-full border border-border/60 bg-background/60 px-3 py-1.5 text-xs font-medium transition hover:border-primary/40 hover:bg-primary/5",
-                )}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">URL</Label>
+              <Input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://example.com"
+                className="h-12 rounded-xl border-border/70 bg-background/80 text-base shadow-inner"
+              />
+            </div>
+            <Button type="button" onClick={startStreamBuild} disabled={stream.state.active || !canGeneratePlan} className="h-12 rounded-xl px-5">
+              {stream.state.active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              <span className="ml-2">Generate with AI</span>
+            </Button>
           </div>
 
           {cockpitStep === 1 ? (
@@ -418,6 +320,30 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
               <details className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2 md:col-span-2">
                 <summary className="cursor-pointer select-none text-sm font-medium">Advanced</summary>
                 <div className="mt-3 grid gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2 flex flex-wrap gap-2">
+                    {(
+                      [
+                        ["affiliate", "Affiliate campaign"],
+                        ["client", "Client campaign"],
+                        ["lead", "Lead generation"],
+                        ["shortform", "Short-form content"],
+                        ["nurture", "Email nurture"],
+                        ["funnel", "Funnel build"],
+                        ["ads", "Ad creative"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => applyQuickChip(id)}
+                        className={cn(
+                          "rounded-full border border-border/60 bg-background/60 px-3 py-1.5 text-xs font-medium transition hover:border-primary/40 hover:bg-primary/5",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <div className="space-y-2">
                     <Label>Campaign type</Label>
                     <Select value={campaignType} onValueChange={(v) => setCampaignType(v === "client" ? "client" : "affiliate")}>
@@ -461,8 +387,8 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
                   {planMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
                   <span className="ml-2">Generate plan</span>
                 </Button>
-                <Button type="button" onClick={() => setCockpitStep(2)} disabled={!canGeneratePlan}>
-                  Skip to build preview
+                <Button type="button" variant="outline" onClick={() => setCockpitStep(2)} disabled={!canGeneratePlan}>
+                  Plan details
                   <ArrowRight className="ml-2 h-4 w-4 opacity-80" />
                 </Button>
               </div>
@@ -562,13 +488,8 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
                   >
                     Regenerate plan
                   </Button>
-                  <Button
-                    type="button"
-                    onClick={() => pipelineMutation.mutate()}
-                    disabled={pipelineMutation.isPending || !canGeneratePlan}
-                    className="min-w-[200px]"
-                  >
-                    {pipelineMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+                  <Button type="button" onClick={startStreamBuild} disabled={stream.state.active || !canGeneratePlan} className="min-w-[200px]">
+                    {stream.state.active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
                     <span className="ml-2">Build AI workspace</span>
                   </Button>
                 </div>
@@ -577,6 +498,60 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
           ) : null}
         </CardContent>
       </Card>
+
+      {stream.state.runId || stream.state.active ? (
+        <div className="space-y-6">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-2">
+              {stream.state.steps.map((st) => (
+                <BuildStepCard key={st.key} label={st.label} status={st.status} message={st.message} />
+              ))}
+              {stream.state.errors.length ? (
+                <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3 text-sm">
+                  <div className="font-medium">Errors</div>
+                  <ul className="mt-2 list-disc pl-4 space-y-1 text-muted-foreground">
+                    {stream.state.errors.slice(-5).map((e, i) => (
+                      <li key={i}>
+                        {e.step ? <span className="font-mono">{e.step}</span> : "error"}: {e.message}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={stream.reset}>
+                      Reset
+                    </Button>
+                    <Button type="button" onClick={startStreamBuild} disabled={stream.state.active || !canGeneratePlan}>
+                      Retry
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-3">
+              <LiveResultCard title="Research" data={stream.state.results.research} />
+              <LiveResultCard title="Campaign" data={stream.state.results.campaign} />
+              <LiveResultCard title="Landing" data={stream.state.results.landing} />
+              <LiveResultCard title="Funnel" data={stream.state.results.funnel} />
+              <LiveResultCard title="Content" data={stream.state.results.content} />
+              <LiveResultCard title="Emails" data={stream.state.results.emails} />
+              <LiveResultCard title="Lead capture" data={stream.state.results.leadCapture} />
+              <LiveResultCard title="Analytics" data={stream.state.results.analytics} />
+              <LiveResultCard title="Approvals" data={stream.state.results.approvals} />
+            </div>
+          </div>
+
+          {stream.state.reviewUrl ? (
+            <div className="rounded-xl border border-border/60 bg-card/40 p-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm">
+                Done. Review workspace: <span className="font-mono">{stream.state.reviewUrl}</span>
+              </div>
+              <a href={stream.state.reviewUrl} className={cn("underline underline-offset-4 text-sm")}>
+                Open review
+              </a>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <details className="rounded-xl border border-border/60 bg-card/40 px-3 py-2">
         <summary className="cursor-pointer select-none text-sm font-medium">
@@ -771,10 +746,10 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
             </Button>
             <Button
               type="button"
-              onClick={() => pipelineMutation.mutate()}
-              disabled={pipelineMutation.isPending || !url.trim() || !goal.trim() || !audience.trim() || !trafficSource.trim() || (orgMode === "create" && orgName.trim().length < 2)}
+              onClick={startStreamBuild}
+              disabled={stream.state.active || !url.trim() || !goal.trim() || !audience.trim() || !trafficSource.trim() || (orgMode === "create" && orgName.trim().length < 2)}
             >
-              Run Marketing Pipeline
+              Build Workspace (stream)
             </Button>
           </div>
         </CardContent>
@@ -836,8 +811,6 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
               variant="outline"
               onClick={() => {
                 setApprovedPlan(null);
-                setLastRun(null);
-                setActiveRunId(null);
                 toast.message("Cleared");
               }}
             >
@@ -847,259 +820,10 @@ export function AiCommandCenterClient({ organizationId }: { organizationId: stri
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Execution timeline</CardTitle>
-            <CardDescription>Live agent_logs for the run.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {(() => {
-              const rs = runStatusQuery.data;
-              if (!rs) {
-                return <p className="text-sm text-muted-foreground">No run yet.</p>;
-              }
-              return (
-                <div className="space-y-2">
-                  <div className="text-sm">
-                    Status: <span className="font-medium">{rs.run?.status ?? "—"}</span>
-                  </div>
-                  <div className="max-h-[360px] overflow-auto rounded border border-border/60 p-3 space-y-2">
-                    {rs.logs.map((l, idx) => {
-                      const denom = Math.max(1, rs.logs.length - 1);
-                      const p = idx / denom;
-                      const stage =
-                        p >= 0.75
-                          ? "Execution"
-                          : p >= 0.5
-                            ? "Creation"
-                            : p >= 0.25
-                              ? "Strategy"
-                              : "Research";
-                      return (
-                        <div key={l.id} className="text-xs">
-                          <span className="text-muted-foreground">
-                            {new Date(l.created_at).toLocaleTimeString()}{" "}
-                          </span>
-                          <span className="font-mono">{l.level}</span>{" "}
-                          <span>{l.message}</span>{" "}
-                          <span className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                            {stage}
-                          </span>
-                          {l.level === "error" ? (
-                            <div className="mt-1 text-[11px] text-destructive">
-                              {(() => {
-                                const d = asRecord(l.data);
-                                const err = typeof d.error === "string" ? d.error : "";
-                                return err ? `Error: ${err}` : "";
-                              })()}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                    {rs.logs.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No logs yet.</div>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })()}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Results workspace</CardTitle>
-            <CardDescription>Outputs + approvals created during execution.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-          {lastPipeline ? (
-            <div className="rounded border border-border/60 p-3 text-sm space-y-1">
-              <div>
-                Pipeline run: <span className="font-mono text-xs">{lastPipeline.pipelineRunId}</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {lastPipeline.campaignId ? (
-                  <>
-                    <Link
-                      href={`/admin/campaigns/${lastPipeline.campaignId}`}
-                      className="text-sm underline underline-offset-4"
-                    >
-                      Campaign
-                    </Link>
-                    <span className="text-muted-foreground">·</span>
-                    <Link
-                      href={`/admin/campaigns/${lastPipeline.campaignId}/pipeline`}
-                      className="text-sm underline underline-offset-4"
-                    >
-                      Campaign pipeline
-                    </Link>
-                    <span className="text-muted-foreground">·</span>
-                    <Link
-                      href={`/f/${lastPipeline.campaignId}`}
-                      className="text-sm underline underline-offset-4"
-                    >
-                      Public funnel
-                    </Link>
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">Campaign not created yet.</span>
-                )}
-                <span className="text-muted-foreground">·</span>
-                <Link href="/admin/approvals" className="text-sm underline underline-offset-4">
-                  Approvals
-                </Link>
-              </div>
-              {(() => {
-                const pr = asRecord(pipelineRunQuery.data);
-                const run = asRecord(pr.run);
-                const status = typeof run.status === "string" ? run.status : null;
-                if (!status) return null;
-                return (
-                <div className="text-xs text-muted-foreground">
-                  Status: <span className="font-mono">{String(status)}</span>
-                </div>
-                );
-              })()}
-            </div>
-          ) : null}
-
-            {lastRun ? (
-              <div className="rounded border border-border/60 p-3 text-sm space-y-1">
-                <div>
-                  Run: <span className="font-mono text-xs">{lastRun.runId}</span>
-                </div>
-                <div className="text-muted-foreground">
-                  {asStringArray(lastRun.errors).length
-                    ? `Errors: ${asStringArray(lastRun.errors).join(" · ")}`
-                    : "No errors."}
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No results yet.</p>
-            )}
-
-            {runStatusQuery.data ? (
-              <>
-                {(() => {
-                  // If internal/hybrid ran full provisioning, it writes ids into ai.artifacts output.
-                  const artifacts = runStatusQuery.data.outputs.find((o) => o.output_type === "ai.artifacts");
-                  const content = asRecord(artifacts?.content);
-                  const updated = asRecord(content.updatedRecords);
-                  const prov = asRecord(asRecord(content.createdRecords).provisioning);
-
-                  const campaignId = (updated.campaign_id as string | undefined) ?? (prov.campaignId as string | undefined);
-                  const funnelId = (updated.funnel_id as string | undefined) ?? (prov.funnelId as string | undefined);
-                  const emailSequenceId =
-                    (updated.email_sequence_id as string | undefined) ?? (prov.emailSequenceId as string | undefined);
-
-                  const contentCount = Array.isArray(prov.contentAssetIds) ? prov.contentAssetIds.length : null;
-                  const templateCount = Array.isArray(prov.emailTemplateIds) ? prov.emailTemplateIds.length : null;
-                  const approvalsCount = Array.isArray(prov.approvalIds) ? prov.approvalIds.length : null;
-
-                  if (!campaignId && !funnelId && !emailSequenceId) return null;
-
-                  return (
-                    <div className="rounded border border-border/60 p-3 space-y-2">
-                      <div className="text-sm font-medium">Open created modules</div>
-                      <div className="flex flex-wrap gap-2">
-                        {campaignId ? (
-                          <>
-                            <Link
-                              href={`/admin/workspace/review/${campaignId}`}
-                              className="text-sm underline underline-offset-4"
-                            >
-                              Workspace Review
-                            </Link>
-                            <span className="text-muted-foreground">·</span>
-                            <Link
-                              href={`/admin/campaigns/${campaignId}`}
-                              className="text-sm underline underline-offset-4"
-                            >
-                              Campaign
-                            </Link>
-                            <span className="text-muted-foreground">·</span>
-                            <Link
-                              href={`/f/${campaignId}`}
-                              className="text-sm underline underline-offset-4"
-                            >
-                              Public funnel
-                            </Link>
-                          </>
-                        ) : null}
-                        <span className="text-muted-foreground">·</span>
-                        <Link
-                          href={`/admin/ai-workers/runs/${activeRunId ?? ""}`}
-                          className="text-sm underline underline-offset-4"
-                        >
-                          Run detail
-                        </Link>
-                        <span className="text-muted-foreground">·</span>
-                        <Link href="/admin/funnels" className="text-sm underline underline-offset-4">
-                          Funnels{funnelId ? " (created)" : ""}
-                        </Link>
-                        <span className="text-muted-foreground">·</span>
-                        <Link href="/admin/content" className="text-sm underline underline-offset-4">
-                          Content{typeof contentCount === "number" ? ` (${contentCount})` : ""}
-                        </Link>
-                        <span className="text-muted-foreground">·</span>
-                        <Link href="/admin/email" className="text-sm underline underline-offset-4">
-                          Email{typeof templateCount === "number" ? ` (${templateCount} templates)` : ""}
-                        </Link>
-                        <span className="text-muted-foreground">·</span>
-                        <Link href="/admin/approvals" className="text-sm underline underline-offset-4">
-                          Approvals{typeof approvalsCount === "number" ? ` (${approvalsCount})` : ""}
-                        </Link>
-                      </div>
-                      {emailSequenceId ? (
-                        <div className="text-xs text-muted-foreground">
-                          Email sequence: <span className="font-mono">{emailSequenceId}</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })()}
-
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Approvals</div>
-                  {runStatusQuery.data.approvals.length ? (
-                    <div className="space-y-1">
-                      {runStatusQuery.data.approvals.map((a) => (
-                        <div key={a.id} className="text-xs">
-                          <span className="font-mono">{a.approval_type}</span>{" "}
-                          <span className="text-muted-foreground">{a.status}</span>{" "}
-                          <span className="font-mono text-[10px] text-muted-foreground">{a.id}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No approvals created.</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Outputs</div>
-                  {runStatusQuery.data.outputs.length ? (
-                    <div className="space-y-2">
-                      {runStatusQuery.data.outputs.map((o) => (
-                        <div key={o.id} className="rounded border border-border/60 p-2">
-                          <div className="text-xs font-mono text-muted-foreground">{o.output_type}</div>
-                          <pre className="mt-1 overflow-auto text-[11px] leading-relaxed">
-                            {JSON.stringify(o.content ?? {}, null, 2)}
-                          </pre>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No outputs yet.</p>
-                  )}
-                </div>
-              </>
-            ) : null}
-          </CardContent>
-        </Card>
-      </div>
+      <p className="text-xs text-muted-foreground">
+        Legacy AI-command worker timeline (separate from the marketing pipeline) still uses the plan preview above. The
+        marketing workspace streams live on this page when you run Generate workspace.
+      </p>
         </div>
       </details>
     </div>

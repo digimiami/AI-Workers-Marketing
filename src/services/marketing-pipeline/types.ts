@@ -38,6 +38,10 @@ export const runMarketingPipelineInputSchema = z.object({
   // Internal/advanced: allow stage re-run actions.
   startStage: marketingPipelineStageKeySchema.nullish(),
   stopAfterStage: marketingPipelineStageKeySchema.nullish(),
+  /** When true, POST /marketing-pipeline/run returns immediately after creating the run row (see `after()` continuation). */
+  defer: z.boolean().optional(),
+  /** Continue an existing run created by `defer` (server-managed; not usually sent from UI). */
+  resumePipelineRunId: z.string().uuid().optional(),
 });
 
 export type RunMarketingPipelineInput = z.infer<typeof runMarketingPipelineInputSchema>;
