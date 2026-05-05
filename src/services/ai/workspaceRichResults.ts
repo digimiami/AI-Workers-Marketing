@@ -184,15 +184,16 @@ export function buildContentRichPayload(bundle: WorkspaceDisplayBundle | null) {
       const ar = asRecord(a);
       const caps = Array.isArray(ar.captions) ? ar.captions.filter((x): x is string => typeof x === "string") : [];
       const md = typeof ar.script_markdown === "string" ? ar.script_markdown.trim() : "";
+      const meta = asRecord(ar.metadata);
       return {
         id: str(ar.id),
         title: str(ar.title) || "Content asset",
-        platform: str(ar.platform) || "multi",
+        platform: str(meta.platform) || "multi",
         status: str(ar.status) || "draft",
         hooks: hooksFromAsset(ar),
         scriptExcerpt: md.slice(0, 220),
         captions: caps.slice(0, 4),
-        cta: str(asRecord(ar.metadata).cta),
+        cta: str(meta.cta),
         updatedAt: str(ar.updated_at),
       };
     }) ?? [];

@@ -106,7 +106,8 @@ export async function fetchWorkspaceDisplayBundle(
       supabase
         .from("content_assets" as never)
         .select(
-          "id,title,status,platform,campaign_id,funnel_id,angles,script_markdown,captions,metadata,created_at,updated_at",
+          // NOTE: `content_assets` does NOT have a `platform` column (platform lives in metadata or variants).
+          "id,title,status,campaign_id,funnel_id,angles,script_markdown,captions,metadata,created_at,updated_at",
         )
         .eq("organization_id", organizationId)
         .eq("campaign_id", campaignId)

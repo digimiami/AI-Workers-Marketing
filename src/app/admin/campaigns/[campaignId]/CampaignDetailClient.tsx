@@ -10,6 +10,7 @@ import { toast } from "sonner";
 
 import { AiWorkspaceResultsPanel } from "@/components/ai/AiWorkspaceResultsPanel";
 import type { AiWorkspaceResults } from "@/components/ai/useAiWorkspaceStream";
+import { VisualFunnelFlow, type VisualFunnelStep } from "@/components/campaigns/VisualFunnelFlow";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,41 +61,7 @@ type LandingSettings = {
   meta_description: string;
 };
 
-type FunnelStepRow = {
-  id: string;
-  step_index: number;
-  name: string;
-  step_type: string;
-  slug: string;
-};
-
-function FunnelFlow({ steps }: { steps: FunnelStepRow[] }) {
-  if (steps.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed border-primary/25 bg-primary/5 px-4 py-6 text-center text-sm text-muted-foreground animate-pulse">
-        AI is generating your funnel steps…
-      </div>
-    );
-  }
-  return (
-    <div className="overflow-x-auto">
-      <div className="flex min-w-max items-center gap-3">
-        {steps.map((s, idx) => (
-          <React.Fragment key={s.id}>
-            <div className="rounded-xl border border-border/60 bg-card/50 px-4 py-3">
-              <div className="text-xs text-muted-foreground">Step {idx + 1}</div>
-              <div className="font-medium">{s.name}</div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{s.step_type}</div>
-            </div>
-            {idx < steps.length - 1 ? (
-              <div className="text-muted-foreground">→</div>
-            ) : null}
-          </React.Fragment>
-        ))}
-      </div>
-    </div>
-  );
-}
+type FunnelStepRow = VisualFunnelStep;
 
 function asArray<T>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
@@ -612,10 +579,10 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
                   placeholder="3-page squeeze"
                 />
               </div>
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Steps</div>
-                <FunnelFlow steps={funnelStepsQuery.data?.steps ?? []} />
-              </div>
+              <VisualFunnelFlow
+                steps={funnelStepsQuery.data?.steps ?? []}
+                campaignId={props.campaignId}
+              />
             </CardContent>
           </Card>
         </TabsContent>

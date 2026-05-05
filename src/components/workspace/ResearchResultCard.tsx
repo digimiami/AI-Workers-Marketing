@@ -42,6 +42,16 @@ export function ResearchResultCard(props: {
             </ul>
           </div>
         ) : null}
+        {d.objections?.length ? (
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Objections</div>
+            <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">
+              {d.objections.slice(0, 6).map((o) => (
+                <li key={o}>{o}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {d.hooks?.length ? (
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hooks</div>
@@ -52,6 +62,28 @@ export function ResearchResultCard(props: {
                 </li>
               ))}
             </ul>
+          </div>
+        ) : null}
+        {d.positioning ? (
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Positioning</div>
+            <p className="text-xs text-muted-foreground">{d.positioning}</p>
+          </div>
+        ) : null}
+        {d.competitorNotes?.length ? (
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Market notes</div>
+            <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">
+              {d.competitorNotes.slice(0, 6).map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {d.recommendedCta ? (
+          <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-200/90">Recommended CTA</div>
+            <div className="text-xs text-foreground/90">{d.recommendedCta}</div>
           </div>
         ) : null}
         <WorkspaceActionBar showDraftBadge={d.origin === "live_preview"} onRegenerate={props.runId ? props.onRegenerate : undefined} />

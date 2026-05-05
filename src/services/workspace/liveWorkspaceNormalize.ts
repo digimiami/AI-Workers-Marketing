@@ -43,14 +43,19 @@ export function normalizeLiveWorkspaceResults(rich: Record<string, unknown>): Li
     const r = asRecord(researchRaw);
     const hooks = [...strArr(r.hooks), ...strArr(r.topHooks)].filter(Boolean).slice(0, 12);
     const offer = str(r.offerSummary) || str(r.offer_summary);
-    if (offer || str(r.audience) || hooks.length) {
+    const audience = str(r.audience) || str((r as any).target_audience);
+    if (offer || audience || hooks.length) {
       research = {
         offerSummary: offer || "Research in progress…",
-        audience: str(r.audience) || undefined,
+        audience: audience || undefined,
         painPoints: strArr(r.painPoints).length ? strArr(r.painPoints) : strArr(r.pain_points),
         objections: strArr(r.buyerObjections).length ? strArr(r.buyerObjections) : strArr(r.buyer_objections),
         hooks: hooks.length ? hooks : strArr(r.topHooks),
         positioning: str(r.positioningAngle) || str(r.positioning_angle) || undefined,
+        competitorNotes: strArr((r as any).competitorNotes).length
+          ? strArr((r as any).competitorNotes)
+          : strArr((r as any).competitor_notes),
+        recommendedCta: str((r as any).recommendedCta) || str((r as any).recommended_cta) || undefined,
         origin: originFrom(researchRaw),
       };
     }

@@ -9,6 +9,8 @@ export type LiveResearch = {
   objections: string[];
   hooks: string[];
   positioning?: string;
+  competitorNotes?: string[];
+  recommendedCta?: string;
   origin: LiveModuleOrigin;
 };
 

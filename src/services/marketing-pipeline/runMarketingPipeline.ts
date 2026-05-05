@@ -191,21 +191,18 @@ function stubResearch(input: RunMarketingPipelineInput) {
       goal: input.goal,
       traffic_source: input.trafficSource,
     },
-    pain_points: [
-      `Time/complexity getting results with ${input.goal}`,
-      "Unclear steps / lack of system",
-      "Inconsistent lead flow",
-    ],
-    competitor_angles: [
-      "Speed & simplicity angle",
-      "System/OS angle",
-      "Proof via mini-case-studies angle",
-    ],
-    hook_opportunities: [
-      "3 mistakes X makes",
-      "Do this before you run ads",
-      "Stop scrolling if you want X",
-    ],
+    pain_points: Array.from({ length: 5 }).map((_, i) =>
+      i === 0 ? `Struggling to get ${input.goal} consistently` : `Pain point ${i + 1} for ${input.audience} (${input.trafficSource})`,
+    ),
+    objections: Array.from({ length: 5 }).map((_, i) =>
+      i === 0 ? "Is this legit / will this work for me?" : `Objection ${i + 1} before taking action`,
+    ),
+    hooks: Array.from({ length: 5 }).map((_, i) =>
+      i === 0 ? `New ${input.audience}? Start here before you tour homes…` : `Hook ${i + 1}: ${input.goal} (${input.trafficSource})`,
+    ),
+    positioning_angle: "Local, practical, step-by-step guidance with clear next actions.",
+    competitor_notes: ["Common promises: fast results, simple steps", "Opportunity: clarify the mechanism + build trust with specifics"],
+    recommended_cta: input.mode === "affiliate" ? "Get the guide" : "Book a consult",
     landing_page_notes: [
       "Above-the-fold: clear promise + primary CTA",
       "Bridge: story + mechanism + social proof placeholders",
@@ -646,7 +643,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       provider: input.provider,
       input: { url: input.url, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource, notes: input.notes ?? null },
       schemaHint: "Return JSON with keys: offer_summary, pain_points[], objections[], mechanism, cta_recommendations{primary,secondary}.",
-      prompt: `Analyze URL=${input.url}. Mode=${input.mode}. Audience=${input.audience}. Goal=${input.goal}. Traffic=${input.trafficSource}.`,
+      prompt: `Analyze URL=${input.url}.\nMode=${input.mode}.\nAudience=${input.audience}.\nGoal=${input.goal}.\nTraffic=${input.trafficSource}.\n\nReturn concrete, campaign-specific insights (no generic placeholders).`,
       fallback: researchFallback,
       });
     const ads = await runWorkerAndPersist({
@@ -689,11 +686,45 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       fallback: { provider_mode: "stub" },
     });
 
+    // Flatten into the UI contract so Research card is never empty.
+    const offerOut = asRecord(offer.output);
+    const adsOut = asRecord(ads.output);
+    const compOut = asRecord(comp.output);
+    const ctaRec = asRecord(offerOut.cta_recommendations);
+    const pain = asStringArray(offerOut.pain_points).filter(Boolean).slice(0, 5);
+    const obj = asStringArray(offerOut.objections).filter(Boolean).slice(0, 5);
+    const hooks = [...asStringArray(adsOut.hook_starters), ...asStringArray((offerOut as any).hook_opportunities)]
+      .filter(Boolean)
+      .slice(0, 5);
+    const competitorNotes = [
+      ...asStringArray(compOut.competitor_angle_themes),
+      ...asStringArray(compOut.differentiation_opportunities),
+      ...asStringArray(compOut.risk_notes),
+    ]
+      .filter(Boolean)
+      .slice(0, 8);
+
     research = {
-      offer: offer.output,
-      ads: ads.output,
-      competitors: comp.output,
-      landing: lp.output,
+      offer_summary: typeof offerOut.offer_summary === "string" ? offerOut.offer_summary : String(researchFallback.offer_summary),
+      target_audience: input.audience,
+      pain_points: pain.length ? pain : (researchFallback as any).pain_points,
+      buyer_objections: obj.length ? obj : (researchFallback as any).objections,
+      hooks: hooks.length ? hooks : (researchFallback as any).hooks,
+      positioning_angle:
+        typeof (offerOut as any).positioning_angle === "string"
+          ? String((offerOut as any).positioning_angle)
+          : typeof (compOut as any).positioning_angle === "string"
+            ? String((compOut as any).positioning_angle)
+            : String((researchFallback as any).positioning_angle),
+      competitor_notes: competitorNotes.length ? competitorNotes : (researchFallback as any).competitor_notes,
+      recommended_cta:
+        typeof ctaRec.primary === "string"
+          ? String(ctaRec.primary)
+          : typeof ctaRec.secondary === "string"
+            ? String(ctaRec.secondary)
+            : String((researchFallback as any).recommended_cta),
+      // Keep raw bundles for later stages/debugging.
+      raw: { offer: offer.output, ads: ads.output, competitors: comp.output, landing: lp.output },
       icp: { audience: input.audience, goal: input.goal, traffic_source: input.trafficSource },
       provider_mode: offer.meta?.provider ?? "stub",
     } as Record<string, unknown>;
@@ -948,8 +979,8 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       provider: input.provider,
       input: { ...creationContext, creative: creativeDirector.output, copy: copywriter.output },
       schemaHint:
-        "Return JSON with keys: hooks[20], scripts[10]{title,hook,beats[],cta,on_screen_text[]}.",
-      prompt: `Generate 20 hooks and 10 short-form scripts optimized for ${input.trafficSource}.`,
+        "Return JSON with keys: hooks[20], scripts[10]{title,hook,beats[],cta,on_screen_text[]}, captions[10], post_ideas[10].",
+      prompt: `Generate campaign-specific content for URL=${input.url}.\nAudience=${input.audience}.\nGoal=${input.goal}.\nTraffic=${input.trafficSource}.\n\nRequirements:\n- No generic placeholders.\n- Use niche/business context implied by the URL.\n- Hooks must sound like real ad/social intros.\n- Provide captions + post ideas too.`,
       fallback: {
         hooks: Array.from({ length: 20 }).map((_, i) => `Hook ${i + 1}: ${input.audience} — ${input.goal}`),
         scripts: Array.from({ length: 10 }).map((_, i) => ({
@@ -959,6 +990,8 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
           cta: "Click to learn more",
           on_screen_text: [],
         })),
+        captions: Array.from({ length: 10 }).map((_, i) => `Caption ${i + 1} for ${input.audience}: ${input.goal}`),
+        post_ideas: Array.from({ length: 10 }).map((_, i) => `Post idea ${i + 1}: ${input.goal} (${input.trafficSource})`),
       },
     });
 
@@ -995,13 +1028,24 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       provider: input.provider,
       input: { ...creationContext, copy: copywriter.output, creative: creativeDirector.output },
       schemaHint:
-        "Return JSON with keys: templates[5]{name,subject,body_markdown}.",
-      prompt: `Write 5 email templates (draft). No sending. Include clear CTA aligned to funnel.`,
+        "Return JSON with keys: templates[5]{name,subject,body_markdown,purpose}. Purposes in order: welcome_delivery, pain_education, trust_builder, objection_handling, primary_cta.",
+      prompt:
+        `Write 5 campaign-specific emails for URL=${input.url}.\nAudience=${input.audience}.\nGoal=${input.goal}.\nTraffic=${input.trafficSource}.\n\nRequirements:\n- No placeholders (no generic SaaS/community language).\n- Keep it specific to the business context from the URL.\n- Each email must match the required purpose order and include a clear CTA aligned to the funnel.\n- Use a warm, local-trust tone if the niche is service/real estate.\n`,
       fallback: {
         templates: Array.from({ length: 5 }).map((_, i) => ({
           name: `Pipeline email ${i + 1} · ${input.goal}`,
           subject: `Step ${i + 1}: ${input.goal}`,
           body_markdown: `Draft email ${i + 1} for ${input.audience}.\n\nGoal: ${input.goal}\nURL: ${input.url}`,
+          purpose:
+            i === 0
+              ? "welcome_delivery"
+              : i === 1
+                ? "pain_education"
+                : i === 2
+                  ? "trust_builder"
+                  : i === 3
+                    ? "objection_handling"
+                    : "primary_cta",
         })),
       },
     });
@@ -1049,37 +1093,140 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     const landingCopy = String(asRecord(copywriter.output).landing_markdown ?? "");
     const bridgeCopy = String(asRecord(copywriter.output).bridge_markdown ?? "");
 
-    const createdContentAssetIds: string[] = [];
-    for (const spec of [
-      { title: `Landing copy · ${input.goal}`, kind: "landing_copy", platform: "web", hook: hooks[0], body: landingCopy },
-      { title: `Bridge copy · ${input.goal}`, kind: "bridge_copy", platform: "web", hook: hooks[1], body: bridgeCopy },
-      { title: `Hooks · ${input.trafficSource}`, kind: "hooks", platform: input.trafficSource, hook: "Hook bank", body: hooks.join("\n") },
-      {
-        title: `Short video scripts · ${input.trafficSource}`,
-        kind: "short_video_scripts",
-        platform: input.trafficSource,
-        hook: "Scripts",
-        body: scripts.map((s, i) => `## ${s.title || `Script ${i + 1}`}\n\nHook: ${s.hook}\n\nBeats:\n- ${s.beats.join("\n- ")}\n\nCTA: ${s.cta}`).join("\n\n"),
-      },
-    ]) {
-      const a = await toolOk<any>({
-        ...envelopeBase,
+    // Persist real content_assets rows (so Content card is non-zero and campaign-specific)
+    const captions = asStringArray(asRecord(scriptwriter.output).captions);
+    const postIdeas = asStringArray(asRecord(scriptwriter.output).post_ideas);
+
+    const contentRows: Array<Record<string, unknown>> = [];
+    // 10 hooks as individual rows
+    hooks.slice(0, 10).forEach((h, i) => {
+      contentRows.push({
+        organization_id: organizationId,
         campaign_id: campaignId,
-        tool_name: "create_content_asset",
-        input: {
-          organizationId,
-          title: spec.title.slice(0, 120),
-          platform: spec.platform,
-          status: "draft",
-          campaign_id: campaignId,
-          funnel_id: funnelId,
-          hook: spec.hook,
-          body: spec.body,
-          metadata: { trace_id: traceId, kind: spec.kind, pipeline_run_id: pipelineRunId },
+        funnel_id: funnelId,
+        title: `Hook ${i + 1} · ${input.trafficSource}`.slice(0, 120),
+        status: "draft",
+        angles: [h],
+        script_markdown: null,
+        captions: [],
+        metadata: {
+          pipeline_run_id: pipelineRunId,
+          trace_id: traceId,
+          type: "hook",
+          platform: input.trafficSource,
+          hook: h,
+          cta: typeof (research as any)?.recommended_cta === "string" ? String((research as any).recommended_cta) : undefined,
+          worker_run_id: scriptwriter.runId,
         },
+        updated_at: nowIso(),
       });
-      createdContentAssetIds.push(String(a.id));
-      createdRecords.push({ table: "content_assets", id: String(a.id), label: a.title });
+    });
+    // 5 scripts
+    scripts.slice(0, 5).forEach((s) => {
+      contentRows.push({
+        organization_id: organizationId,
+        campaign_id: campaignId,
+        funnel_id: funnelId,
+        title: `${s.title}`.slice(0, 120),
+        status: "draft",
+        angles: [s.hook].filter(Boolean),
+        script_markdown: `## ${s.title}\n\nHook: ${s.hook}\n\nBeats:\n- ${s.beats.join("\n- ")}\n\nCTA: ${s.cta}`.trim(),
+        captions: [],
+        metadata: {
+          pipeline_run_id: pipelineRunId,
+          trace_id: traceId,
+          type: "short_video_script",
+          platform: input.trafficSource,
+          hook: s.hook,
+          cta: s.cta,
+          worker_run_id: scriptwriter.runId,
+        },
+        updated_at: nowIso(),
+      });
+    });
+    // 5 captions
+    captions.slice(0, 5).forEach((c, i) => {
+      contentRows.push({
+        organization_id: organizationId,
+        campaign_id: campaignId,
+        funnel_id: funnelId,
+        title: `Caption ${i + 1} · ${input.trafficSource}`.slice(0, 120),
+        status: "draft",
+        angles: [],
+        script_markdown: null,
+        captions: [c],
+        metadata: {
+          pipeline_run_id: pipelineRunId,
+          trace_id: traceId,
+          type: "caption",
+          platform: input.trafficSource,
+          caption: c,
+          worker_run_id: scriptwriter.runId,
+        },
+        updated_at: nowIso(),
+      });
+    });
+    // 5 post ideas
+    postIdeas.slice(0, 5).forEach((p, i) => {
+      contentRows.push({
+        organization_id: organizationId,
+        campaign_id: campaignId,
+        funnel_id: funnelId,
+        title: `Post idea ${i + 1}`.slice(0, 120),
+        status: "draft",
+        angles: [],
+        script_markdown: `Idea: ${p}`.slice(0, 1200),
+        captions: [],
+        metadata: {
+          pipeline_run_id: pipelineRunId,
+          trace_id: traceId,
+          type: "post_idea",
+          platform: input.trafficSource,
+          idea: p,
+          worker_run_id: scriptwriter.runId,
+        },
+        updated_at: nowIso(),
+      });
+    });
+    // Keep landing/bridge copy rows too (useful for editors)
+    contentRows.push({
+      organization_id: organizationId,
+      campaign_id: campaignId,
+      funnel_id: funnelId,
+      title: `Landing copy · ${input.goal}`.slice(0, 120),
+      status: "draft",
+      angles: hooks[0] ? [hooks[0]] : [],
+      script_markdown: landingCopy || null,
+      captions: [],
+      metadata: { pipeline_run_id: pipelineRunId, trace_id: traceId, type: "landing_copy", platform: "web", worker_run_id: copywriter.runId },
+      updated_at: nowIso(),
+    });
+    contentRows.push({
+      organization_id: organizationId,
+      campaign_id: campaignId,
+      funnel_id: funnelId,
+      title: `Bridge copy · ${input.goal}`.slice(0, 120),
+      status: "draft",
+      angles: hooks[1] ? [hooks[1]] : [],
+      script_markdown: bridgeCopy || null,
+      captions: [],
+      metadata: { pipeline_run_id: pipelineRunId, trace_id: traceId, type: "bridge_copy", platform: "web", worker_run_id: copywriter.runId },
+      updated_at: nowIso(),
+    });
+
+    const createdContentAssetIds: string[] = [];
+    const { data: contentInserted, error: contentErr } = await admin
+      .from("content_assets" as never)
+      .insert(contentRows as never)
+      .select("id,title");
+    if (!contentErr) {
+      for (const r of (contentInserted ?? []) as any[]) {
+        createdContentAssetIds.push(String(r.id));
+        createdRecords.push({ table: "content_assets", id: String(r.id), label: String(r.title ?? "content_asset") });
+      }
+    } else {
+      warnings.push(`content_assets insert failed (kept going): ${contentErr.message}`);
+      await log("creation", "warn", "Failed to insert content_assets (non-fatal)", { error: contentErr.message });
     }
 
     // Landing + bridge pages (DB records) and funnel step render data
