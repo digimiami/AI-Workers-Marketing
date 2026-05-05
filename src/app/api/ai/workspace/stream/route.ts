@@ -7,19 +7,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchWorkspaceDisplayBundle, buildRunTimeline } from "@/services/workspace/workspaceDisplayBundle";
 import { beginMarketingPipelineRun, runMarketingPipeline } from "@/services/marketing-pipeline/runMarketingPipeline";
-import {
-  parseRunInput,
-  buildResearchStreamPayload,
-  buildCampaignStreamPayload,
-  buildLandingStreamPayload,
-  buildFunnelStreamPayload,
-  buildContentStreamPayload,
-  buildAdsStreamPayload,
-  buildEmailsStreamPayload,
-  buildLeadCaptureStreamPayload,
-  buildAnalyticsStreamPayload,
-  buildApprovalsStreamPayload,
-} from "@/services/ai/workspaceStreamPayloads";
+import { buildRichWorkspaceResults } from "@/services/ai/workspaceRichResults";
+import { parseRunInput } from "@/services/ai/workspaceStreamPayloads";
 
 export const runtime = "nodejs";
 
@@ -260,41 +249,6 @@ async function handleStream(request: Request, parsed: z.infer<typeof querySchema
           const campaignIdStr = (snap.run as any).campaign_id ? String((snap.run as any).campaign_id) : null;
           emitModule("run", { runId, campaignId: campaignIdStr });
 
-          const researchPayload = buildResearchStreamPayload((bundle?.research ?? null) as Record<string, unknown> | null);
-          if (researchPayload) emitModule("research", researchPayload);
-          else if (runInput && runStatus !== "completed" && runStatus !== "failed") {
-            const aud = str(runInput.audience);
-            const goalLine = str(runInput.goal);
-            if (aud || goalLine) {
-              emitModule("research", {
-                audience: aud || undefined,
-                painPoints: [] as string[],
-                hooks: [] as string[],
-                offerSummary: "Synthesizing ICP, pains, and hook angles from your brief…",
-              });
-            }
-          }
-
-          const campaignPayload = buildCampaignStreamPayload(bundle, snap.run, runInput);
-          if (campaignPayload) emitModule("campaign", campaignPayload);
-
-          const landingPayload = buildLandingStreamPayload(bundle?.landingPages?.[0] as Record<string, unknown> | undefined);
-          if (landingPayload) emitModule("landing", landingPayload);
-
-          emitModule("funnel", buildFunnelStreamPayload(bundle));
-
-          const contentPayload = buildContentStreamPayload(bundle?.contentAssets);
-          if (contentPayload) emitModule("content", contentPayload);
-
-          const adsPayload = buildAdsStreamPayload(bundle?.adCreatives);
-          if (adsPayload) emitModule("ads", adsPayload);
-
-          const emailsPayload = buildEmailsStreamPayload(bundle);
-          if (emailsPayload) emitModule("emails", emailsPayload);
-
-          const leadPayload = buildLeadCaptureStreamPayload(bundle?.leadCaptureForms);
-          if (leadPayload) emitModule("leadCapture", leadPayload);
-
           const executionTouched =
             currentStage === "execution" ||
             currentStage === "optimization" ||
@@ -302,10 +256,35 @@ async function handleStream(request: Request, parsed: z.infer<typeof querySchema
             st("execution") === "completed" ||
             st("execution") === "failed" ||
             st("execution") === "needs_approval";
-          emitModule("analytics", buildAnalyticsStreamPayload(bundle, { executionActive: executionTouched }));
+          const rich = bundle ? buildRichWorkspaceResults(bundle, snap.run, runInput, executionTouched) : ({} as Record<string, unknown>);
 
-          const approvalsPayload = buildApprovalsStreamPayload(bundle?.approvals);
-          if (approvalsPayload) emitModule("approvals", approvalsPayload);
+          const emitIf = (module: string, data: unknown) => {
+            if (data == null) return;
+            emitModule(module, data);
+          };
+          if (!rich.research && runInput && runStatus !== "completed" && runStatus !== "failed") {
+            const aud = str(runInput.audience);
+            const goalLine = str(runInput.goal);
+            if (aud || goalLine) {
+              rich.research = {
+                audience: aud || undefined,
+                painPoints: [] as string[],
+                hooks: [] as string[],
+                offerSummary: "Synthesizing ICP, pains, and hook angles from your brief…",
+                topHooks: [] as string[],
+              };
+            }
+          }
+          emitIf("research", rich.research);
+          emitIf("campaign", rich.campaign);
+          emitIf("landing", rich.landing);
+          if (rich.funnel != null) emitModule("funnel", rich.funnel);
+          emitIf("content", rich.content);
+          emitIf("ads", rich.ads);
+          emitIf("emails", rich.emails);
+          emitIf("leadCapture", rich.leadCapture);
+          if (rich.analytics != null) emitModule("analytics", rich.analytics);
+          emitIf("approvals", rich.approvals);
 
           // Errors
           const runErrors = asRows<string>((snap.run as any).errors);

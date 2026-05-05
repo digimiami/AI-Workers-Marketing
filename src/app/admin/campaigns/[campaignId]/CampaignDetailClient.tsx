@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { bundleToAiWorkspaceResults } from "@/services/ai/workspaceStreamPayloads";
+import { bundleToAiWorkspaceResults } from "@/services/ai/workspaceRichResults";
 
 const CampaignType = z.enum(["affiliate", "lead_gen", "internal_test", "client"]);
 const CampaignStatus = z.enum(["draft", "active", "paused", "completed"]);
@@ -224,12 +224,14 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
     meta_description: "",
   });
   const [funnelType, setFunnelType] = React.useState("");
-  const [activeTab, setActiveTab] = React.useState<"overview" | "funnel" | "content" | "emails">("overview");
+  const [activeTab, setActiveTab] = React.useState<"results" | "funnel" | "content" | "emails">("results");
   const searchParams = useSearchParams();
   const urlTab = searchParams.get("tab");
   React.useEffect(() => {
-    if (urlTab === "funnel" || urlTab === "content" || urlTab === "emails" || urlTab === "overview") {
+    if (urlTab === "funnel" || urlTab === "content" || urlTab === "emails" || urlTab === "results") {
       setActiveTab(urlTab);
+    } else if (urlTab === "overview") {
+      setActiveTab("results");
     }
   }, [urlTab]);
 
@@ -400,13 +402,13 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
         <TabsList variant="line" className="w-full flex-wrap justify-start gap-1 h-auto py-1">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="results">Results</TabsTrigger>
           <TabsTrigger value="funnel">Funnel</TabsTrigger>
           <TabsTrigger value="content">Content</TabsTrigger>
           <TabsTrigger value="emails">Emails</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="pt-4 space-y-6">
+        <TabsContent value="results" className="pt-4 space-y-6">
           <Card className="border-border/60 bg-card/50 backdrop-blur-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-base">🤖 Ask AiWorkers</CardTitle>
@@ -488,7 +490,7 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("overview")}
+                  onClick={() => setActiveTab("results")}
                   className="rounded-xl border border-border/60 bg-card/50 p-4 text-left text-sm transition hover:border-primary/40 hover:shadow-[0_0_24px_-8px_rgba(56,189,248,0.35)]"
                 >
                   <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Campaign</div>
@@ -540,7 +542,11 @@ export function CampaignDetailClient(props: { organizationId: string; campaignId
                   <div className="mt-1 font-semibold">Publish queue</div>
                 </Link>
               </div>
-              <AiWorkspaceResultsPanel results={liveWorkspaceResults} campaignId={props.campaignId} />
+              <AiWorkspaceResultsPanel
+                results={liveWorkspaceResults}
+                campaignId={props.campaignId}
+                organizationId={props.organizationId}
+              />
             </CardContent>
           </Card>
           <Card>

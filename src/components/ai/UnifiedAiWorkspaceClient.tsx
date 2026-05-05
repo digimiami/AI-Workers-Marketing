@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Loader2, Pencil, Rocket, Sparkles } from "lucide-react";
 
 import { AiLiveBuildStream } from "@/components/ai/AiLiveBuildStream";
-import { AiWorkspaceLiveOutputGrid } from "@/components/ai/AiWorkspaceLiveOutputGrid";
+import { AiWorkspaceAssetDeck } from "@/components/ai/AiWorkspaceAssetDeck";
 import { AiWorkspaceThinkingPanel } from "@/components/ai/AiWorkspaceThinkingPanel";
 import {
   AdsCard,
@@ -39,7 +39,7 @@ type Props = {
 };
 
 export function UnifiedAiWorkspaceClient(props: Props) {
-  const { organizationId: _organizationId, runId: runIdProp, redirectOnRunId = false } = props;
+  const { organizationId, runId: runIdProp, redirectOnRunId = false } = props;
   const router = useRouter();
   const searchParams = useSearchParams();
   const stream = useAiWorkspaceStream();
@@ -258,10 +258,10 @@ export function UnifiedAiWorkspaceClient(props: Props) {
             </div>
           ) : null}
 
-          <AiWorkspaceLiveOutputGrid
+          <AiWorkspaceAssetDeck
             results={stream.state.results}
-            steps={stream.state.steps}
             campaignId={resolvedCampaignId}
+            organizationId={organizationId}
             modulePulseAt={stream.state.modulePulseAt}
             heading={!stream.state.active && stream.state.reviewUrl ? "Everything AI built" : "Live output"}
           />

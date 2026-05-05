@@ -38,11 +38,18 @@ export function buildResearchStreamPayload(research: Record<string, unknown> | n
     str(research.audience) ||
     str(research.icp_summary) ||
     str(research.icp);
+  const objections =
+    strArr(research.buyer_objections).length > 0
+      ? strArr(research.buyer_objections)
+      : strArr(research.objections);
   return {
     audience: audience || undefined,
     painPoints: pain,
     hooks,
     offerSummary: str(research.offer_summary) || str(research.offerSummary) || undefined,
+    buyerObjections: objections,
+    positioningAngle: str(research.positioning_angle) || str(research.positioningAngle) || undefined,
+    offerAngle: str(research.offer_angle) || str(research.offerAngle) || undefined,
     raw: research,
   };
 }
@@ -185,41 +192,6 @@ export function buildContentStreamPayload(assets: Array<Record<string, unknown>>
     firstTitle: str(assets[0]?.title) || undefined,
     scriptsPreview,
   };
-}
-
-/** Map persisted workspace bundle → same card shapes as the live SSE stream (for campaign overview, etc.). */
-export function bundleToAiWorkspaceResults(bundle: WorkspaceDisplayBundle | null): Record<string, unknown> {
-  if (!bundle) return {};
-  const runInput = null;
-  const run = null;
-  const out: Record<string, unknown> = {};
-  const r = buildResearchStreamPayload((bundle.research ?? null) as Record<string, unknown> | null);
-  if (r) out.research = r;
-  const camp = buildCampaignStreamPayload(bundle, run, runInput);
-  if (camp) out.campaign = camp;
-  const land = buildLandingStreamPayload(bundle.landingPages?.[0] as Record<string, unknown> | undefined);
-  if (land) out.landing = land;
-  out.funnel = buildFunnelStreamPayload(bundle);
-  const cont = buildContentStreamPayload(bundle.contentAssets);
-  if (cont) out.content = cont;
-  const ads = buildAdsStreamPayload(bundle.adCreatives);
-  if (ads) out.ads = ads;
-  const em = buildEmailsStreamPayload(bundle);
-  if (em) out.emails = em;
-  const lc = buildLeadCaptureStreamPayload(bundle.leadCaptureForms);
-  if (lc) out.leadCapture = lc;
-  out.analytics = buildAnalyticsStreamPayload(bundle, {
-    executionActive: (bundle.analyticsHints?.trackingLinks?.length ?? 0) > 0,
-  });
-  const ap = buildApprovalsStreamPayload(bundle.approvals);
-  if (ap) out.approvals = ap;
-  if (bundle.latestPipelineRun?.id) {
-    out.run = {
-      runId: bundle.latestPipelineRun.id,
-      campaignId: bundle.campaignId,
-    };
-  }
-  return out;
 }
 
 export function buildAdsStreamPayload(ads: Array<Record<string, unknown>> | undefined) {
