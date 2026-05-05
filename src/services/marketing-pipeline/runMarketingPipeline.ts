@@ -537,7 +537,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     logs.push({ id: row.id, stage_key: stageKey, level, message, at: row.at });
   };
 
-  const ensureFunnelAndSteps = async () => {
+  const ensureFunnelAndSteps = async (opts?: { preferredStepTypes?: string[]; funnelType?: string }) => {
     if (!campaignId) throw new Error("campaignId required");
     if (!funnelId) {
       const { data: f0 } = await admin
@@ -589,14 +589,22 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       if (typeof s?.step_type === "string" && s?.id) funnelStepIds[String(s.step_type)] = String(s.id);
     }
 
-    const stepDefs = [
+    const baseStepDefs: Array<{ name: string; step_type: string; slug: string }> = [
       { name: "Landing page", step_type: "landing", slug: "landing" },
       { name: "Bridge page", step_type: "bridge", slug: "bridge" },
       { name: "Lead capture", step_type: "form", slug: "lead" },
       { name: "Primary CTA", step_type: "cta", slug: "cta" },
       { name: "Thank you", step_type: "thank_you", slug: "thanks" },
       { name: "Nurture trigger", step_type: "email_trigger", slug: "nurture" },
+      { name: "Checkout", step_type: "checkout", slug: "checkout" },
     ];
+    const wanted = (opts?.preferredStepTypes ?? []).filter(Boolean);
+    const stepDefs =
+      wanted.length > 0
+        ? wanted
+            .map((t) => baseStepDefs.find((d) => d.step_type === t) ?? { name: t.replace(/_/g, " "), step_type: t, slug: t })
+            .filter(Boolean)
+        : baseStepDefs.filter((d) => d.step_type !== "checkout");
     let stepIndex = 0;
     for (const def of stepDefs) {
       if (funnelStepIds[def.step_type]) {
@@ -627,6 +635,14 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       .update({ is_public: true, updated_at: nowIso() } as never)
       .eq("organization_id", organizationId)
       .eq("funnel_id", funnelId);
+
+    if (opts?.funnelType) {
+      await admin
+        .from("funnels" as never)
+        .update({ metadata: { marketing_pipeline: { run_id: pipelineRunId, trace_id: traceId }, funnel_type: opts.funnelType }, updated_at: nowIso() } as never)
+        .eq("organization_id", organizationId)
+        .eq("id", funnelId);
+    }
   };
 
   try {
@@ -882,7 +898,10 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
           .eq("id", pipelineRunId);
       }
 
-      await ensureFunnelAndSteps();
+      const funnelPlan = asRecord(asRecord(head.output).funnel_plan);
+      const preferred = Array.isArray(funnelPlan.steps) ? (funnelPlan.steps as unknown[]).filter((x): x is string => typeof x === "string") : [];
+      const funnelType = typeof funnelPlan.type === "string" ? funnelPlan.type : undefined;
+      await ensureFunnelAndSteps({ preferredStepTypes: preferred, funnelType });
 
     await insertStageOutput({
       organizationId,
@@ -1075,20 +1094,53 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       provider: input.provider,
       input: { ...creationContext, copy: copywriter.output },
       schemaHint:
-        "Return JSON with keys: landing{title,description,blocks[]}, bridge{title,description,blocks[]}, seo{landing_title,bridge_title}. blocks: [{type:'markdown',markdown:string}].",
-      prompt: `Convert the landing/bridge markdown into blocks for the page system.`,
+        "Return JSON with keys: url_analysis{business_type,target_audience,main_offer,tone,classification}, funnel{type,steps[]}, landing_variants[3]{key,headline,subheadline,cta,sections[]}, bridge{headline,subheadline,cta,sections[]}, thank_you{headline,subheadline,cta,sections[]}. Each sections[] item: {type, title?, bullets?, body?, items?}.",
+      prompt:
+        `Build a universal funnel package for URL=${input.url}.\nGoal=${input.goal}.\nAudience=${input.audience}.\nTraffic=${input.trafficSource}.\n\nRules:\n- Do NOT hardcode any niche.\n- First analyze the URL to infer business type, offer, tone, and classification (service/SaaS/ecommerce/affiliate/info product).\n- Choose an appropriate funnel type + step sequence.\n- Produce 3 landing variants: problem-focused, benefit-focused, urgency/offer.\n- Output structured JSON only.`,
       fallback: {
-        landing: {
-          title: `Landing · ${input.goal}`,
-          description: `Landing page for ${input.audience}`,
-          blocks: [{ type: "markdown", markdown: String(asRecord(copywriter.output).landing_markdown ?? "") }],
+        url_analysis: {
+          business_type: "Unknown",
+          target_audience: input.audience,
+          main_offer: input.goal,
+          tone: "Clear, helpful",
+          classification: input.mode === "affiliate" ? "affiliate" : "service",
         },
+        funnel: { type: "lead_gen", steps: ["landing", "bridge", "form", "cta", "thank_you", "email_trigger"] },
+        landing_variants: [
+          {
+            key: "problem",
+            headline: input.goal,
+            subheadline: `For ${input.audience}`,
+            cta: "Get started",
+            sections: [{ type: "benefits", title: "Benefits", bullets: ["Benefit 1", "Benefit 2", "Benefit 3"] }],
+          },
+          {
+            key: "benefit",
+            headline: input.goal,
+            subheadline: `For ${input.audience}`,
+            cta: "Get started",
+            sections: [{ type: "features", title: "What you get", bullets: ["Feature 1", "Feature 2"] }],
+          },
+          {
+            key: "offer",
+            headline: input.goal,
+            subheadline: `For ${input.audience}`,
+            cta: "Get started",
+            sections: [{ type: "offer", title: "Offer", bullets: ["Fast start", "Clear next steps"] }],
+          },
+        ],
         bridge: {
-          title: `Bridge · ${input.goal}`,
-          description: `Bridge page for ${input.audience}`,
-          blocks: [{ type: "markdown", markdown: String(asRecord(copywriter.output).bridge_markdown ?? "") }],
+          headline: "Here’s the plan",
+          subheadline: "A quick overview of what happens next.",
+          cta: "Continue",
+          sections: [{ type: "steps", title: "Next steps", bullets: ["Step 1", "Step 2", "Step 3"] }],
         },
-        seo: { landing_title: `Landing · ${input.goal}`, bridge_title: `Bridge · ${input.goal}` },
+        thank_you: {
+          headline: "You're in",
+          subheadline: "Check your inbox for next steps.",
+          cta: "Back to start",
+          sections: [{ type: "next_steps", title: "Next", bullets: ["Watch for email", "Save this link"] }],
+        },
       },
     });
 
@@ -1248,27 +1300,72 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     const landingStepId = funnelStepIds["landing"];
     const bridgeStepId = funnelStepIds["bridge"];
     if (landingStepId) {
-      const landing = asRecord(asRecord(pageDesigner.output).landing);
-      const landingTitle = typeof landing.title === "string" ? landing.title : `Landing · ${input.goal}`;
-      const landingDesc = typeof landing.description === "string" ? landing.description : `Landing page for ${input.audience}`;
-      const landingBlocks = Array.isArray(landing.blocks) ? landing.blocks : [{ type: "markdown", markdown: landingCopy }];
-      const { data: lp, error: lpErr } = await admin
-        .from("landing_pages" as never)
-        .upsert(
+      const variantsRaw = Array.isArray(asRecord(pageDesigner.output).landing_variants)
+        ? (asRecord(pageDesigner.output).landing_variants as unknown[])
+        : [];
+      const variants = variantsRaw.length ? variantsRaw.slice(0, 3).map((v) => asRecord(v)) : [];
+      const normalizedVariants =
+        variants.length > 0
+          ? variants
+          : [
+              {
+                key: "problem",
+                headline: input.goal,
+                subheadline: `For ${input.audience}`,
+                cta: "Get started",
+                sections: [{ type: "benefits", title: "Benefits", bullets: [] }],
+              },
+            ];
+
+      const toBlocks = (v: Record<string, unknown>) => {
+        const sections = Array.isArray(v.sections) ? (v.sections as unknown[]).map((s) => asRecord(s)) : [];
+        const secBlocks = sections.map((s) => ({
+          type: String(s.type || "section"),
+          title: typeof s.title === "string" ? s.title : undefined,
+          bullets: Array.isArray(s.bullets) ? (s.bullets as unknown[]).filter((x): x is string => typeof x === "string") : undefined,
+          body: typeof s.body === "string" ? s.body : undefined,
+          items: Array.isArray(s.items) ? s.items : undefined,
+        }));
+        return [
           {
-            organization_id: organizationId,
-            funnel_step_id: landingStepId,
-            title: String(landingTitle).slice(0, 120),
-            description: String(landingDesc).slice(0, 200),
-            blocks: landingBlocks,
-            seo: { title: String(landingTitle).slice(0, 120) },
-            updated_at: nowIso(),
-          } as never,
-          { onConflict: "funnel_step_id" },
-        )
-        .select("id")
-        .single();
-      if (!lpErr && lp) createdRecords.push({ table: "landing_pages", id: String((lp as any).id), label: "landing_page" });
+            type: "hero",
+            headline: typeof v.headline === "string" ? v.headline : input.goal,
+            subheadline: typeof v.subheadline === "string" ? v.subheadline : `For ${input.audience}`,
+            cta_label: typeof v.cta === "string" ? v.cta : "Get started",
+          },
+          ...secBlocks,
+        ];
+      };
+
+      const createdLandingIds: Array<{ id: string; key: string }> = [];
+      for (const v of normalizedVariants) {
+        const key = typeof v.key === "string" ? v.key : "variant";
+        const title = typeof v.headline === "string" ? v.headline : `Landing · ${input.goal}`;
+        const desc = typeof v.subheadline === "string" ? v.subheadline : `Landing page for ${input.audience}`;
+        const blocks = toBlocks(v);
+        const { data: lp, error: lpErr } = await admin
+          .from("landing_pages" as never)
+          .insert(
+            {
+              organization_id: organizationId,
+              funnel_step_id: landingStepId,
+              title: String(title).slice(0, 120),
+              description: String(desc).slice(0, 200),
+              blocks,
+              seo: { title: String(title).slice(0, 120) },
+              updated_at: nowIso(),
+              metadata: { variant_key: key, pipeline_run_id: pipelineRunId, trace_id: traceId, worker_run_id: pageDesigner.runId },
+            } as never,
+          )
+          .select("id")
+          .single();
+        if (!lpErr && lp) {
+          const id = String((lp as any).id);
+          createdLandingIds.push({ id, key });
+          createdRecords.push({ table: "landing_pages", id, label: `landing:${key}` });
+        }
+      }
+      const selectedKey = typeof normalizedVariants[0]?.key === "string" ? String(normalizedVariants[0].key) : "problem";
       await toolOk<any>({
         ...envelopeBase,
         campaign_id: campaignId,
@@ -1276,15 +1373,27 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         input: {
           organizationId,
           step_id: landingStepId,
-          metadata: { page: { kind: "markdown", title: `Landing · ${input.goal}`, markdown: landingCopy } },
+          metadata: {
+            page: { kind: "structured", title: `Landing · ${input.goal}`, variant_key: selectedKey },
+            variants: createdLandingIds,
+          },
         },
       });
     }
     if (bridgeStepId) {
       const bridge = asRecord(asRecord(pageDesigner.output).bridge);
-      const bridgeTitle = typeof bridge.title === "string" ? bridge.title : `Bridge · ${input.goal}`;
-      const bridgeDesc = typeof bridge.description === "string" ? bridge.description : `Bridge page for ${input.audience}`;
-      const bridgeBlocks = Array.isArray(bridge.blocks) ? bridge.blocks : [{ type: "markdown", markdown: bridgeCopy }];
+      const bridgeTitle = typeof bridge.headline === "string" ? bridge.headline : `Bridge · ${input.goal}`;
+      const bridgeDesc = typeof bridge.subheadline === "string" ? bridge.subheadline : `Bridge page for ${input.audience}`;
+      const sections = Array.isArray(bridge.sections) ? (bridge.sections as unknown[]).map((s) => asRecord(s)) : [];
+      const bridgeBlocks = [
+        { type: "hero", headline: bridgeTitle, subheadline: bridgeDesc, cta_label: typeof bridge.cta === "string" ? bridge.cta : "Continue" },
+        ...sections.map((s) => ({
+          type: String(s.type || "section"),
+          title: typeof s.title === "string" ? s.title : undefined,
+          bullets: Array.isArray(s.bullets) ? (s.bullets as unknown[]).filter((x): x is string => typeof x === "string") : undefined,
+          body: typeof s.body === "string" ? s.body : undefined,
+        })),
+      ];
       const { data: bp, error: bpErr } = await admin
         .from("bridge_pages" as never)
         .upsert(
@@ -1309,7 +1418,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         input: {
           organizationId,
           step_id: bridgeStepId,
-          metadata: { page: { kind: "markdown", title: `Bridge · ${input.goal}`, markdown: bridgeCopy } },
+          metadata: { page: { kind: "structured", title: `Bridge · ${input.goal}` } },
         },
       });
     }

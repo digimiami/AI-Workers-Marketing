@@ -9,6 +9,18 @@ import { buttonVariants } from "@/components/ui/button";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ChatWidget } from "@/components/chat/ChatWidget";
 
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function strArr(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
 function markdownToText(md: string) {
   // Minimal markdown to text for MVP rendering without adding new deps.
   return String(md ?? "")
@@ -18,11 +30,52 @@ function markdownToText(md: string) {
     .replace(/`([^`]+)`/g, "$1");
 }
 
+function StructuredPage(props: { blocks: unknown }) {
+  const blocks = Array.isArray(props.blocks) ? (props.blocks as unknown[]) : [];
+  return (
+    <div className="space-y-5">
+      {blocks.map((b, idx) => {
+        const o = asRecord(b);
+        const type = str(o.type) || "section";
+        if (type === "hero") {
+          const headline = str(o.headline);
+          const sub = str(o.subheadline);
+          const cta = str(o.cta_label);
+          return (
+            <div key={idx} className="space-y-2">
+              {headline ? <h1 className="text-3xl font-semibold tracking-tight">{headline}</h1> : null}
+              {sub ? <p className="text-muted-foreground">{sub}</p> : null}
+              {cta ? <div className={buttonVariants({})}>{cta}</div> : null}
+            </div>
+          );
+        }
+        const title = str(o.title);
+        const bullets = strArr(o.bullets);
+        const body = str(o.body);
+        return (
+          <section key={idx} className="space-y-2 rounded-xl border border-border/60 bg-muted/10 p-4">
+            {title ? <h2 className="text-base font-semibold">{title}</h2> : null}
+            {body ? <p className="text-sm text-muted-foreground">{body}</p> : null}
+            {bullets.length ? (
+              <ul className="list-inside list-disc text-sm text-muted-foreground">
+                {bullets.slice(0, 12).map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 export default async function PublicFunnelStepPage(props: {
   params: Promise<{ campaignId: string; stepSlug: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { campaignId, stepSlug } = await props.params;
+  const sp = await props.searchParams;
   if (!z.string().uuid().safeParse(campaignId).success) redirect("/");
 
   const admin = createSupabaseAdminClient();
@@ -46,8 +99,36 @@ export default async function PublicFunnelStepPage(props: {
   if (!step) notFound();
 
   const meta = ((step as any).metadata ?? {}) as Record<string, unknown>;
-  const page = (meta.page ?? {}) as Record<string, unknown>;
+  const page = asRecord(meta.page);
+  const variantKey = typeof sp?.variant === "string" ? sp.variant : undefined;
+  const wantsStructured = str(page.kind) === "structured";
   const markdown = typeof page.markdown === "string" ? page.markdown : "";
+
+  // If structured, prefer rendering from landing_pages/bridge_pages blocks.
+  let structuredBlocks: unknown = null;
+  if (wantsStructured) {
+    if ((step as any).step_type === "landing") {
+      const { data: rows } = await admin
+        .from("landing_pages" as never)
+        .select("blocks,metadata,created_at")
+        .eq("funnel_step_id", String((step as any).id))
+        .eq("organization_id", String((camp as any).organization_id))
+        .order("created_at", { ascending: false })
+        .limit(10);
+      const match =
+        (rows ?? []).find((r: any) => (asRecord(r.metadata).variant_key as any) === variantKey) ??
+        (rows ?? [])[0];
+      structuredBlocks = match?.blocks ?? null;
+    } else if ((step as any).step_type === "bridge") {
+      const { data: row } = await admin
+        .from("bridge_pages" as never)
+        .select("blocks")
+        .eq("funnel_step_id", String((step as any).id))
+        .eq("organization_id", String((camp as any).organization_id))
+        .maybeSingle();
+      structuredBlocks = (row as any)?.blocks ?? null;
+    }
+  }
 
   // Log page_view (server-side)
   try {
@@ -136,9 +217,13 @@ export default async function PublicFunnelStepPage(props: {
         <h1 className="text-3xl font-semibold tracking-tight">{String((step as any).name ?? "")}</h1>
       </div>
 
-      <div className="prose prose-neutral max-w-none">
-        {markdown ? <pre className="whitespace-pre-wrap">{markdownToText(markdown)}</pre> : <p>Missing page content.</p>}
-      </div>
+      {structuredBlocks ? (
+        <StructuredPage blocks={structuredBlocks} />
+      ) : (
+        <div className="prose prose-neutral max-w-none">
+          {markdown ? <pre className="whitespace-pre-wrap">{markdownToText(markdown)}</pre> : <p>Missing page content.</p>}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {nextSlug ? (
