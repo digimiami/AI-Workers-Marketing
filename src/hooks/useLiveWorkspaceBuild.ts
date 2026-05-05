@@ -106,6 +106,14 @@ export function useLiveWorkspaceBuild() {
     }));
   }, []);
 
+  // UI-only hinting for external modules (e.g. Ads Engine simulate launch).
+  const hintStep = React.useCallback((key: LiveBuildStepKey, message: string) => {
+    setState((prev) => ({
+      ...prev,
+      steps: prev.steps.map((s) => (s.key === key ? { ...s, message } : s)),
+    }));
+  }, []);
+
   const ingestEvent = React.useCallback(
     (event: string, raw: string) => {
       let payload: unknown;
@@ -355,5 +363,5 @@ export function useLiveWorkspaceBuild() {
     [resume],
   );
 
-  return { state, progress, start, resume, cancel, reset, regenerateSection };
+  return { state, progress, start, resume, cancel, reset, regenerateSection, hintStep };
 }

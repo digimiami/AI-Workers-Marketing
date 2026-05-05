@@ -93,40 +93,63 @@ export function AiWorkspacePage(props: Props) {
     (live.state.finalStatus === "completed" || live.state.finalStatus === "complete" || live.state.reviewUrl);
 
   return (
-    <div className="space-y-8 pb-10">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">AI Workspace</h1>
-        <p className="text-sm text-muted-foreground">Watch AiWorkers build your campaign live.</p>
+    <div className="pb-6">
+      <div className="sticky top-0 z-20 mb-4 border-b border-border/60 bg-background/70 backdrop-blur-xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1 py-3">
+          <div className="min-w-0">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI Workspace</div>
+            <div className="truncate text-base font-semibold tracking-tight">
+              {live.state.results.campaign?.name || (cmd.url ? cmd.url.replace(/^https?:\/\//, "") : "Live build")}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {campaignId ? (
+              <Link href={`/admin/campaigns/${campaignId}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>
+                Campaign
+              </Link>
+            ) : null}
+            {campaignId ? (
+              <Link href={`/f/${campaignId}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>
+                Preview
+              </Link>
+            ) : null}
+            {live.state.reviewUrl ? (
+              <Link href={live.state.reviewUrl} className={buttonVariants({ variant: "default", size: "sm" })}>
+                Approve
+              </Link>
+            ) : campaignId ? (
+              <Link href={`/admin/workspace/review/${campaignId}`} className={buttonVariants({ variant: "default", size: "sm" })}>
+                Approve
+              </Link>
+            ) : null}
+          </div>
+        </div>
+        <AiBuildStatus active={live.state.active} finalStatus={live.state.finalStatus} progress={live.progress} className="rounded-none border-0 bg-transparent p-0 shadow-none" />
       </div>
 
       {!runIdProp ? <AiCommandCard value={cmd} onChange={setCmd} onSubmit={onBuild} disabled={live.state.active} /> : null}
 
       {showLive ? (
         <>
-          <AiBuildStatus active={live.state.active} finalStatus={live.state.finalStatus} progress={live.progress} />
-
-          <div className="grid gap-6 lg:grid-cols-[minmax(260px,360px)_1fr] lg:items-start">
-            <div className="space-y-2 lg:sticky lg:top-4">
-              <AiBuildTimeline steps={live.state.steps} active={live.state.active} progress={live.progress} />
+          <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+            <div className="min-w-0">
+              <AiBuildTimeline
+                variant="stream"
+                steps={live.state.steps}
+                active={live.state.active}
+                progress={live.progress}
+                className="lg:sticky lg:top-[92px]"
+              />
             </div>
-            <div className="min-w-0 space-y-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Live generated results</h2>
-              {live.state.active ? (
-                <div className="flex items-center gap-2 rounded-xl border border-cyan-500/35 bg-cyan-500/5 px-3 py-2 text-sm text-muted-foreground shadow-[0_0_24px_-8px_rgba(34,211,238,0.35)]">
-                  <span className="relative flex h-2 w-2 shrink-0">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-500" />
-                  </span>
-                  <span className="animate-pulse">AI is building…</span>
-                </div>
-              ) : null}
+            <div className="min-w-0">
               <AiGeneratedResults
                 state={live.state}
                 organizationId={organizationId}
                 campaignId={campaignId}
                 runId={runId}
                 onRegenerate={onRegenerate}
-                layout="stack"
+                onStreamHint={(msg) => live.hintStep("ads", msg)}
+                layout="grid"
               />
             </div>
           </div>
@@ -168,17 +191,6 @@ export function AiWorkspacePage(props: Props) {
               </div>
             </div>
           ) : null}
-
-          <div className="space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Full workspace grid</h2>
-            <AiWorkspaceFullGrid
-              state={live.state}
-              organizationId={organizationId}
-              campaignId={campaignId}
-              runId={runId}
-              onRegenerate={onRegenerate}
-            />
-          </div>
 
           {live.state.errors.length ? (
             <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100">
