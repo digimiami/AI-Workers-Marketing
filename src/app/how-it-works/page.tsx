@@ -40,7 +40,7 @@ export default function HowItWorksPage() {
     <PublicShell>
       <PageHero
         eyebrow="Architecture"
-        title="How AiWorkers.vip runs end-to-end."
+        title="How AiWorkers.vip runs end-to-end?"
         description="A multi-agent marketing pipeline built for internal affiliate testing today—and premium client delivery tomorrow. Every stage emits telemetry, supports approvals, and hands off structured outputs."
         motif={
           <div className="flex size-24 items-center justify-center rounded-3xl border border-primary/30 bg-primary/10 text-primary shadow-lg md:size-28">

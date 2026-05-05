@@ -142,7 +142,7 @@ export function AiWorkspacePage(props: Props) {
                   </Link>
                 ) : null}
                 {campaignId ? (
-                  <Link href={`/admin/campaigns/${campaignId}`} className={buttonVariants({ variant: "secondary", size: "default" })}>
+                  <Link href={`/f/${campaignId}`} className={buttonVariants({ variant: "secondary", size: "default" })}>
                     Preview landing page
                   </Link>
                 ) : null}

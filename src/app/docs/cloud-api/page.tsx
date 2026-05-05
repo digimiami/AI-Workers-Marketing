@@ -152,7 +152,7 @@ Content-Type: application/json`}
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">8. System instructions for agents (copy-paste)</h2>
+          <h2 className="text-lg font-semibold">8. System instructions for agents (copy-paste)?</h2>
           <p className="text-muted-foreground">
             Paste the block below into OpenClaw (or any LLM agent) <strong>system</strong> or <strong>developer</strong>{" "}
             instructions so the agent always uses Cloud API tokens correctly. Replace{" "}

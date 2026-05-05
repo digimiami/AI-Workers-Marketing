@@ -570,6 +570,14 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       createdRecords.push({ table: "funnels", id: funnelId, label: funnel.name });
     }
 
+    // Public funnel routes (`/f/:campaignId`) rely on campaign.funnel_id.
+    // Keep it in sync so previews never 404.
+    await admin
+      .from("campaigns" as never)
+      .update({ funnel_id: funnelId, updated_at: nowIso() } as never)
+      .eq("organization_id", organizationId)
+      .eq("id", campaignId);
+
     const { data: steps } = await admin
       .from("funnel_steps" as never)
       .select("id,step_type,slug")
@@ -612,6 +620,13 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       createdRecords.push({ table: "funnel_steps", id: String(row.id), label: `${def.step_type}:${row.slug}` });
       stepIndex += 1;
     }
+
+    // Ensure steps are visible to the public funnel preview routes.
+    await admin
+      .from("funnel_steps" as never)
+      .update({ is_public: true, updated_at: nowIso() } as never)
+      .eq("organization_id", organizationId)
+      .eq("funnel_id", funnelId);
   };
 
   try {
