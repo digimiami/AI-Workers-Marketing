@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -125,6 +126,11 @@ export function UnifiedAiWorkspaceClient(props: Props) {
 
   const showLive = stream.state.active || stream.state.runId || stream.state.reviewUrl;
 
+  const livePanelOrder = React.useMemo(
+    () => ["research", "campaign", "landing", "funnel", "content", "ads", "emails", "lead_capture", "analytics", "approvals"] as const,
+    [],
+  );
+
   const statusLabel = stream.state.active
     ? "AI is building your workspace…"
     : stream.state.finalStatus === "completed" || stream.state.finalStatus === "complete"
@@ -216,7 +222,55 @@ export function UnifiedAiWorkspaceClient(props: Props) {
             </div>
           </Card>
 
-          <AiWorkspaceThinkingPanel lines={stream.state.thinking} active={stream.state.active} />
+          <div className="grid gap-6 lg:grid-cols-[minmax(260px,360px)_1fr] lg:items-start">
+            <div className="space-y-2 lg:sticky lg:top-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Build timeline</h2>
+              <AiLiveBuildStream
+                steps={stream.state.steps.filter((s) => s.key !== "done")}
+                isRunning={stream.state.active}
+                errors={stream.state.errors}
+                progress={progress}
+                onRetry={stream.retry}
+              />
+            </div>
+            <div className="min-w-0 space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Live output</h2>
+              {stream.state.active ? (
+                <div className="flex items-center gap-2 rounded-xl border border-sky-500/35 bg-sky-500/5 px-3 py-2 text-sm text-muted-foreground shadow-[0_0_24px_-8px_rgba(56,189,248,0.35)]">
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
+                  </span>
+                  <span className="animate-pulse">AI is building your workspace…</span>
+                </div>
+              ) : null}
+              <AiWorkspaceThinkingPanel lines={stream.state.thinking} active={stream.state.active} />
+              <div className="space-y-4">
+                {livePanelOrder.map((key) => {
+                  const node = stepPreviews[key];
+                  if (!node) return null;
+                  const pulseKey = key === "lead_capture" ? "leadCapture" : key;
+                  const pulseAt = stream.state.modulePulseAt[pulseKey];
+                  const glow = typeof pulseAt === "number" && Date.now() - pulseAt < 2400;
+                  return (
+                    <motion.div
+                      key={key}
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.38, ease: "easeOut" }}
+                      className={cn(
+                        "rounded-2xl transition-shadow duration-500",
+                        glow && "shadow-[0_0_36px_-6px_rgba(56,189,248,0.55)] ring-2 ring-sky-400/45",
+                      )}
+                    >
+                      {node}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
 
           {!stream.state.active && stream.state.reviewUrl ? (
             <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-card to-card p-6 shadow-[0_0_40px_-12px_rgba(16,185,129,0.35)]">
@@ -265,18 +319,6 @@ export function UnifiedAiWorkspaceClient(props: Props) {
             modulePulseAt={stream.state.modulePulseAt}
             heading={!stream.state.active && stream.state.reviewUrl ? "Everything AI built" : "Live output"}
           />
-
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Build timeline</h2>
-            <AiLiveBuildStream
-              steps={stream.state.steps}
-              isRunning={stream.state.active}
-              errors={stream.state.errors}
-              progress={progress}
-              onRetry={stream.retry}
-              stepPreviews={stepPreviews}
-            />
-          </div>
 
           <div className="space-y-3">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Full workspace</h2>

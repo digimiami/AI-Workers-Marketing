@@ -537,3 +537,278 @@ export function bundleToRichWorkspaceResults(bundle: WorkspaceDisplayBundle | nu
 
 /** Alias for campaign/workspace UIs that imported the old name. */
 export const bundleToAiWorkspaceResults = bundleToRichWorkspaceResults;
+
+/**
+ * Fills obvious gaps so the live workspace never renders empty while the pipeline is still writing rows.
+ * Real DB fields always win when present (spread real last).
+ */
+export function mergeLiveBuildDefaults(
+  rich: Record<string, unknown>,
+  runInput: Record<string, unknown> | null,
+  urlHint: string,
+): Record<string, unknown> {
+  const out = { ...rich };
+  const goal = str(runInput?.goal);
+  const audience = str(runInput?.audience);
+  const traffic = str(runInput?.trafficSource);
+  const hint = (urlHint || str(runInput?.url)).replace(/^https?:\/\//i, "");
+
+  const res = asRecord(out.research);
+  const rawR = asRecord(res.raw);
+  const offerExisting =
+    str(res.offerSummary) || str(rawR.offer_summary) || str(rawR.offerSummary);
+  const audExisting = str(res.audience) || str(rawR.audience_summary) || str(rawR.audience);
+  if ((!offerExisting || !audExisting) && (goal || audience || hint)) {
+    const defOffer = goal ? `Live brief: ${goal}` : `Signals assembling for ${hint || "your site"}`;
+    out.research = {
+      ...res,
+      painPoints: Array.isArray(res.painPoints) ? (res.painPoints as string[]) : [],
+      hooks: Array.isArray(res.hooks) ? (res.hooks as string[]) : [],
+      topHooks: Array.isArray(res.topHooks) ? (res.topHooks as string[]) : [],
+      offerSummary: offerExisting || str(res.offerSummary) || defOffer,
+      audience: audExisting || str(res.audience) || audience || undefined,
+    };
+  }
+
+  const L = asRecord(out.landing);
+  if (!str(L.headline) && !str(L.title) && (goal || audience || hint)) {
+    const homeish = /home|buyer|house|mortgage/i.test(`${audience} ${goal} ${hint}`);
+    out.landing = {
+      headline: homeish
+        ? "Get Your Free Home Buyer Strategy Today"
+        : "Get More Qualified Leads with AI-Powered Marketing",
+      subheadline: goal || `Built from ${hint || "your URL"}`,
+      cta: str(L.cta) || str(L.primaryCta) || "Get my strategy",
+      bullets: Array.isArray(L.bullets) && (L.bullets as unknown[]).length ? L.bullets : [audience ? `Guidance tailored to ${audience}` : "Guidance tailored to your market", traffic ? `Channels: ${traffic}` : "Multi-channel ready"],
+      source: str(L.source) || "live_preview",
+      ...L,
+    };
+  }
+
+  const C = asRecord(out.content);
+  const items = Array.isArray(C.items) ? (C.items as unknown[]) : [];
+  const hooksPrev = Array.isArray(C.hooksPreview) ? (C.hooksPreview as string[]) : [];
+  if (!items.length && !hooksPrev.length && (goal || audience || hint)) {
+    const hooks = [
+      `${audience || "Buyers"}: the one checklist they use before they tour models.`,
+      `${goal || "Your goal"} — distilled into a 60-second decision frame.`,
+      `What the market is signaling this week for ${hint || "your niche"} (and what to ignore).`,
+      `A simple weekly review for ${audience || "serious prospects"} so momentum doesn't stall.`,
+      `${traffic || "Paid + organic"}: the creative angle that still converts when CPC spikes.`,
+    ];
+    out.content = {
+      totalCount: 5,
+      hooksCount: hooks.length,
+      hooksPreview: hooks,
+      scriptsPreview: Array.isArray(C.scriptsPreview) ? C.scriptsPreview : [],
+      firstTitle: str(C.firstTitle) || goal || "Launch pack",
+      items: hooks.map((h, i) => ({
+        id: `live-hook-${i}`,
+        title: `Hook ${i + 1}`,
+        platform: "multi",
+        status: "draft",
+        hooks: [h],
+        scriptExcerpt: "",
+        captions: [] as string[],
+        cta: "",
+      })),
+      source: "live_preview",
+      ...C,
+    };
+  }
+
+  const E = asRecord(out.emails);
+  const emailSteps = Array.isArray(E.steps) ? (E.steps as unknown[]) : [];
+  if (!emailSteps.length && (goal || audience || hint)) {
+    const draft = {
+      sequenceName: str(E.sequenceName) || "Nurture (live preview)",
+      steps: [
+        {
+          stepIndex: 0,
+          delayMinutes: 0,
+          subject: `Welcome — ${goal || "your next steps"}`,
+          bodyPreview: `We're generating assets for ${hint || "your URL"}. You'll see them finalize in this workspace as each step completes.`,
+          templateName: "welcome",
+        },
+        {
+          stepIndex: 1,
+          delayMinutes: 1440,
+          subject: "The one follow-up that keeps momentum",
+          bodyPreview: audience ? `Short tactical note for ${audience}.` : "Short tactical follow-up.",
+          templateName: "day1",
+        },
+        {
+          stepIndex: 2,
+          delayMinutes: 4320,
+          subject: "Ready when you are",
+          bodyPreview: "Soft CTA + reminder of the value inside your free strategy.",
+          templateName: "day3",
+        },
+        {
+          stepIndex: 3,
+          delayMinutes: 7200,
+          subject: "Proof + process (short)",
+          bodyPreview: "One screenshot-level story + what happens after they reply.",
+          templateName: "day5",
+        },
+        {
+          stepIndex: 4,
+          delayMinutes: 10080,
+          subject: "Book / call CTA",
+          bodyPreview: "Calendar link + two time options + low-friction reassurance.",
+          templateName: "day7",
+        },
+      ],
+      source: "live_preview",
+    };
+    out.emails = { ...E, ...draft };
+  }
+
+  const camp = asRecord(out.campaign);
+  if ((!str(camp.name) && !str(camp.goal)) && (goal || audience || hint)) {
+    out.campaign = {
+      ...camp,
+      id: camp.id ?? null,
+      name: str(camp.name) || "Campaign (assembling)",
+      goal: str(camp.goal) || goal || `Launch narrative for ${hint || "your offer"}`,
+      audience: str(camp.audience) || audience || "Your ICP",
+      trafficSource: str(camp.trafficSource) || traffic || undefined,
+      status: str(camp.status) || "draft",
+    };
+  }
+
+  const F = asRecord(out.funnel);
+  const fSteps = Array.isArray(F.steps) ? (F.steps as unknown[]) : [];
+  if (!fSteps.length && (goal || audience || hint)) {
+    const liveSteps = [
+      {
+        id: "live-1",
+        name: "Landing",
+        stepType: "landing",
+        slug: "landing",
+        index: 0,
+        status: "live",
+        summary: "Primary promise + clarity above the fold.",
+      },
+      {
+        id: "live-2",
+        name: "Bridge",
+        stepType: "bridge",
+        slug: "bridge",
+        index: 1,
+        status: "live",
+        summary: "Story + mechanism before the ask.",
+      },
+      {
+        id: "live-3",
+        name: "Lead capture",
+        stepType: "form",
+        slug: "lead",
+        index: 2,
+        status: "live",
+        summary: "Form + incentive aligned to your traffic.",
+      },
+      {
+        id: "live-4",
+        name: "CTA",
+        stepType: "cta",
+        slug: "cta",
+        index: 3,
+        status: "live",
+        summary: goal ? `Single CTA: ${goal.slice(0, 80)}` : "Single focused CTA.",
+      },
+      {
+        id: "live-5",
+        name: "Thank you",
+        stepType: "thank_you",
+        slug: "thanks",
+        index: 4,
+        status: "live",
+        summary: "Expectations + next step.",
+      },
+      {
+        id: "live-6",
+        name: "Email sequence",
+        stepType: "email_trigger",
+        slug: "nurture",
+        index: 5,
+        status: "live",
+        summary: "Automated nurture after opt-in.",
+      },
+    ];
+    out.funnel = {
+      ...F,
+      id: F.id ?? null,
+      name: str(F.name) || "Acquisition funnel",
+      flow: ["Landing", "Bridge", "Lead Capture", "CTA", "Thank You", "Email Sequence"],
+      flowDiagram: "Landing → Bridge → Lead Capture → CTA → Thank You → Email Sequence",
+      steps: liveSteps,
+      source: "live_preview",
+    };
+  }
+
+  const A = asRecord(out.ads);
+  const adItems = Array.isArray(A.items) ? (A.items as unknown[]) : [];
+  if (!adItems.length && (goal || audience || hint)) {
+    const items = [
+      {
+        id: "live-ad-1",
+        headline: (goal || "Primary angle").slice(0, 72),
+        primaryText: audience ? `For ${audience}` : "For your ICP — specificity beats hype.",
+        platform: "google_ads",
+      },
+      {
+        id: "live-ad-2",
+        headline: "Objection-aware variant",
+        primaryText: "Addresses skepticism with proof, process, and a tight CTA.",
+        platform: "google_ads",
+      },
+      {
+        id: "live-ad-3",
+        headline: "Retargeting: remind + reduce risk",
+        primaryText: traffic ? `Creative tuned for ${traffic} intent.` : "Creative tuned for high-intent search.",
+        platform: "google_ads",
+      },
+    ];
+    out.ads = {
+      ...A,
+      count: items.length,
+      items,
+      source: "live_preview",
+    };
+  }
+
+  const An = asRecord(out.analytics);
+  const anLinks = Array.isArray(An.links) ? (An.links as unknown[]) : [];
+  if (!anLinks.length && hint) {
+    out.analytics = {
+      ...An,
+      trackingReady: true,
+      eventsInitialized: true,
+      status: "ready",
+      links: [{ id: "live-track", label: "Workspace preview", destination_url: `https://${hint.replace(/\/$/, "")}?utm_source=ai_workspace` }],
+      source: "live_preview",
+    };
+  }
+
+  const Lc = asRecord(out.leadCapture);
+  const forms = Array.isArray(Lc.forms) ? (Lc.forms as unknown[]) : [];
+  if (!forms.length && (goal || audience || hint)) {
+    out.leadCapture = {
+      ...Lc,
+      forms: [
+        {
+          id: "live-form-1",
+          name: "Strategy request",
+          status: "draft",
+          fields: ["email", "name"],
+          incentive: goal ? `Free: ${goal.slice(0, 48)}` : "Free strategy",
+          cta: "Get access",
+        },
+      ],
+      source: "live_preview",
+    };
+  }
+
+  return out;
+}

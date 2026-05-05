@@ -482,6 +482,11 @@ async function loadMarketingPipelineForResume(params: {
     organizationId,
     defer: undefined,
     resumePipelineRunId: undefined,
+    ...(params.input.startStage ? { startStage: params.input.startStage } : {}),
+    ...(params.input.stopAfterStage !== undefined && params.input.stopAfterStage !== null
+      ? { stopAfterStage: params.input.stopAfterStage }
+      : {}),
+    ...(params.input.campaignId ? { campaignId: params.input.campaignId } : {}),
   };
 
   const inputParsed = runMarketingPipelineInputSchema.safeParse(merged);

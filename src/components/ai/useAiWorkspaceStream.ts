@@ -106,6 +106,12 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
+/** Live SSE `type` (includes `leads`) → results / timeline key */
+function normalizeLiveTypeToModule(m: string): string {
+  if (m === "leads") return "lead_capture";
+  return m;
+}
+
 function normalizeModuleKey(m: string): keyof AiWorkspaceResults | "run" | null {
   if (m === "lead_capture") return "leadCapture";
   if (m === "run") return "run";
@@ -132,6 +138,19 @@ function normalizeUrl(raw: string): string {
   return `https://${t}`;
 }
 
+const LIVE_TYPE_TO_STEP: Partial<Record<string, StreamStepKey>> = {
+  research: "research",
+  campaign: "campaign",
+  landing: "landing",
+  funnel: "funnel",
+  content: "content",
+  ads: "ads",
+  emails: "emails",
+  leads: "lead_capture",
+  analytics: "analytics",
+  approvals: "approvals",
+};
+
 function attachStreamListeners(
   es: EventSource,
   setState: React.Dispatch<React.SetStateAction<AiWorkspaceStreamState>>,
@@ -140,16 +159,59 @@ function attachStreamListeners(
 ) {
   es.addEventListener("step", (ev) => {
     try {
-      const d = JSON.parse((ev as MessageEvent).data) as { step: string; status: StreamStepStatus; message?: string };
-      updateStep(d.step, d.status, d.message);
+      const d = JSON.parse((ev as MessageEvent).data) as {
+        type?: string;
+        status?: string;
+        payload?: unknown;
+        step?: string;
+        message?: string;
+      };
+
+      if (typeof d.type === "string" && (d.status === "start" || d.status === "complete")) {
+        const sk = LIVE_TYPE_TO_STEP[d.type];
+        if (sk && BUILD_STEP_KEYS.includes(sk)) {
+          if (d.status === "start") {
+            updateStep(sk, "running", "AI is building…");
+            setState((prev) => ({
+              ...prev,
+              thinking: [
+                ...prev.thinking.slice(-160),
+                {
+                  id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  step: sk,
+                  message: `Starting ${STEP_LABELS[sk]}…`,
+                  at: Date.now(),
+                },
+              ],
+            }));
+          }
+          if (d.status === "complete" && d.payload != null) {
+            const mod = normalizeLiveTypeToModule(d.type);
+            const nk = normalizeModuleKey(mod);
+            if (nk && nk !== "run") {
+              setState((prev) => ({
+                ...prev,
+                results: { ...prev.results, [nk]: d.payload },
+                modulePulseAt: { ...prev.modulePulseAt, [nk]: Date.now() },
+              }));
+            }
+          }
+        }
+        if (!d.step) return;
+      }
+
+      if (typeof d.step !== "string" || typeof d.status !== "string") return;
+
+      const legacyStep = d.step;
+      updateStep(legacyStep, d.status as StreamStepStatus, d.message);
       const msg = typeof d.message === "string" ? d.message.trim() : "";
       if (!msg) return;
       setState((prev) => {
         const last = prev.thinking[prev.thinking.length - 1];
-        if (last && last.step === d.step && last.message === msg) return prev;
+        if (last && last.step === legacyStep && last.message === msg) return prev;
         const line: AiWorkspaceThinkingLine = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          step: d.step,
+          step: legacyStep,
           message: msg,
           at: Date.now(),
         };
@@ -340,7 +402,7 @@ export function useAiWorkspaceStream() {
         mode: input.mode ?? "affiliate",
       });
 
-      const es = new EventSource(`/api/ai/workspace/stream?${qs.toString()}`);
+      const es = new EventSource(`/api/workspace/stream?${qs.toString()}`);
       esRef.current = es;
       attachStreamListeners(es, setState, updateStep, () => {
         if (esRef.current === es) esRef.current = null;
@@ -382,7 +444,7 @@ export function useAiWorkspaceStream() {
       }
 
       const qs = new URLSearchParams({ runId });
-      const es = new EventSource(`/api/ai/workspace/stream?${qs.toString()}`);
+      const es = new EventSource(`/api/workspace/stream?${qs.toString()}`);
       esRef.current = es;
       attachStreamListeners(es, setState, updateStep, () => {
         if (esRef.current === es) esRef.current = null;

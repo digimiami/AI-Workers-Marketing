@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.message }, { status: 400 });
   }
-  return runWorkspaceStreamResponse(request, parsed.data, { liveStepEnvelope: false });
+  return runWorkspaceStreamResponse(request, parsed.data, { liveStepEnvelope: true });
 }
 
 export async function POST(request: Request) {
@@ -26,5 +26,5 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.message }, { status: 400 });
   }
-  return runWorkspaceStreamResponse(request, parsed.data, { liveStepEnvelope: false });
+  return runWorkspaceStreamResponse(request, parsed.data, { liveStepEnvelope: true });
 }
