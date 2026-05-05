@@ -8,6 +8,7 @@ import { z } from "zod";
 import { buttonVariants } from "@/components/ui/button";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ChatWidget } from "@/components/chat/ChatWidget";
+import { cn } from "@/lib/utils";
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -30,42 +31,166 @@ function markdownToText(md: string) {
     .replace(/`([^`]+)`/g, "$1");
 }
 
-function StructuredPage(props: { blocks: unknown }) {
+type BenefitItem = { title: string; desc: string };
+type ProcessItem = { title: string; desc: string };
+
+function parseColonItem(s: string): BenefitItem | null {
+  const idx = s.indexOf(":");
+  if (idx < 0) return null;
+  const title = s.slice(0, idx).trim();
+  const desc = s.slice(idx + 1).trim();
+  if (!title || !desc) return null;
+  return { title, desc };
+}
+
+function asItems(v: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(v) ? (v as Array<Record<string, unknown>>).filter((x) => x && typeof x === "object") : [];
+}
+
+function StructuredPage(props: {
+  blocks: unknown;
+  campaignName: string;
+  organizationId: string;
+  campaignId: string;
+  funnelId: string;
+  funnelStepId: string;
+  sourcePage: string;
+  nextHref?: string | null;
+}) {
   const blocks = Array.isArray(props.blocks) ? (props.blocks as unknown[]) : [];
+
+  const hero = blocks.map(asRecord).find((b) => str(b.type) === "hero") ?? {};
+  const headline = str(hero.headline);
+  const subheadline = str(hero.subheadline);
+  const ctaLabel = str(hero.cta_label) || "Continue";
+
+  const benefitBlock = blocks.map(asRecord).find((b) => str(b.type) === "benefits") ?? {};
+  const benefitItemsFromItems: BenefitItem[] = asItems(benefitBlock.items).map((it) => ({
+    title: str(it.title),
+    desc: str(it.desc) || str(it.description),
+  })).filter((x) => x.title && x.desc);
+  const benefitItemsFromBullets: BenefitItem[] = strArr(benefitBlock.bullets)
+    .map((b) => parseColonItem(b))
+    .filter((x): x is BenefitItem => Boolean(x));
+  const benefits: BenefitItem[] = (benefitItemsFromItems.length ? benefitItemsFromItems : benefitItemsFromBullets).slice(0, 8);
+
+  const processBlock =
+    blocks.map(asRecord).find((b) => str(b.type) === "process" || str(b.type) === "steps") ?? {};
+  const processItemsFromItems: ProcessItem[] = asItems(processBlock.items).map((it) => ({
+    title: str(it.title),
+    desc: str(it.desc) || str(it.description),
+  })).filter((x) => x.title && x.desc);
+  const processItemsFromBullets: ProcessItem[] = strArr(processBlock.bullets)
+    .map((b) => parseColonItem(b))
+    .filter((x): x is BenefitItem => Boolean(x))
+    .map((x) => ({ title: x.title, desc: x.desc }));
+  const process: ProcessItem[] = (processItemsFromItems.length ? processItemsFromItems : processItemsFromBullets).slice(0, 6);
+
+  const hasInlineForm = blocks.map(asRecord).some((b) => str(b.type) === "lead_capture_form");
+
   return (
-    <div className="space-y-5">
-      {blocks.map((b, idx) => {
-        const o = asRecord(b);
-        const type = str(o.type) || "section";
-        if (type === "hero") {
-          const headline = str(o.headline);
-          const sub = str(o.subheadline);
-          const cta = str(o.cta_label);
-          return (
-            <div key={idx} className="space-y-2">
-              {headline ? <h1 className="text-3xl font-semibold tracking-tight">{headline}</h1> : null}
-              {sub ? <p className="text-muted-foreground">{sub}</p> : null}
-              {cta ? <div className={buttonVariants({})}>{cta}</div> : null}
+    <div className="space-y-10">
+      <section className="rounded-3xl border border-border/60 bg-gradient-to-b from-muted/25 to-background p-6 shadow-[0_0_70px_-30px_rgba(34,211,238,0.35)] md:p-10">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {props.campaignName}
+        </div>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-5xl">
+          {headline || "Get results faster — with a page built for your offer"}
+        </h1>
+        {subheadline ? (
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">{subheadline}</p>
+        ) : null}
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <a
+            href={hasInlineForm ? "#lead-form" : props.nextHref || "#"}
+            className={buttonVariants({})}
+          >
+            {ctaLabel || "Continue"}
+          </a>
+          {props.nextHref ? (
+            <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
+              Next
+            </Link>
+          ) : null}
+        </div>
+      </section>
+
+      {benefits.length ? (
+        <section className="space-y-4">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Benefits</div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {benefits.slice(0, 6).map((b) => (
+              <div key={b.title} className="rounded-2xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl">
+                <div className="text-base font-semibold">{b.title}</div>
+                <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{b.desc}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {process.length ? (
+        <section className="space-y-4">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">How it works</div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {process.slice(0, 3).map((s, i) => (
+              <div key={s.title} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+                <div className="text-xs font-semibold text-cyan-300/90">Step {i + 1}</div>
+                <div className="mt-2 text-base font-semibold">{s.title}</div>
+                <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.desc}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section id="lead-form" className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
+        <div className="text-xl font-semibold tracking-tight">Get started in minutes</div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Share your email so we can send your matches and next steps.
+        </p>
+        <form className="mt-5 space-y-4" action="/api/leads/capture" method="post">
+          <input type="hidden" name="organizationId" value={props.organizationId} />
+          <input type="hidden" name="campaignId" value={props.campaignId} />
+          <input type="hidden" name="funnelId" value={props.funnelId} />
+          <input type="hidden" name="funnelStepId" value={props.funnelStepId} />
+          <input type="hidden" name="sourcePage" value={props.sourcePage} />
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="email">Email</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                required
+                className="h-11 w-full rounded-lg border border-border/60 bg-background px-3 text-sm"
+              />
             </div>
-          );
-        }
-        const title = str(o.title);
-        const bullets = strArr(o.bullets);
-        const body = str(o.body);
-        return (
-          <section key={idx} className="space-y-2 rounded-xl border border-border/60 bg-muted/10 p-4">
-            {title ? <h2 className="text-base font-semibold">{title}</h2> : null}
-            {body ? <p className="text-sm text-muted-foreground">{body}</p> : null}
-            {bullets.length ? (
-              <ul className="list-inside list-disc text-sm text-muted-foreground">
-                {bullets.slice(0, 12).map((x) => (
-                  <li key={x}>{x}</li>
-                ))}
-              </ul>
-            ) : null}
-          </section>
-        );
-      })}
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="fullName">Name (optional)</label>
+              <input
+                id="fullName"
+                name="fullName"
+                type="text"
+                className="h-11 w-full rounded-lg border border-border/60 bg-background px-3 text-sm"
+              />
+            </div>
+          </div>
+          <button className={cn(buttonVariants({}), "h-11 w-full md:w-auto") } type="submit">
+            {ctaLabel || "Continue"}
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-3xl border border-border/60 bg-gradient-to-r from-cyan-500/10 via-card to-emerald-500/10 p-6 md:p-8">
+        <div className="text-2xl font-semibold tracking-tight">Ready to move faster?</div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Get your best options and a clear plan to act—without wasting time.
+        </p>
+        <div className="mt-5">
+          <a href="#lead-form" className={buttonVariants({})}>{ctaLabel || "Get started"}</a>
+        </div>
+      </section>
     </div>
   );
 }
@@ -116,11 +241,10 @@ async function buildFallbackStructuredBlocks(admin: ReturnType<typeof createSupa
 
   return [
     { type: "hero", headline, subheadline: sub, cta_label: cta },
-    {
-      type: "benefits",
-      title: params.stepType === "thank_you" ? "What happens next" : "Quick highlights",
-      bullets: hooks.slice(0, 5).length ? hooks.slice(0, 5) : ["Clear next steps", "Fast to review", "Ready to run"],
-    },
+    { type: "benefits", items: hooks.slice(0, 4).map((h, i) => ({ title: `Benefit ${i + 1}`, desc: h })) },
+    { type: "process", items: [{ title: "Share your criteria", desc: "Answer a few questions so we can match you correctly." }, { title: "Review options", desc: "Get a short list of best-fit options." }, { title: "Take the next step", desc: "Book or continue with the right CTA." }] },
+    { type: "lead_capture_form" },
+    { type: "final_cta" },
   ];
 }
 
@@ -274,7 +398,16 @@ export default async function PublicFunnelStepPage(props: {
       </div>
 
       {structuredBlocks ? (
-        <StructuredPage blocks={structuredBlocks} />
+        <StructuredPage
+          blocks={structuredBlocks}
+          campaignName={String((camp as any).name ?? "")}
+          organizationId={String((camp as any).organization_id)}
+          campaignId={campaignId}
+          funnelId={funnelId}
+          funnelStepId={String((step as any).id)}
+          sourcePage={`/f/${campaignId}/${stepSlug}`}
+          nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
+        />
       ) : (
         <div className="prose prose-neutral max-w-none">
           {markdown ? (
@@ -287,6 +420,13 @@ export default async function PublicFunnelStepPage(props: {
                 stepType: String((step as any).step_type ?? ""),
                 stepName: String((step as any).name ?? "Step"),
               })}
+              campaignName={String((camp as any).name ?? "")}
+              organizationId={String((camp as any).organization_id)}
+              campaignId={campaignId}
+              funnelId={funnelId}
+              funnelStepId={String((step as any).id)}
+              sourcePage={`/f/${campaignId}/${stepSlug}`}
+              nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
             />
           )}
         </div>
