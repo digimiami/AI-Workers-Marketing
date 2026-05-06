@@ -5,15 +5,27 @@ import { z } from "zod";
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
+import { launchPaidAdsAfterApprovals, preparePaidAdsLaunch } from "@/services/ads/adsEngine";
+import { runAdsOptimization } from "@/services/ads/adsOptimizer";
 
 const platformSchema = z.enum(["meta", "google", "tiktok"]);
 const objectiveSchema = z.enum(["leads", "traffic", "conversions"]);
-const statusSchema = z.enum(["draft", "running", "paused"]);
+const statusSchema = z.enum(["draft", "approval_required", "ready", "running", "paused", "launched", "simulated_active"]);
 
 const bodySchema = z.object({
   organizationId: z.string().uuid(),
   campaignId: z.string().uuid(),
-  action: z.enum(["get", "update_settings", "generate", "launch", "pause", "tick_autopilot"]),
+  action: z.enum([
+    "get",
+    "update_settings",
+    "generate",
+    "prepare_launch",
+    "optimize",
+    "simulate_launch",
+    "launch",
+    "pause",
+    "tick_autopilot",
+  ]),
   settings: z
     .object({
       platform: platformSchema.optional(),
@@ -22,6 +34,9 @@ const bodySchema = z.object({
       autopilot: z.boolean().optional(),
     })
     .optional(),
+  landingPageVariantId: z.string().uuid().optional(),
+  approvalMode: z.enum(["required", "optional"]).optional(),
+  adCampaignId: z.string().uuid().optional(),
 });
 
 type AdsEngineSettings = {
@@ -113,16 +128,48 @@ export async function POST(request: Request) {
   const current = readAdsEngine(meta);
 
   if (action === "get") {
-    const { count: creativesCount } = await admin
-      .from("ad_creatives" as never)
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("campaign_id", campaignId);
+    const [{ count: creativesCount }, { count: paidCampaignCount }, { data: adCampaignIds }, { count: approvalsPending }] =
+      await Promise.all([
+        admin
+          .from("ad_creatives" as never)
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .eq("campaign_id", campaignId),
+        admin
+          .from("ad_campaigns" as never)
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .eq("campaign_id", campaignId),
+        admin.from("ad_campaigns" as never).select("id").eq("organization_id", organizationId).eq("campaign_id", campaignId).limit(200),
+        admin
+          .from("approvals" as never)
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .eq("campaign_id", campaignId)
+          .eq("status", "pending")
+          .in("approval_type", ["paid_ads_launch", "paid_ads_budget", "paid_ads_destination", "paid_ads_copy"]),
+      ]);
+
+    const ids = ((adCampaignIds ?? []) as any[]).map((r) => String(r.id)).filter(Boolean);
+    let adsCount = 0;
+    if (ids.length) {
+      const { count } = await admin
+        .from("ads" as never)
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
+        .in("ad_campaign_id", ids);
+      adsCount = count ?? 0;
+    }
 
     return NextResponse.json({
       ok: true,
       adsEngine: current,
-      counts: { ad_creatives: creativesCount ?? 0 },
+      counts: {
+        ad_creatives: creativesCount ?? 0,
+        ad_campaigns: paidCampaignCount ?? 0,
+        ads: adsCount ?? 0,
+        approvals_pending: approvalsPending ?? 0,
+      },
     });
   }
 
@@ -139,6 +186,73 @@ export async function POST(request: Request) {
 
   if (action === "pause") {
     const next = await writeAdsEngine({ organizationId, campaignId, patch: { status: "paused" } });
+    return NextResponse.json({ ok: true, adsEngine: next });
+  }
+
+  if (action === "prepare_launch") {
+    const platform = current.platform === "tiktok" ? "meta" : (current.platform as any);
+    const prepared = await preparePaidAdsLaunch({
+      orgId: organizationId,
+      campaignId,
+      platform: platform === "google" ? "google" : "meta",
+      dailyBudget: current.daily_budget,
+      objective: current.objective,
+      landingPageVariantId: parsed.data.landingPageVariantId ?? null,
+      approvalMode: parsed.data.approvalMode ?? "required",
+    });
+
+    await writeAdsEngine({
+      organizationId,
+      campaignId,
+      patch: {
+        status: "approval_required",
+        landing_url: prepared.trackingUrl,
+      },
+    });
+
+    return NextResponse.json({ ok: true, prepared });
+  }
+
+  if (action === "optimize") {
+    const out = await runAdsOptimization({
+      organizationId,
+      campaignId,
+      platform: current.platform,
+      autopilotEnabled: current.autopilot,
+    });
+    return NextResponse.json({ ok: true, optimization: out });
+  }
+
+  if (action === "simulate_launch") {
+    const lastId =
+      typeof (meta as any)?.ads_engine?.last_ad_campaign_id === "string"
+        ? String((meta as any).ads_engine.last_ad_campaign_id)
+        : null;
+    if (!lastId) return NextResponse.json({ ok: false, message: "No prepared ad campaign found" }, { status: 400 });
+
+    const { count: pendingPaidApprovals } = await admin
+      .from("approvals" as never)
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("campaign_id", campaignId)
+      .eq("status", "pending")
+      .in("approval_type", ["paid_ads_launch", "paid_ads_budget", "paid_ads_destination", "paid_ads_copy"]);
+    if ((pendingPaidApprovals ?? 0) > 0) {
+      return NextResponse.json(
+        { ok: false, message: "Paid ads approvals are still pending. Approve launch items before activating." },
+        { status: 409 },
+      );
+    }
+
+    const platform = current.platform === "tiktok" ? "meta" : (current.platform as any);
+    await launchPaidAdsAfterApprovals({
+      organizationId,
+      campaignId,
+      adCampaignId: lastId,
+      platform: platform === "google" ? "google" : "meta",
+    });
+
+    const next = await writeAdsEngine({ organizationId, campaignId, patch: { status: "simulated_active" } });
     return NextResponse.json({ ok: true, adsEngine: next });
   }
 

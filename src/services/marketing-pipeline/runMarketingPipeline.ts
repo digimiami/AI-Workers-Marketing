@@ -1094,7 +1094,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       provider: input.provider,
       input: { ...creationContext, copy: copywriter.output },
       schemaHint:
-        "Return JSON with keys: url_analysis{business_type,target_audience,main_offer,tone,classification}, funnel{type,steps[]}, landing_variants[3]{key,headline,subheadline,cta,sections[]}, bridge{headline,subheadline,cta,sections[]}, thank_you{headline,subheadline,cta,sections[]}. Each sections[] item: {type, title?, bullets?, body?, items?}.",
+        "Return JSON with keys: url_analysis{business_type,target_audience,main_offer,tone,classification}, funnel{type,steps[]}, landing_variants[3]{variantKey,angle,headline,subheadline,ctaText,benefits[{title,description}],steps[{title,description}],trustLine,finalCTA{headline,subheadline,ctaText}}, bridge{headline,subheadline,cta,sections[]}, thank_you{headline,subheadline,cta,sections[]}. landing_variants.variantKey must be exactly: direct_response, premium_trust, speed_convenience. sections[] items remain flexible blocks for bridge/thank_you.",
       prompt:
         `Build a universal funnel package for URL=${input.url}.\nGoal=${input.goal}.\nAudience=${input.audience}.\nTraffic=${input.trafficSource}.\n\nRules:\n- Do NOT hardcode any niche.\n- First analyze the URL to infer business type, offer, tone, and classification (service/SaaS/ecommerce/affiliate/info product).\n- Choose an appropriate funnel type + step sequence.\n- Produce 3 landing variants: problem-focused, benefit-focused, urgency/offer.\n- Output structured JSON only.`,
       fallback: {
@@ -1108,25 +1108,64 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         funnel: { type: "lead_gen", steps: ["landing", "bridge", "form", "cta", "thank_you", "email_trigger"] },
         landing_variants: [
           {
-            key: "problem",
+            variantKey: "direct_response",
+            angle: "direct_response",
             headline: input.goal,
             subheadline: `For ${input.audience}`,
-            cta: "Get started",
-            sections: [{ type: "benefits", title: "Benefits", bullets: ["Benefit 1", "Benefit 2", "Benefit 3"] }],
+            ctaText: "Get started",
+            benefits: [
+              { title: "Clear outcome", description: `Moves you toward ${input.goal} without guesswork.` },
+              { title: "Fast filtering", description: "Skips irrelevant options so you don’t waste time." },
+              { title: "Simple next step", description: "Shows exactly what to do after you opt in." },
+              { title: "Aligned messaging", description: "Matches what you clicked so the page feels consistent." },
+            ],
+            steps: [
+              { title: "Tell us what you need", description: "Answer a few specifics tied to your situation." },
+              { title: "See best-fit options", description: "We narrow choices to what actually matches." },
+              { title: "Take action", description: "Book, register, or continue with the next step." },
+            ],
+            trustLine: "Built for speed and clarity — not hype.",
+            finalCTA: { headline: "Ready to move forward?", subheadline: "Take the next step now.", ctaText: "Continue" },
           },
           {
-            key: "benefit",
+            variantKey: "premium_trust",
+            angle: "premium_trust",
             headline: input.goal,
             subheadline: `For ${input.audience}`,
-            cta: "Get started",
-            sections: [{ type: "features", title: "What you get", bullets: ["Feature 1", "Feature 2"] }],
+            ctaText: "Get started",
+            benefits: [
+              { title: "Proof-first framing", description: "Explains how the solution works before asking for commitment." },
+              { title: "Risk clarity", description: "Addresses what could go wrong and how it’s prevented." },
+              { title: "Transparent expectations", description: "States timelines and requirements plainly." },
+              { title: "Confident positioning", description: "Sounds premium without vague superlatives." },
+            ],
+            steps: [
+              { title: "Understand the approach", description: "Learn the method behind the outcome." },
+              { title: "Validate fit", description: "Confirm this matches your constraints and priorities." },
+              { title: "Proceed with confidence", description: "Choose the next step when it feels right." },
+            ],
+            trustLine: "Clear process. No mystery mechanics.",
+            finalCTA: { headline: "If this fits your situation…", subheadline: "Continue with the safest next step.", ctaText: "Continue" },
           },
           {
-            key: "offer",
+            variantKey: "speed_convenience",
+            angle: "speed_convenience",
             headline: input.goal,
             subheadline: `For ${input.audience}`,
-            cta: "Get started",
-            sections: [{ type: "offer", title: "Offer", bullets: ["Fast start", "Clear next steps"] }],
+            ctaText: "Get started",
+            benefits: [
+              { title: "Less back-and-forth", description: "Fewer steps between interest and progress." },
+              { title: "Fast scheduling path", description: "Gets you to the action item quickly." },
+              { title: "Mobile-friendly clarity", description: "Works cleanly on phones where ads are clicked." },
+              { title: "Minimal friction", description: "Only asks what’s needed to qualify you." },
+            ],
+            steps: [
+              { title: "Submit the essentials", description: "Small input set so you can finish fast." },
+              { title: "Instant routing", description: "You’re guided to the correct next step automatically." },
+              { title: "Confirm & go", description: "Receive what you need without delay." },
+            ],
+            trustLine: "Built for fast clicks and faster follow-through.",
+            finalCTA: { headline: "Do this in minutes", subheadline: "Keep momentum from the ad click.", ctaText: "Continue" },
           },
         ],
         bridge: {
@@ -1309,10 +1348,12 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
           ? variants
           : [
               {
-                key: "problem",
+                variantKey: "direct_response",
                 headline: input.goal,
                 subheadline: `For ${input.audience}`,
-                cta: "Get started",
+                ctaText: "Get started",
+                benefits: [],
+                steps: [],
                 sections: [{ type: "benefits", title: "Benefits", bullets: [] }],
               },
             ];
@@ -1326,20 +1367,86 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
           body: typeof s.body === "string" ? s.body : undefined,
           items: Array.isArray(s.items) ? s.items : undefined,
         }));
-        return [
+
+        const benefitsArr = Array.isArray(v.benefits) ? (v.benefits as unknown[]).map((b) => asRecord(b)) : [];
+        const stepsArr = Array.isArray(v.steps) ? (v.steps as unknown[]).map((b) => asRecord(b)) : [];
+
+        const benefitItems =
+          benefitsArr.length > 0
+            ? benefitsArr
+                .map((b) => ({
+                  title: typeof b.title === "string" ? b.title : "",
+                  desc:
+                    typeof b.description === "string"
+                      ? b.description
+                      : typeof b.desc === "string"
+                        ? b.desc
+                        : "",
+                }))
+                .filter((x) => x.title && x.desc)
+            : [];
+
+        const processItems =
+          stepsArr.length > 0
+            ? stepsArr
+                .map((b) => ({
+                  title: typeof b.title === "string" ? b.title : "",
+                  desc:
+                    typeof b.description === "string"
+                      ? b.description
+                      : typeof b.desc === "string"
+                        ? b.desc
+                        : "",
+                }))
+                .filter((x) => x.title && x.desc)
+            : [];
+
+        const trustLine = typeof v.trustLine === "string" ? v.trustLine : "";
+
+        const headline = typeof v.headline === "string" ? v.headline : input.goal;
+        const subheadline = typeof v.subheadline === "string" ? v.subheadline : `For ${input.audience}`;
+        const cta =
+          typeof v.ctaText === "string"
+            ? v.ctaText
+            : typeof v.cta === "string"
+              ? v.cta
+              : "Get started";
+
+        const blocks: unknown[] = [
           {
             type: "hero",
-            headline: typeof v.headline === "string" ? v.headline : input.goal,
-            subheadline: typeof v.subheadline === "string" ? v.subheadline : `For ${input.audience}`,
-            cta_label: typeof v.cta === "string" ? v.cta : "Get started",
+            headline,
+            subheadline,
+            cta_label: cta,
           },
-          ...secBlocks,
         ];
+
+        if (benefitItems.length) {
+          blocks.push({ type: "benefits", items: benefitItems.map((x) => ({ title: x.title, desc: x.desc })) });
+        }
+        if (processItems.length) {
+          blocks.push({ type: "process", items: processItems.map((x) => ({ title: x.title, desc: x.desc })) });
+        }
+
+        blocks.push(...secBlocks);
+
+        if (trustLine.trim()) {
+          blocks.push({ type: "section", title: "Trust", body: trustLine });
+        }
+
+        blocks.push({ type: "lead_capture_form" });
+
+        return blocks;
       };
 
       const createdLandingIds: Array<{ id: string; key: string }> = [];
       for (const v of normalizedVariants) {
-        const key = typeof v.key === "string" ? v.key : "variant";
+        const key =
+          typeof (v as any).variantKey === "string"
+            ? String((v as any).variantKey)
+            : typeof (v as any).key === "string"
+              ? String((v as any).key)
+              : "variant";
         const title = typeof v.headline === "string" ? v.headline : `Landing · ${input.goal}`;
         const desc = typeof v.subheadline === "string" ? v.subheadline : `Landing page for ${input.audience}`;
         const blocks = toBlocks(v);
@@ -1363,9 +1470,68 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
           const id = String((lp as any).id);
           createdLandingIds.push({ id, key });
           createdRecords.push({ table: "landing_pages", id, label: `landing:${key}` });
+
+          const angle =
+            typeof (v as any).angle === "string"
+              ? String((v as any).angle)
+              : key === "premium_trust"
+                ? "premium_trust"
+                : key === "speed_convenience"
+                  ? "speed_convenience"
+                  : "direct_response";
+
+          await admin.from("landing_page_variants" as never).upsert(
+            {
+              organization_id: organizationId,
+              campaign_id: campaignId,
+              funnel_id: funnelId,
+              funnel_step_id: landingStepId,
+              variant_key: key,
+              angle,
+              content: {
+                headline: typeof v.headline === "string" ? v.headline : input.goal,
+                subheadline: typeof v.subheadline === "string" ? v.subheadline : `For ${input.audience}`,
+                ctaText:
+                  typeof (v as any).ctaText === "string"
+                    ? String((v as any).ctaText)
+                    : typeof (v as any).cta === "string"
+                      ? String((v as any).cta)
+                      : "Get started",
+                benefits: Array.isArray((v as any).benefits) ? (v as any).benefits : [],
+                steps: Array.isArray((v as any).steps) ? (v as any).steps : [],
+                trustLine: typeof (v as any).trustLine === "string" ? String((v as any).trustLine) : "",
+                finalCTA: (v as any).finalCTA ?? {},
+                blocks,
+                landing_page_id: id,
+              },
+              status: "draft",
+              selected: key === "direct_response",
+              updated_at: nowIso(),
+            } as never,
+            { onConflict: "organization_id,campaign_id,variant_key" },
+          );
         }
       }
-      const selectedKey = typeof normalizedVariants[0]?.key === "string" ? String(normalizedVariants[0].key) : "problem";
+
+      // Ensure only one selected variant flag remains true.
+      await admin
+        .from("landing_page_variants" as never)
+        .update({ selected: false, updated_at: nowIso() } as never)
+        .eq("organization_id", organizationId)
+        .eq("campaign_id", campaignId);
+      await admin
+        .from("landing_page_variants" as never)
+        .update({ selected: true, updated_at: nowIso() } as never)
+        .eq("organization_id", organizationId)
+        .eq("campaign_id", campaignId)
+        .eq("variant_key", "direct_response");
+
+      const selectedKey =
+        typeof (normalizedVariants[0] as any)?.variantKey === "string"
+          ? String((normalizedVariants[0] as any).variantKey)
+          : typeof (normalizedVariants[0] as any)?.key === "string"
+            ? String((normalizedVariants[0] as any).key)
+            : "direct_response";
       await toolOk<any>({
         ...envelopeBase,
         campaign_id: campaignId,

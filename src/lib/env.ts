@@ -24,6 +24,17 @@ const serverSchema = z.object({
   INTERNAL_LLM_MODEL: z.string().min(2).optional(),
   INTERNAL_LLM_BASE_URL: z.string().url().optional(),
 
+  // Paid ads providers (optional — live integrations are gated + approval-first)
+  ADS_PROVIDER_MODE: z.enum(["stub", "live"]).optional(),
+  GOOGLE_ADS_CLIENT_ID: z.string().min(3).optional(),
+  GOOGLE_ADS_CLIENT_SECRET: z.string().min(3).optional(),
+  GOOGLE_ADS_DEVELOPER_TOKEN: z.string().min(3).optional(),
+  GOOGLE_ADS_LOGIN_CUSTOMER_ID: z.string().min(3).optional(),
+  META_APP_ID: z.string().min(3).optional(),
+  META_APP_SECRET: z.string().min(3).optional(),
+  META_ACCESS_TOKEN: z.string().min(3).optional(),
+  META_AD_ACCOUNT_ID: z.string().min(3).optional(),
+
   // Analytics
   POSTHOG_API_KEY: z.string().min(10).optional(),
   POSTHOG_HOST: z.string().url().optional(),

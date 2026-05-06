@@ -1092,17 +1092,33 @@ export const TOOLS: AnyToolDef[] = [
     async handler(_ctx, input) {
       const payload = (input.payload ?? {}) as Record<string, unknown>;
       const target =
-        typeof payload.content_asset_id === "string"
-          ? { type: "content_asset", id: payload.content_asset_id }
-          : typeof payload.template_id === "string"
-            ? { type: "email_template", id: payload.template_id }
-            : typeof payload.sequence_id === "string"
-              ? { type: "email_sequence", id: payload.sequence_id }
-              : typeof payload.link_id === "string"
-                ? { type: "affiliate_link", id: payload.link_id }
-                : typeof payload.funnel_step_id === "string"
-                  ? { type: "funnel_step", id: payload.funnel_step_id }
-                  : null;
+        typeof (input as any).ad_campaign_id === "string"
+          ? { type: "ad_campaign", id: (input as any).ad_campaign_id }
+          : typeof (input as any).ad_set_id === "string"
+            ? { type: "ad_set", id: (input as any).ad_set_id }
+            : typeof (input as any).ad_id === "string"
+              ? { type: "ad", id: (input as any).ad_id }
+              : typeof (input as any).landing_page_variant_id === "string"
+                ? { type: "landing_page_variant", id: (input as any).landing_page_variant_id }
+                : typeof payload.ad_campaign_id === "string"
+                  ? { type: "ad_campaign", id: payload.ad_campaign_id }
+                  : typeof payload.ad_set_id === "string"
+                    ? { type: "ad_set", id: payload.ad_set_id }
+                    : typeof payload.ad_id === "string"
+                      ? { type: "ad", id: payload.ad_id }
+                      : typeof payload.landing_page_variant_id === "string"
+                        ? { type: "landing_page_variant", id: payload.landing_page_variant_id }
+                        : typeof payload.content_asset_id === "string"
+                          ? { type: "content_asset", id: payload.content_asset_id }
+                          : typeof payload.template_id === "string"
+                            ? { type: "email_template", id: payload.template_id }
+                            : typeof payload.sequence_id === "string"
+                              ? { type: "email_sequence", id: payload.sequence_id }
+                              : typeof payload.link_id === "string"
+                                ? { type: "affiliate_link", id: payload.link_id }
+                                : typeof payload.funnel_step_id === "string"
+                                  ? { type: "funnel_step", id: payload.funnel_step_id }
+                                  : null;
       const admin = createSupabaseAdminClient();
       const metadata = {
         ...(typeof input.metadata === "object" && input.metadata && !Array.isArray(input.metadata)

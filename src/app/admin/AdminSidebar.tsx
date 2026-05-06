@@ -16,6 +16,7 @@ import {
   Mail,
   Megaphone,
   PanelLeft,
+  Radar,
   Settings,
   Users,
   Wand2,
@@ -58,6 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "INTELLIGENCE",
     items: [
       { href: "/admin/analytics", label: "Analytics", icon: BarChart3, description: "Events + performance" },
+      { href: "/admin/ads", label: "Ads", icon: Radar, description: "Paid campaigns + performance" },
       { href: "/admin/reports", label: "Reports", icon: FileBarChart2, description: "Exports + summaries" },
       { href: "/admin/ai-workers", label: "AI Workers", icon: Wand2, description: "Agents + skills" },
     ],

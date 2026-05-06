@@ -12,6 +12,7 @@ import { ContentResultCard } from "@/components/workspace/ContentResultCard";
 import { EmailResultCard } from "@/components/workspace/EmailResultCard";
 import { FunnelResultCard } from "@/components/workspace/FunnelResultCard";
 import { LandingResultCard } from "@/components/workspace/LandingResultCard";
+import { LandingVariantsResultCard } from "@/components/workspace/LandingVariantsResultCard";
 import { LeadCaptureResultCard } from "@/components/workspace/LeadCaptureResultCard";
 import { ResearchResultCard } from "@/components/workspace/ResearchResultCard";
 import type { LiveWorkspaceBuildState } from "@/hooks/useLiveWorkspaceBuild";
@@ -105,6 +106,10 @@ export function AiGeneratedResults(props: {
         ) : state.active || stepStatus.get("landing") === "running" ? (
           GeneratingCard({ title: "Landing", tone: "violet", message: "Drafting headline, CTA, sections…" })
         ) : null,
+      )}
+      {wrap(
+        "landing_variants",
+        <LandingVariantsResultCard organizationId={props.organizationId} campaignId={campaignId} />,
       )}
       {wrap(
         "funnel",

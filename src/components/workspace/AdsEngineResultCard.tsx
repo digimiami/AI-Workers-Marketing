@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 type Platform = "meta" | "google" | "tiktok";
 type Objective = "leads" | "traffic" | "conversions";
-type Status = "draft" | "running" | "paused";
+type Status = "draft" | "approval_required" | "ready" | "running" | "paused" | "launched" | "simulated_active";
 
 type AdsEngine = {
   platform: Platform;
@@ -36,6 +36,8 @@ export function AdsEngineResultCard(props: {
   const [loading, setLoading] = React.useState(false);
   const [engine, setEngine] = React.useState<AdsEngine | null>(null);
   const [adCreativeCount, setAdCreativeCount] = React.useState<number>(0);
+  const [paidCounts, setPaidCounts] = React.useState<{ ad_campaigns?: number; ads?: number; approvals_pending?: number }>({});
+  const [variants, setVariants] = React.useState<Array<{ id: string; variant_key: string; selected: boolean }>>([]);
 
   const fetchState = React.useCallback(async () => {
     if (!cid) return;
@@ -49,11 +51,35 @@ export function AdsEngineResultCard(props: {
       }),
     });
     if (!res.ok) return;
-    const j = (await res.json()) as { ok: boolean; adsEngine: AdsEngine; counts?: { ad_creatives?: number } };
+    const j = (await res.json()) as {
+      ok: boolean;
+      adsEngine: AdsEngine;
+      counts?: { ad_creatives?: number; ad_campaigns?: number; ads?: number; approvals_pending?: number };
+    };
     if (!j.ok) return;
     setEngine(j.adsEngine);
     setAdCreativeCount(j.counts?.ad_creatives ?? 0);
+    setPaidCounts({
+      ad_campaigns: j.counts?.ad_campaigns ?? 0,
+      ads: j.counts?.ads ?? 0,
+      approvals_pending: j.counts?.approvals_pending ?? 0,
+    });
   }, [cid, props.organizationId]);
+
+  const fetchVariants = React.useCallback(async () => {
+    if (!cid) return;
+    const res = await fetch("/api/workspace/landing-variants", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ organizationId: props.organizationId, campaignId: cid, action: "list" }),
+    });
+    const j = (await res.json()) as { ok?: boolean; variants?: Array<{ id: string; variant_key: string; selected: boolean }> };
+    if (j.ok && Array.isArray(j.variants)) setVariants(j.variants.map((v) => ({ id: v.id, variant_key: v.variant_key, selected: v.selected })));
+  }, [cid, props.organizationId]);
+
+  React.useEffect(() => {
+    void fetchVariants();
+  }, [fetchVariants]);
 
   React.useEffect(() => {
     void fetchState();
@@ -85,7 +111,18 @@ export function AdsEngineResultCard(props: {
   );
 
   const runAction = React.useCallback(
-    async (action: "generate" | "launch" | "pause" | "tick_autopilot", streamHint: string) => {
+    async (
+      action:
+        | "generate"
+        | "prepare_launch"
+        | "optimize"
+        | "simulate_launch"
+        | "launch"
+        | "pause"
+        | "tick_autopilot",
+      streamHint: string,
+      extra?: Record<string, unknown>,
+    ) => {
       if (!cid) return;
       setLoading(true);
       props.onStreamHint?.(streamHint);
@@ -97,27 +134,31 @@ export function AdsEngineResultCard(props: {
             organizationId: props.organizationId,
             campaignId: cid,
             action,
+            ...(extra ?? {}),
           }),
         });
         const j = (await res.json().catch(() => null)) as { ok?: boolean; message?: string };
         if (!res.ok) throw new Error(j?.message ?? "Action failed");
         await fetchState();
+        await fetchVariants();
       } finally {
         setLoading(false);
       }
     },
-    [cid, fetchState, props],
+    [cid, fetchState, fetchVariants, props],
   );
 
   if (!cid) return null;
   const e = engine;
   const status = e?.status ?? "draft";
   const pill =
-    status === "running"
+    status === "running" || status === "launched" || status === "simulated_active"
       ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-100"
       : status === "paused"
         ? "border-amber-500/35 bg-amber-500/10 text-amber-100"
-        : "border-border/60 bg-muted/20 text-muted-foreground";
+        : status === "approval_required"
+          ? "border-sky-500/35 bg-sky-500/10 text-sky-100"
+          : "border-border/60 bg-muted/20 text-muted-foreground";
 
   return (
     <Card className={cn("border-border/50 bg-card/40 shadow-[0_0_28px_-12px_rgba(251,146,60,0.18)] backdrop-blur-xl", props.className)}>
@@ -181,6 +222,36 @@ export function AdsEngineResultCard(props: {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1 sm:col-span-3">
+            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Landing variant</Label>
+            <Select
+              value={variants.find((v) => v.selected)?.id ?? ""}
+              onValueChange={(variantId) => {
+                void (async () => {
+                  if (!cid) return;
+                  await fetch("/api/workspace/landing-variants", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ organizationId: props.organizationId, campaignId: cid, action: "select", variantId }),
+                  });
+                  await fetchVariants();
+                  props.onStreamHint?.("✓ landing variant selected for paid traffic");
+                })();
+              }}
+            >
+              <SelectTrigger className="w-full" size="sm">
+                <SelectValue placeholder={variants.length ? "Choose variant" : "No variants yet"} />
+              </SelectTrigger>
+              <SelectContent>
+                {variants.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.variant_key}
+                    {v.selected ? " · selected" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/50 bg-muted/10 p-3">
@@ -188,6 +259,24 @@ export function AdsEngineResultCard(props: {
             <Settings2 className="h-4 w-4 text-muted-foreground" />
             <div className="text-xs text-muted-foreground">
               Creatives: <span className="text-foreground/90">{adCreativeCount}</span>
+              {typeof paidCounts.ad_campaigns === "number" ? (
+                <>
+                  {" "}
+                  · Paid campaigns: <span className="text-foreground/90">{paidCounts.ad_campaigns}</span>
+                </>
+              ) : null}
+              {typeof paidCounts.ads === "number" ? (
+                <>
+                  {" "}
+                  · Ads: <span className="text-foreground/90">{paidCounts.ads}</span>
+                </>
+              ) : null}
+              {typeof paidCounts.approvals_pending === "number" ? (
+                <>
+                  {" "}
+                  · Approvals: <span className="text-foreground/90">{paidCounts.approvals_pending}</span>
+                </>
+              ) : null}
               {e?.landing_url ? (
                 <>
                   {" "}
@@ -219,17 +308,36 @@ export function AdsEngineResultCard(props: {
           </Button>
           <Button
             size="sm"
-            disabled={loading || status === "running"}
-            onClick={() => void runAction("launch", "→ launching campaign")}
+            variant="secondary"
+            disabled={loading}
+            onClick={() =>
+              void runAction(
+                "prepare_launch",
+                "→ drafting paid campaign + approvals",
+                { approvalMode: "required", landingPageVariantId: variants.find((v) => v.selected)?.id },
+              )
+            }
+            className="gap-2"
+          >
+            <Settings2 className="h-4 w-4" />
+            Prepare launch
+          </Button>
+          <Button
+            size="sm"
+            disabled={loading || (paidCounts.approvals_pending ?? 0) > 0}
+            onClick={() => void runAction("simulate_launch", "→ simulated activation (no approvals pending)")}
             className="gap-2"
           >
             <Rocket className="h-4 w-4" />
-            Simulate launch
+            Launch (approved)
+          </Button>
+          <Button size="sm" variant="outline" disabled={loading} onClick={() => void runAction("optimize", "→ running optimizer")}>
+            Optimize
           </Button>
           <Button
             size="sm"
             variant="outline"
-            disabled={loading || status !== "running"}
+            disabled={loading || !(status === "running" || status === "simulated_active" || status === "launched")}
             onClick={() => void runAction("pause", "✓ campaign paused")}
             className="gap-2"
           >

@@ -279,6 +279,18 @@ export default async function PublicFunnelStepPage(props: {
   const meta = ((step as any).metadata ?? {}) as Record<string, unknown>;
   const page = asRecord(meta.page);
   const variantKey = typeof sp?.variant === "string" ? sp.variant : undefined;
+  const trackingParams = (() => {
+    const pick = (k: string) => (typeof sp?.[k] === "string" ? String(sp[k]) : undefined);
+    return {
+      utm_source: pick("utm_source"),
+      utm_medium: pick("utm_medium"),
+      utm_campaign: pick("utm_campaign"),
+      utm_content: pick("utm_content"),
+      cid: pick("cid"),
+      ad_id: pick("ad_id"),
+      variant_id: pick("variant_id"),
+    };
+  })();
   const wantsStructured = str(page.kind) === "structured";
   const markdown = typeof page.markdown === "string" ? page.markdown : "";
 
@@ -324,7 +336,13 @@ export default async function PublicFunnelStepPage(props: {
       source: "public.funnel",
       user_agent: ua,
       ip_hash: ipHash,
-      metadata: { funnel_step_id: (step as any).id, slug: stepSlug, step_type: (step as any).step_type },
+      metadata: {
+        funnel_step_id: (step as any).id,
+        slug: stepSlug,
+        step_type: (step as any).step_type,
+        tracking: trackingParams,
+        variant_key: variantKey ?? null,
+      },
     } as never);
   } catch {
     // best-effort

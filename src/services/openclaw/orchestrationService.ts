@@ -7,6 +7,7 @@ import type { ExecuteContext, OpenClawRunStatus, RunHumanGate } from "@/lib/open
 import { writeAuditLog } from "@/services/audit/auditService";
 import { dispatchWorkflow } from "@/services/github/githubActionsService";
 import { env } from "@/lib/env";
+import { launchPaidAdsAfterApprovals } from "@/services/ads/adsEngine";
 
 type Db = SupabaseClient;
 
@@ -845,6 +846,27 @@ export async function decideApproval(
           .eq("organization_id", organizationId)
           .eq("id", targetEntityId);
       }
+    }
+  }
+
+  // Paid ads: never launches outbound providers unless explicitly approved via queue decision.
+  if (decision === "approved" && approvalType === "paid_ads_launch" && targetEntityType === "ad_campaign" && targetEntityId) {
+    const { data: ac } = await db
+      .from("ad_campaigns" as never)
+      .select("id,campaign_id,platform")
+      .eq("organization_id", organizationId)
+      .eq("id", targetEntityId)
+      .maybeSingle();
+    const campaignIdForAds = (ac as any)?.campaign_id ? String((ac as any).campaign_id) : (row as any)?.campaign_id ? String((row as any).campaign_id) : null;
+    const platformRaw = String((ac as any)?.platform ?? (payload as any)?.platform ?? "meta");
+    const platform = platformRaw === "google" ? "google" : "meta";
+    if (campaignIdForAds) {
+      await launchPaidAdsAfterApprovals({
+        organizationId,
+        campaignId: campaignIdForAds,
+        adCampaignId: String(targetEntityId),
+        platform,
+      });
     }
   }
 

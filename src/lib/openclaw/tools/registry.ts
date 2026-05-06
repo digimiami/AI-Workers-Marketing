@@ -143,6 +143,11 @@ const createApprovalIn = z.object({
   campaign_id: id.nullish(),
   requested_by_user_id: id.nullish(),
   payload: z.record(z.string(), z.unknown()).default({}),
+  /** Optional explicit targets (preferred when creating approvals from services/UI). */
+  ad_campaign_id: id.optional(),
+  ad_set_id: id.optional(),
+  ad_id: id.optional(),
+  landing_page_variant_id: id.optional(),
   reason_required: z.boolean().optional(),
   /** Optional queue label (e.g. publish, send) */
   action: z.string().min(1).max(200).optional(),
