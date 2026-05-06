@@ -23,6 +23,7 @@ export type LiveWorkspaceBuildInput = {
   goal: string;
   audience: string;
   trafficSource: string;
+  funnelStyle?: "clickfunnels_lead" | "bridge_lead" | "application" | "webinar" | "product_offer";
   provider?: "openclaw" | "internal_llm" | "hybrid";
   approvalMode?: "required" | "auto_draft";
   mode?: "affiliate" | "client";
@@ -272,6 +273,7 @@ export function useLiveWorkspaceBuild() {
           goal: input.goal,
           audience: input.audience,
           trafficSource: input.trafficSource,
+          funnelStyle: input.funnelStyle ?? "clickfunnels_lead",
           provider: input.provider ?? "hybrid",
           approvalMode: input.approvalMode ?? "auto_draft",
           mode: input.mode ?? "affiliate",

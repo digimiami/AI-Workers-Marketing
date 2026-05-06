@@ -21,6 +21,15 @@ export const marketingPipelineStageStatusSchema = z.enum([
 ]);
 export type MarketingPipelineStageStatus = z.infer<typeof marketingPipelineStageStatusSchema>;
 
+export const marketingPipelineFunnelStyleSchema = z.enum([
+  "clickfunnels_lead",
+  "bridge_lead",
+  "application",
+  "webinar",
+  "product_offer",
+]);
+export type MarketingPipelineFunnelStyle = z.infer<typeof marketingPipelineFunnelStyleSchema>;
+
 export const runMarketingPipelineInputSchema = z.object({
   organizationMode: marketingPipelineOrgModeSchema,
   organizationId: z.string().uuid().nullish(),
@@ -32,6 +41,8 @@ export const runMarketingPipelineInputSchema = z.object({
   goal: z.string().min(2),
   audience: z.string().min(2),
   trafficSource: z.string().min(2),
+  /** Optional: determines default public funnel step flow. */
+  funnelStyle: marketingPipelineFunnelStyleSchema.optional(),
   notes: z.string().nullish(),
   provider: marketingPipelineProviderSchema,
   approvalMode: marketingPipelineApprovalModeSchema,

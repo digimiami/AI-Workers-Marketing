@@ -33,6 +33,9 @@ function markdownToText(md: string) {
 
 type BenefitItem = { title: string; desc: string };
 type ProcessItem = { title: string; desc: string };
+type LabeledValue = { label: string; value: string };
+type Testimonial = { name: string; role: string; quote: string };
+type QAItem = { question: string; answer: string };
 
 function parseColonItem(s: string): BenefitItem | null {
   const idx = s.indexOf(":");
@@ -87,6 +90,40 @@ function StructuredPage(props: {
   const process: ProcessItem[] = (processItemsFromItems.length ? processItemsFromItems : processItemsFromBullets).slice(0, 6);
 
   const hasInlineForm = blocks.map(asRecord).some((b) => str(b.type) === "lead_capture_form");
+
+  const sectionBlocks = blocks.map(asRecord).filter((b) => str(b.type) === "section");
+  const offerBlock = blocks.map(asRecord).find((b) => str(b.type) === "offer") ?? null;
+  const offerBullets = offerBlock ? strArr(offerBlock.bullets) : [];
+  const offerItems: LabeledValue[] = offerBlock
+    ? asItems(offerBlock.items)
+        .map((it) => ({ label: str(it.label), value: str(it.value) }))
+        .filter((x) => x.label && x.value)
+    : [];
+  const socialProof = blocks.map(asRecord).find((b) => str(b.type) === "social_proof") ?? null;
+  const proofPoints = socialProof ? strArr(socialProof.bullets) : [];
+  const testimonials: Testimonial[] = socialProof
+    ? asItems(socialProof.items)
+        .map((it) => ({ name: str(it.name), role: str(it.role), quote: str(it.quote) }))
+        .filter((t) => t.quote)
+        .slice(0, 6)
+    : [];
+  const objectionsBlock = blocks.map(asRecord).find((b) => str(b.type) === "objections") ?? null;
+  const objections: QAItem[] = objectionsBlock
+    ? asItems(objectionsBlock.items)
+        .map((it) => ({ question: str(it.question), answer: str(it.answer) }))
+        .filter((x) => x.question && x.answer)
+        .slice(0, 8)
+    : [];
+  const faqBlock = blocks.map(asRecord).find((b) => str(b.type) === "faq") ?? null;
+  const faqs: QAItem[] = faqBlock
+    ? asItems(faqBlock.items)
+        .map((it) => ({ question: str(it.question), answer: str(it.answer) }))
+        .filter((x) => x.question && x.answer)
+        .slice(0, 10)
+    : [];
+  const guaranteeBlock = blocks.map(asRecord).find((b) => str(b.type) === "guarantee") ?? null;
+  const guaranteeTitle = guaranteeBlock ? str(guaranteeBlock.title) : "";
+  const guaranteeBody = guaranteeBlock ? str(guaranteeBlock.body) : "";
 
   return (
     <div className="space-y-10">
@@ -144,6 +181,151 @@ function StructuredPage(props: {
         </section>
       ) : null}
 
+      {offerBlock && (offerBullets.length || offerItems.length) ? (
+        <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Offer</div>
+          <div className="mt-2 text-2xl font-semibold tracking-tight">
+            {str(offerBlock.title) || "What you get"}
+          </div>
+          {offerItems.length ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {offerItems.slice(0, 6).map((it) => (
+                <div key={it.label} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+                  <div className="text-sm font-semibold">{it.label}</div>
+                  <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{it.value}</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {offerBullets.length ? (
+            <ul className="mt-4 grid gap-2 md:grid-cols-2">
+              {offerBullets.slice(0, 10).map((b) => (
+                <li key={b} className="rounded-xl border border-border/60 bg-muted/5 px-4 py-3 text-sm leading-relaxed">
+                  {b}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="mt-6">
+            <a href="#lead-form" className={buttonVariants({})}>
+              {ctaLabel || "Continue"}
+            </a>
+          </div>
+        </section>
+      ) : null}
+
+      {socialProof && (proofPoints.length || testimonials.length) ? (
+        <section className="space-y-4">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Proof</div>
+          {proofPoints.length ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              {proofPoints.slice(0, 6).map((p) => (
+                <div key={p} className="rounded-2xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
+                  {p}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {testimonials.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {testimonials.slice(0, 4).map((t) => (
+                <div key={`${t.name}-${t.quote.slice(0, 24)}`} className="rounded-2xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl">
+                  <div className="text-sm font-semibold">{t.name || "Customer"}</div>
+                  {t.role ? <div className="mt-1 text-xs text-muted-foreground">{t.role}</div> : null}
+                  <div className="mt-3 text-sm leading-relaxed text-muted-foreground">“{t.quote}”</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div>
+            <a href="#lead-form" className={buttonVariants({ variant: "outline" })}>
+              {ctaLabel || "Continue"}
+            </a>
+          </div>
+        </section>
+      ) : null}
+
+      {sectionBlocks.length
+        ? sectionBlocks.slice(0, 8).map((s, idx) => {
+            const title = str(s.title);
+            const body = str(s.body);
+            const bullets = strArr(s.bullets);
+            if (!title && !body && bullets.length === 0) return null;
+            return (
+              <section key={`${title || "section"}-${idx}`} className="rounded-3xl border border-border/60 bg-muted/5 p-6 md:p-8">
+                {title ? <div className="text-2xl font-semibold tracking-tight">{title}</div> : null}
+                {body ? <p className={cn("mt-3 text-sm leading-relaxed text-muted-foreground", title ? "" : "mt-0")}>{body}</p> : null}
+                {bullets.length ? (
+                  <ul className="mt-4 grid gap-2 md:grid-cols-2">
+                    {bullets.slice(0, 10).map((b) => (
+                      <li key={b} className="rounded-xl border border-border/60 bg-background/50 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+                        {b}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div className="mt-6">
+                  <a href="#lead-form" className={buttonVariants({ variant: "outline" })}>
+                    {ctaLabel || "Continue"}
+                  </a>
+                </div>
+              </section>
+            );
+          })
+        : null}
+
+      {objections.length ? (
+        <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Common questions</div>
+          <div className="mt-2 text-2xl font-semibold tracking-tight">Before you continue</div>
+          <div className="mt-4 grid gap-3">
+            {objections.slice(0, 6).map((o) => (
+              <div key={o.question} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+                <div className="text-sm font-semibold">{o.question}</div>
+                <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{o.answer}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6">
+            <a href="#lead-form" className={buttonVariants({})}>
+              {ctaLabel || "Continue"}
+            </a>
+          </div>
+        </section>
+      ) : null}
+
+      {guaranteeBlock && (guaranteeTitle || guaranteeBody) ? (
+        <section className="rounded-3xl border border-border/60 bg-gradient-to-r from-emerald-500/10 via-card to-cyan-500/10 p-6 md:p-8">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Risk reversal</div>
+          <div className="mt-2 text-2xl font-semibold tracking-tight">{guaranteeTitle || "Guarantee"}</div>
+          {guaranteeBody ? <p className="mt-3 max-w-3xl text-sm leading-relaxed text-muted-foreground">{guaranteeBody}</p> : null}
+          <div className="mt-6">
+            <a href="#lead-form" className={buttonVariants({})}>
+              {ctaLabel || "Continue"}
+            </a>
+          </div>
+        </section>
+      ) : null}
+
+      {faqs.length ? (
+        <section className="space-y-4">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">FAQ</div>
+          <div className="grid gap-3">
+            {faqs.slice(0, 8).map((f) => (
+              <div key={f.question} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+                <div className="text-sm font-semibold">{f.question}</div>
+                <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.answer}</div>
+              </div>
+            ))}
+          </div>
+          <div>
+            <a href="#lead-form" className={buttonVariants({})}>
+              {ctaLabel || "Continue"}
+            </a>
+          </div>
+        </section>
+      ) : null}
+
       <section id="lead-form" className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
         <div className="text-xl font-semibold tracking-tight">Get started in minutes</div>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -191,6 +373,17 @@ function StructuredPage(props: {
           <a href="#lead-form" className={buttonVariants({})}>{ctaLabel || "Get started"}</a>
         </div>
       </section>
+
+      {hasInlineForm ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 p-3 md:hidden">
+          <div className="pointer-events-auto mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-border/60 bg-background/90 p-3 shadow-lg backdrop-blur">
+            <div className="text-sm font-medium leading-tight">Ready to continue?</div>
+            <a href="#lead-form" className={cn(buttonVariants({}), "h-10")}>
+              {ctaLabel || "Continue"}
+            </a>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -409,7 +602,7 @@ export default async function PublicFunnelStepPage(props: {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-10 space-y-6">
+    <main className="mx-auto max-w-6xl px-4 py-10 space-y-6">
       <div className="space-y-2">
         <div className="text-xs text-muted-foreground">{String((camp as any).name ?? "")}</div>
         <h1 className="text-3xl font-semibold tracking-tight">{String((step as any).name ?? "")}</h1>
@@ -449,17 +642,6 @@ export default async function PublicFunnelStepPage(props: {
           )}
         </div>
       )}
-
-      <div className="flex flex-wrap gap-2">
-        {nextSlug ? (
-          <Link className={buttonVariants({})} href={`/f/${campaignId}/${nextSlug}`}>
-            Next
-          </Link>
-        ) : null}
-        <Link className={buttonVariants({ variant: "outline" })} href={`/f/${campaignId}/go/${stepSlug}`}>
-          CTA
-        </Link>
-      </div>
 
       <ChatWidget
         organizationId={String((camp as any).organization_id)}

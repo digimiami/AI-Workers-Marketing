@@ -48,7 +48,11 @@ export function buildFunnelStrategyUserPrompt(input: {
         trafficStrategy: "string",
         conversionStrategy: "string",
       },
-      constraints: ["steps must include at least 4 steps and map to realistic paid traffic behavior."],
+      constraints: [
+        "steps should usually be 2-5 steps and map to realistic paid traffic behavior.",
+        "Prefer a ClickFunnels-style minimal lead flow by default: landing -> thank_you. Add bridge only for cold traffic or high-friction offers.",
+        "Avoid splitting lead capture into a separate page unless there's a strong reason; embed the form on the landing page when possible.",
+      ],
     },
     null,
     2,

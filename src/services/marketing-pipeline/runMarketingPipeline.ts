@@ -599,12 +599,18 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       { name: "Checkout", step_type: "checkout", slug: "checkout" },
     ];
     const wanted = (opts?.preferredStepTypes ?? []).filter(Boolean);
+    // Default to a ClickFunnels-style minimal public flow:
+    // landing (long-form, includes inline lead form) -> thank_you.
+    // Keep other step types available when explicitly requested.
+    const defaultStepTypes = ["landing", "thank_you"];
     const stepDefs =
       wanted.length > 0
         ? wanted
             .map((t) => baseStepDefs.find((d) => d.step_type === t) ?? { name: t.replace(/_/g, " "), step_type: t, slug: t })
             .filter(Boolean)
-        : baseStepDefs.filter((d) => d.step_type !== "checkout");
+        : defaultStepTypes
+            .map((t) => baseStepDefs.find((d) => d.step_type === t))
+            .filter((d): d is { name: string; step_type: string; slug: string } => Boolean(d));
     let stepIndex = 0;
     for (const def of stepDefs) {
       if (funnelStepIds[def.step_type]) {
@@ -643,6 +649,17 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         .eq("organization_id", organizationId)
         .eq("id", funnelId);
     }
+  };
+
+  const funnelStyleToPreferredStepTypes = (style: unknown): string[] | null => {
+    const s = typeof style === "string" ? style : "";
+    if (!s) return null;
+    if (s === "clickfunnels_lead") return ["landing", "thank_you"];
+    if (s === "bridge_lead") return ["landing", "bridge", "thank_you"];
+    if (s === "application") return ["landing", "form", "thank_you"];
+    if (s === "webinar") return ["landing", "form", "thank_you", "email_trigger"];
+    if (s === "product_offer") return ["landing", "checkout", "thank_you"];
+    return null;
   };
 
   try {
@@ -899,7 +916,9 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       }
 
       const funnelPlan = asRecord(asRecord(head.output).funnel_plan);
-      const preferred = Array.isArray(funnelPlan.steps) ? (funnelPlan.steps as unknown[]).filter((x): x is string => typeof x === "string") : [];
+      const preferredFromStyle = funnelStyleToPreferredStepTypes((input as any).funnelStyle);
+      const preferredFromPlan = Array.isArray(funnelPlan.steps) ? (funnelPlan.steps as unknown[]).filter((x): x is string => typeof x === "string") : [];
+      const preferred = (preferredFromStyle?.length ? preferredFromStyle : preferredFromPlan) ?? [];
       const funnelType = typeof funnelPlan.type === "string" ? funnelPlan.type : undefined;
       await ensureFunnelAndSteps({ preferredStepTypes: preferred, funnelType });
 
@@ -1370,6 +1389,11 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
 
         const benefitsArr = Array.isArray(v.benefits) ? (v.benefits as unknown[]).map((b) => asRecord(b)) : [];
         const stepsArr = Array.isArray(v.steps) ? (v.steps as unknown[]).map((b) => asRecord(b)) : [];
+        const offer = asRecord((v as any).offer);
+        const socialProof = asRecord((v as any).socialProof);
+        const objectionsArr = Array.isArray((v as any).objections) ? ((v as any).objections as unknown[]).map((x) => asRecord(x)) : [];
+        const faqArr = Array.isArray((v as any).faq) ? ((v as any).faq as unknown[]).map((x) => asRecord(x)) : [];
+        const guarantee = asRecord((v as any).guarantee);
 
         const benefitItems =
           benefitsArr.length > 0
@@ -1426,6 +1450,74 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         }
         if (processItems.length) {
           blocks.push({ type: "process", items: processItems.map((x) => ({ title: x.title, desc: x.desc })) });
+        }
+
+        // ClickFunnels-style long-form sections (optional, but supported by the renderer).
+        const offerBullets = Array.isArray((offer as any).bullets) ? ((offer as any).bullets as unknown[]).filter((x): x is string => typeof x === "string") : [];
+        const offerTitle = typeof (offer as any).title === "string" ? String((offer as any).title) : "";
+        const offerValueStack = Array.isArray((offer as any).valueStack) ? ((offer as any).valueStack as unknown[]).map((x) => asRecord(x)) : [];
+        if (offerTitle || offerBullets.length || offerValueStack.length) {
+          blocks.push({
+            type: "offer",
+            title: offerTitle || "What you get",
+            bullets: offerBullets.length ? offerBullets : undefined,
+            items: offerValueStack.length
+              ? offerValueStack
+                  .map((x) => ({ label: typeof x.label === "string" ? x.label : "", value: typeof x.value === "string" ? x.value : "" }))
+                  .filter((x) => x.label && x.value)
+              : undefined,
+          });
+        }
+
+        const proofPoints = Array.isArray((socialProof as any).proofPoints)
+          ? ((socialProof as any).proofPoints as unknown[]).filter((x): x is string => typeof x === "string")
+          : [];
+        const testimonials = Array.isArray((socialProof as any).testimonials)
+          ? ((socialProof as any).testimonials as unknown[]).map((x) => asRecord(x))
+          : [];
+        const testimonialItems = testimonials
+          .map((t) => ({
+            name: typeof t.name === "string" ? t.name : "",
+            role: typeof t.role === "string" ? t.role : "",
+            quote: typeof t.quote === "string" ? t.quote : "",
+          }))
+          .filter((t) => t.quote);
+        if (proofPoints.length || testimonialItems.length) {
+          blocks.push({
+            type: "social_proof",
+            bullets: proofPoints.length ? proofPoints : undefined,
+            items: testimonialItems.length ? testimonialItems : undefined,
+          });
+        }
+
+        const objectionItems = objectionsArr
+          .map((o) => ({
+            question: typeof o.question === "string" ? o.question : "",
+            answer: typeof o.answer === "string" ? o.answer : "",
+          }))
+          .filter((x) => x.question && x.answer);
+        if (objectionItems.length) {
+          blocks.push({ type: "objections", items: objectionItems });
+        }
+
+        const faqItems = faqArr
+          .map((o) => ({
+            question: typeof o.question === "string" ? o.question : "",
+            answer: typeof o.answer === "string" ? o.answer : "",
+          }))
+          .filter((x) => x.question && x.answer);
+        if (faqItems.length) {
+          blocks.push({ type: "faq", items: faqItems });
+        }
+
+        const guaranteeHeadline = typeof (guarantee as any).headline === "string" ? String((guarantee as any).headline) : "";
+        const guaranteeBody = typeof (guarantee as any).body === "string" ? String((guarantee as any).body) : "";
+        if (guaranteeHeadline || guaranteeBody) {
+          blocks.push({
+            type: "guarantee",
+            title: guaranteeHeadline || "Guarantee",
+            body: guaranteeBody || undefined,
+          });
         }
 
         blocks.push(...secBlocks);

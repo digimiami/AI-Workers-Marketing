@@ -26,7 +26,13 @@ export function AiWorkspacePage(props: Props) {
   const searchParams = useSearchParams();
   const live = useLiveWorkspaceBuild();
 
-  const [cmd, setCmd] = React.useState<AiCommandValues>({ url: "", goal: "", audience: "", trafficSource: "" });
+  const [cmd, setCmd] = React.useState<AiCommandValues>({
+    url: "",
+    goal: "",
+    audience: "",
+    trafficSource: "",
+    funnelStyle: "clickfunnels_lead",
+  });
 
   React.useEffect(() => {
     const u = searchParams.get("url");
@@ -68,6 +74,7 @@ export function AiWorkspacePage(props: Props) {
       goal: cmd.goal.trim(),
       audience: cmd.audience.trim(),
       trafficSource: cmd.trafficSource.trim(),
+      funnelStyle: cmd.funnelStyle ?? "clickfunnels_lead",
       provider: "hybrid",
       approvalMode: "auto_draft",
       mode: "affiliate",

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,7 @@ export type AiCommandValues = {
   goal: string;
   audience: string;
   trafficSource: string;
+  funnelStyle?: "clickfunnels_lead" | "bridge_lead" | "application" | "webinar" | "product_offer";
 };
 
 export function AiCommandCard(props: {
@@ -71,6 +73,24 @@ export function AiCommandCard(props: {
               onChange={(e) => props.onChange({ ...v, trafficSource: e.target.value })}
               placeholder="Google Ads, YouTube, organic…"
             />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Funnel style</Label>
+            <Select
+              value={v.funnelStyle ?? "clickfunnels_lead"}
+              onValueChange={(value) => props.onChange({ ...v, funnelStyle: value as AiCommandValues["funnelStyle"] })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a funnel style" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="clickfunnels_lead">ClickFunnels Lead (2-step: landing → thank you)</SelectItem>
+                <SelectItem value="bridge_lead">Bridge Lead (landing → bridge → thank you)</SelectItem>
+                <SelectItem value="application">Application (landing → form → thank you)</SelectItem>
+                <SelectItem value="webinar">Webinar (landing → register → thank you + nurture)</SelectItem>
+                <SelectItem value="product_offer">Product Offer (landing → checkout → thank you)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </CardContent>
