@@ -45,10 +45,17 @@ export function PlanUpgradeDialog(props: {
 }) {
   const [busy, setBusy] = React.useState<PlanKey | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const stripeDisabled =
+    (process.env.NEXT_PUBLIC_BILLING_DISABLE_STRIPE ?? "").toLowerCase() === "1" ||
+    (process.env.NEXT_PUBLIC_BILLING_DISABLE_STRIPE ?? "").toLowerCase() === "true";
   const copy = REASON_COPY[props.reason];
 
   const startCheckout = React.useCallback(
     async (plan: Exclude<PlanKey, "free">) => {
+      if (stripeDisabled) {
+        setError("Billing is temporarily disabled.");
+        return;
+      }
       setBusy(plan);
       setError(null);
       try {
@@ -75,12 +82,17 @@ export function PlanUpgradeDialog(props: {
         <DialogTitle className="text-base">{copy.title}</DialogTitle>
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>{copy.body}</p>
+          {stripeDisabled ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              Billing is temporarily disabled.
+            </div>
+          ) : null}
           <div className="grid gap-2 sm:grid-cols-3">
             {TIERS.map((p) => (
               <button
                 key={p.key}
                 type="button"
-                disabled={busy !== null}
+                disabled={busy !== null || stripeDisabled}
                 {...(busy === p.key ? { "aria-busy": "true" as const } : {})}
                 className={cn(
                   "rounded-xl border px-3 py-3 text-left transition-colors",

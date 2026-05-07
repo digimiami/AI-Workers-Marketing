@@ -19,6 +19,11 @@ function asString(v: unknown) {
 }
 
 export async function POST(req: Request) {
+  const disable = (env.server.BILLING_DISABLE_STRIPE ?? "").toLowerCase();
+  if (disable === "1" || disable === "true" || disable === "yes") {
+    return NextResponse.json({ ok: false, message: "Billing is temporarily disabled" }, { status: 503 });
+  }
+
   let stripe: Stripe;
   let webhookSecret: string;
   try {

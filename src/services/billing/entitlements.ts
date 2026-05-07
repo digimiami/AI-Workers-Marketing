@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { env } from "@/lib/env";
 
 export type PlanKey = "free" | "starter" | "pro" | "agency";
 
@@ -16,7 +17,16 @@ const PLAN: Record<PlanKey, Entitlements> = {
   agency: { plan: "agency", canLaunchAds: true, maxCampaigns: 999999, maxAiGenerationsPerMonth: 20000 },
 };
 
+function stripeBillingDisabled() {
+  const v = (env.server.BILLING_DISABLE_STRIPE ?? "").toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 export async function getOrgEntitlements(organizationId: string): Promise<Entitlements> {
+  if (stripeBillingDisabled()) {
+    // When Stripe subs are disabled, treat orgs as Pro so the product isn't blocked by paywalls.
+    return PLAN.pro;
+  }
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("organization_subscriptions" as never)

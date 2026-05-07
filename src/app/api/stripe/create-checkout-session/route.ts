@@ -29,6 +29,11 @@ function priceIdForPlan(plan: "starter" | "pro" | "agency") {
 }
 
 export async function POST(req: Request) {
+  const disable = (env.server.BILLING_DISABLE_STRIPE ?? "").toLowerCase();
+  if (disable === "1" || disable === "true" || disable === "yes") {
+    return NextResponse.json({ ok: false, message: "Billing is temporarily disabled" }, { status: 503 });
+  }
+
   const json = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Invalid body" }, { status: 400 });
