@@ -1,8 +1,9 @@
 export const LANDING_PAGE_GENERATOR_SYSTEM = [
-  "You write high-converting landing page copy.",
-  "Return ONLY valid JSON. No markdown. No code fences. No commentary.",
-  "Avoid vague hype phrases and generic positioning.",
-  "Headline must be outcome-specific; subheadline must explain what happens next.",
+  "You are a direct response copywriter + conversion expert.",
+  "Your job is NOT to write generic landing pages.",
+  "Return ONLY valid JSON matching the required schema. No markdown. No code fences. No commentary.",
+  "Do not use placeholders. Do not use vague generic marketing words. Do not repeat the same phrases.",
+  "Be outcome-driven, specific, and persuasive. Sound like a real business.",
 ].join("\n");
 
 export function buildLandingPageGeneratorUserPrompt(input: {
@@ -15,7 +16,7 @@ export function buildLandingPageGeneratorUserPrompt(input: {
 }) {
   return JSON.stringify(
     {
-      task: "Generate landing page copy using sharp, concrete language tied to inputs.",
+      task: "Analyze URL context and rewrite as a high-converting landing page.",
       inputs: {
         url: input.url,
         goal: input.goal,
@@ -24,41 +25,45 @@ export function buildLandingPageGeneratorUserPrompt(input: {
         urlResearch: input.urlResearch,
         funnelStrategy: input.funnelStrategy,
       },
-      headline_formula_examples: [
-        "Get [desired result] in [timeframe] without [pain]",
-        "Find [best option] faster without [bad process]",
-        "Stop [pain] and start [desired outcome]",
-        "Get matched with [solution] without [confusion]",
-      ],
+      rules: {
+        step1_understand_business: [
+          "From the URL, extract what is being sold, who it is for, what problem is solved, what result is promised.",
+          "Do NOT guess generically. If uncertain, be explicit in the copy without adding extra fields.",
+        ],
+        step2_strong_offer: [
+          "Rewrite the offer into a clear outcome + fast benefit + specific transformation.",
+          "Bad: 'AI solutions for business' | Good: 'Get 20–50 qualified leads per month without hiring a marketing team'",
+        ],
+        step3_conversion_structure: [
+          "Headline: outcome-driven and specific",
+          "Subheadline: explain HOW and WHO it's for",
+          "Benefits: 4 real benefits (no placeholders, no vague fluff)",
+          "How it works: 3 believable steps (user does, system does, result)",
+          "Trust: credibility + reassurance + risk reduction (no invented certifications/awards)",
+          "CTA: ACTION + RESULT (no 'Submit')",
+          "Lead capture hook: what they receive + how fast + why it matters",
+        ],
+        banned: [
+          "placeholders like 'Benefit 1' or 'Step 1'",
+          "generic phrases like 'unlock your dream', 'step into your future', 'boost your business with AI' unless URL context explicitly supports it",
+          "vague claims without mechanism",
+        ],
+      },
       required_json_shape: {
         headline: "string",
         subheadline: "string",
-        ctaText: "string",
-        trustLine: "string",
-        benefits: [{ title: "string", description: "string" }],
-        steps: [{ title: "string", description: "string" }],
-        formFields: ["email", "name", "phone"],
-        offer: {
-          title: "string",
-          bullets: ["string"],
-          valueStack: [{ label: "string", value: "string" }],
-        },
-        socialProof: {
-          proofPoints: ["string"],
-          testimonials: [{ name: "string", role: "string", quote: "string" }],
-        },
-        objections: [{ question: "string", answer: "string" }],
-        faq: [{ question: "string", answer: "string" }],
-        guarantee: { headline: "string", body: "string" },
-        finalCTA: { headline: "string", subheadline: "string", ctaText: "string" },
+        benefits: ["string", "string", "string", "string"],
+        steps: ["string", "string", "string"],
+        cta: "string",
+        lead_hook: "string",
+        trust: "string",
       },
       constraints: [
-        "benefits must be 4 items.",
-        "steps must be 3 items.",
-        "formFields must be a subset ordering from allowed list (keep practical for paid traffic).",
-        "offer.bullets should be 5-9 items with concrete deliverables (no fluff).",
-        "socialProof.testimonials should be 2-4 items; keep them specific and believable (no exaggerated claims).",
-        "faq should be 4-7 items focused on objections and next steps.",
+        "Return STRICT JSON only with the required keys.",
+        "benefits must be exactly 4 strings; each must be specific and remove a real pain point.",
+        "steps must be exactly 3 strings; each must be simple, believable, and outcome-linked.",
+        "cta must be ACTION + RESULT and short enough for a button.",
+        "trust must reassure without inventing facts.",
       ],
     },
     null,
