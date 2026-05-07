@@ -36,18 +36,18 @@ export function HomeFinalCta() {
             that turns marketing into a measurable system.
           </p>
           <div className="flex flex-col items-center justify-center gap-3 pt-4 sm:flex-row sm:flex-wrap">
-            <Link href="/demo" className={buttonVariants({ size: "lg", className: "min-w-[200px] btn-primary-cta px-8" })}>
-              Run demo
+            <Link href="/signup" className={buttonVariants({ size: "lg", className: "min-w-[220px] btn-primary-cta px-8" })}>
+              Create campaign now
             </Link>
             <Link
-              href="/book"
+              href="/admin"
               className={buttonVariants({
                 size: "lg",
                 variant: "outline",
                 className: "min-w-[180px] border-white/25 bg-background/50 font-semibold backdrop-blur-sm hover:bg-background/75",
               })}
             >
-              Book workflow audit
+              Open dashboard
             </Link>
             <Link
               href="/how-it-works"

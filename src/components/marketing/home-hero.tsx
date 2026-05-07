@@ -163,16 +163,16 @@ export function HomeHero() {
             </p>
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <Link
-                href="/demo"
+                href="/signup"
                 className={buttonVariants({
                   size: "lg",
                   className: "min-h-11 min-w-[200px] px-8 text-base font-semibold shadow-lg shadow-primary/30",
                 })}
               >
-                Run the demo
+                Launch my campaign
               </Link>
               <Link
-                href="/book"
+                href="/admin"
                 className={buttonVariants({
                   size: "lg",
                   variant: "outline",
@@ -180,7 +180,7 @@ export function HomeHero() {
                     "min-h-11 min-w-[180px] border-primary/30 bg-background/50 text-base font-semibold backdrop-blur-sm hover:bg-background/80",
                 })}
               >
-                Book workflow audit
+                Open dashboard
               </Link>
               <Link
                 href="/how-it-works"

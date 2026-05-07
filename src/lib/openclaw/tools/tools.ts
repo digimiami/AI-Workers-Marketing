@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { assertCampaignLimit } from "@/services/billing/entitlements";
 import { TOOL_SCHEMAS } from "@/lib/openclaw/tools/registry";
 import { zapierCallTool, zapierListTools } from "@/services/zapier/zapierMcp";
 import type { AnyToolDef } from "@/lib/openclaw/tools/registry";
@@ -78,6 +79,7 @@ export const TOOLS: AnyToolDef[] = [
     allowedRoles: ["campaign_launcher", "supervisor"],
     async handler(ctx: OpenClawToolContext, input) {
       await requireOrgRow(input.organizationId);
+      await assertCampaignLimit({ organizationId: input.organizationId });
       const admin = createSupabaseAdminClient();
       const { data, error } = await admin
         .from("campaigns" as never)

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -15,6 +16,10 @@ import {
 } from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { useAutomationRealtime } from "@/hooks/useAutomationRealtime";
+import { cn } from "@/lib/utils";
 
 type OverviewResponse = {
   ok: boolean;
@@ -45,6 +50,28 @@ type OverviewResponse = {
   };
 };
 
+type AutomationResponse = {
+  ok: boolean;
+  campaigns: Array<{
+    id: string;
+    name: string;
+    status: string;
+    autoMode: {
+      enabled: boolean;
+      autoLaunchApproved: boolean;
+      autoScaleApproved: boolean;
+      lastOptimizedAt: string | null;
+    };
+  }>;
+  summary: {
+    autoModeEnabled: boolean;
+    activeCampaigns: number;
+    content: { scheduled: number; posted: number };
+    jobs: { queued: number; running: number };
+    metrics: Array<{ key: string; value_numeric: number | null; captured_at: string; campaign_id?: string | null }>;
+  };
+};
+
 const kpiCards: { key: keyof OverviewResponse["kpis"]; title: string }[] = [
   { key: "totalLeads", title: "Total leads" },
   { key: "affiliateClicks", title: "Affiliate clicks" },
@@ -56,6 +83,7 @@ const kpiCards: { key: keyof OverviewResponse["kpis"]; title: string }[] = [
 
 export function AdminOverviewDashboard({ organizationId }: { organizationId: string }) {
   const [chartReady, setChartReady] = React.useState(false);
+  const [autoBusy, setAutoBusy] = React.useState(false);
   React.useEffect(() => {
     setChartReady(true);
   }, []);
@@ -69,11 +97,28 @@ export function AdminOverviewDashboard({ organizationId }: { organizationId: str
     },
   });
 
+  const automation = useQuery({
+    queryKey: ["automation-status", organizationId],
+    queryFn: async () => {
+      const res = await fetch(`/api/automation/status?organizationId=${organizationId}`);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as AutomationResponse;
+    },
+    refetchInterval: 30_000,
+  });
+
+  useAutomationRealtime(organizationId, () => {
+    void automation.refetch();
+    void overview.refetch();
+  });
+
   const kpis = overview.data?.kpis;
   const rawSeries = overview.data?.last14d?.series;
   const series = Array.isArray(rawSeries) ? rawSeries : [];
   const arch = overview.data?.architecture;
   const reality = overview.data?.realityCheck;
+  const auto = automation.data;
+  const primaryCampaign = auto?.campaigns?.[0] ?? null;
 
   const entityPreview = React.useMemo(() => {
     const e = arch?.singleBrain?.entities;
@@ -93,6 +138,86 @@ export function AdminOverviewDashboard({ organizationId }: { organizationId: str
       {overview.isError ? (
         <p className="text-sm text-destructive">Failed to load overview.</p>
       ) : null}
+
+      <Card className="border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card">
+        <CardHeader className="pb-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-base">Your system is running</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Traffic → Content → Landing → Signup → Campaign → Ads → Leads → Revenue → Optimization → Scale
+              </p>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-background/40 px-3 py-2">
+              <span className="text-xs font-medium text-muted-foreground">Auto Mode</span>
+              <Switch
+                checked={Boolean(primaryCampaign?.autoMode.enabled)}
+                disabled={!primaryCampaign || autoBusy}
+                onCheckedChange={(enabled) => {
+                  if (!primaryCampaign) return;
+                  setAutoBusy(true);
+                  void fetch("/api/automation/status", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      organizationId,
+                      campaignId: primaryCampaign.id,
+                      enabled,
+                      autoLaunchApproved: false,
+                      autoScaleApproved: false,
+                    }),
+                  })
+                    .then(() => automation.refetch())
+                    .finally(() => setAutoBusy(false));
+                }}
+                size="sm"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-border/60 bg-background/35 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Content</div>
+            <div className="mt-1 text-sm font-medium">
+              {automation.isLoading ? "Loading…" : `${auto?.summary.content.scheduled ?? 0} scheduled · ${auto?.summary.content.posted ?? 0} posted`}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Viral shorts generated and scheduled in stub mode.</p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/35 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ads</div>
+            <div className="mt-1 text-sm font-medium">{auto?.summary.autoModeEnabled ? "Running / approval-gated" : "Ready to launch"}</div>
+            <p className="mt-1 text-xs text-muted-foreground">Live spend requires plan + approval unless explicitly enabled.</p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/35 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Optimization</div>
+            <div className="mt-1 text-sm font-medium">
+              {primaryCampaign?.autoMode.lastOptimizedAt ? "Active" : auto?.summary.autoModeEnabled ? "Queued" : "Standby"}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Low CTR rewrites hooks; leaks trigger landing fixes.</p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/35 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Jobs</div>
+            <div className="mt-1 text-sm font-medium">
+              {automation.isLoading ? "Loading…" : `${auto?.summary.jobs.running ?? 0} running · ${auto?.summary.jobs.queued ?? 0} queued`}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Campaigns keep running outside the UI session.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 md:col-span-4">
+            <Link
+              href={primaryCampaign ? `/admin/workspace/review/${primaryCampaign.id}` : "/admin/onboarding/growth"}
+              className={buttonVariants()}
+            >
+              {primaryCampaign ? "Launch campaign" : "Create campaign"}
+            </Link>
+            <Link href="/admin/approvals" className={buttonVariants({ variant: "outline" })}>
+              Approve ads
+            </Link>
+            <Link href="/admin/leads" className={cn(buttonVariants({ variant: "outline" }))}>
+              View leads
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {kpiCards.map((k) => (

@@ -39,6 +39,13 @@ const serverSchema = z.object({
   POSTHOG_API_KEY: z.string().min(10).optional(),
   POSTHOG_HOST: z.string().url().optional(),
 
+  // Stripe (revenue tracking)
+  STRIPE_SECRET_KEY: z.string().min(10).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().min(10).optional(),
+  STRIPE_PRICE_STARTER: z.string().min(3).optional(),
+  STRIPE_PRICE_PRO: z.string().min(3).optional(),
+  STRIPE_PRICE_AGENCY: z.string().min(3).optional(),
+
   // App
   APP_BASE_URL: z.string().url().optional(),
   PUBLIC_LEAD_ORGANIZATION_ID: z.string().uuid().optional(),

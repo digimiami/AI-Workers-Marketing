@@ -1,4 +1,6 @@
 import { env } from "@/lib/env";
+import { asMetadataRecord } from "@/lib/mergeJsonbRecords";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type FeatureFlagKey =
   | "enable_openclaw"
@@ -31,5 +33,45 @@ export function getDefaultFeatureFlags(): FeatureFlags {
     require_approval_before_email: isProd,
     enable_analytics_dashboard: true,
   };
+}
+
+export type RuntimeFeatureFlagKey =
+  | "AUTO_MODE_ENABLED"
+  | "ADS_LIVE_MODE"
+  | "ADVANCED_OPTIMIZATION"
+  | "REFERRALS_ENABLED"
+  | "AFFILIATES_ENABLED";
+
+function envRuntimeFlag(key: RuntimeFeatureFlagKey): boolean | null {
+  if (key === "ADS_LIVE_MODE") return (env.server.ADS_PROVIDER_MODE ?? "stub") === "live";
+  // eslint-disable-next-line no-process-env
+  const raw = process.env[key];
+  if (raw == null) return null;
+  return ["1", "true", "on", "yes"].includes(String(raw).toLowerCase());
+}
+
+export async function isFeatureEnabled(key: RuntimeFeatureFlagKey, organizationId?: string | null) {
+  const fromEnv = envRuntimeFlag(key);
+  if (fromEnv != null) return fromEnv;
+
+  if (!organizationId) return key !== "ADS_LIVE_MODE";
+
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("settings" as never)
+      .select("value")
+      .eq("organization_id", organizationId)
+      .eq("key", "feature_flags")
+      .maybeSingle();
+    const flags = asMetadataRecord((data as { value?: unknown } | null)?.value);
+    if (typeof flags[key] === "boolean") return Boolean(flags[key]);
+  } catch {
+    // Fail closed for risky features, open for non-risky defaults.
+  }
+
+  if (key === "ADS_LIVE_MODE") return false;
+  if (key === "ADVANCED_OPTIMIZATION") return false;
+  return true;
 }
 

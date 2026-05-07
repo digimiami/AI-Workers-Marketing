@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { withOrgMember, withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 import { writeAuditLog } from "@/services/audit/auditService";
+import { assertCampaignLimit } from "@/services/billing/entitlements";
 
 const createSchema = z.object({
   organizationId: z.string().uuid(),
@@ -97,6 +98,13 @@ export async function POST(request: Request) {
 
   const ctx = await withOrgOperator(parsed.data.organizationId);
   if (ctx.error) return ctx.error;
+
+  try {
+    await assertCampaignLimit({ organizationId: parsed.data.organizationId });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Plan limit reached";
+    return NextResponse.json({ ok: false, message: msg }, { status: 402 });
+  }
 
   const { data, error } = await ctx.supabase
     .from("campaigns" as never)

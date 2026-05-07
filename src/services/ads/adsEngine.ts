@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
 import { env } from "@/lib/env";
+import { assertAdsLaunchAllowed } from "@/services/billing/entitlements";
 import type { AdsProviderMode } from "@/services/ads/adsProviderTypes";
 import { generatePaidAdsDraftPack, persistDraftIntoDb } from "@/services/ads/adsDraftService";
 import { attachProviderIds, emitStubPerformanceSnapshot } from "@/services/ads/adsLaunchService";
@@ -152,6 +153,9 @@ export async function preparePaidAdsLaunch(input: {
   const admin = createSupabaseAdminClient();
   const mode = providerModeFromEnv();
 
+  // Enforce plan gating: FREE/STARTER cannot launch ads (even if provider mode is live).
+  await assertAdsLaunchAllowed({ organizationId: input.orgId });
+
   const ctx = await resolveMarketingInputs(admin, input.orgId, input.campaignId);
   const dest = await resolveLandingDestination({
     admin,
@@ -293,6 +297,7 @@ export async function launchPaidAdsAfterApprovals(params: {
   adCampaignId: string;
   platform: "google" | "meta";
 }) {
+  await assertAdsLaunchAllowed({ organizationId: params.organizationId });
   const mode = providerModeFromEnv();
   const admin = createSupabaseAdminClient();
   const { data: camp } = await admin.from("campaigns" as never).select("name").eq("id", params.campaignId).maybeSingle();
