@@ -1176,60 +1176,88 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       ...extractKeywords(scraped.contentText.slice(0, 4000), 12),
     ].filter(Boolean);
 
-    const drLanding = await runWorkerAndPersist({
-      organizationId,
-      campaignId,
-      pipelineRunId,
-      stageKey: "creation",
-      workerKey: "landing_page_generator",
-      actorUserId: params.actorUserId,
-      provider: input.provider,
-      input: { url: input.url, content: scraped.contentText, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource },
-      schemaHint:
-        "Return STRICT JSON: {headline,subheadline,benefits[4],steps[3],cta,lead_hook,trust}. No generic phrases.",
-      prompt: buildLandingPageGeneratorUserPrompt({
-        url: input.url,
-        content: scraped.contentText,
-        goal: input.goal,
-        audience: input.audience,
-        trafficSource: input.trafficSource,
-        urlResearch: research,
-        funnelStrategy: null,
-      }),
-      fallback: {},
+    const validateDr = (out: Record<string, unknown>) => {
+      const dr = asRecord(out);
+      const drHeadline = String(dr.headline ?? "").trim();
+      const drSub = String(dr.subheadline ?? "").trim();
+      const drBenefits = asStringArray(dr.benefits).map((s) => String(s).trim()).filter(Boolean);
+      const drSteps = asStringArray(dr.steps).map((s) => String(s).trim()).filter(Boolean);
+      const drCta = String(dr.cta ?? "").trim();
+      const drHook = String(dr.lead_hook ?? "").trim();
+      const drTrust = String(dr.trust ?? "").trim();
+      const joined = [drHeadline, drSub, drCta, drHook, drTrust, ...drBenefits, ...drSteps].join(" ");
+      const bannedMatch = joined.match(banned)?.[1] ?? null;
+      const anchored = anchorKeywords.length ? anchorKeywords.some((k) => joined.toLowerCase().includes(k)) : true;
+      const validShape = Boolean(drHeadline) && Boolean(drSub) && Boolean(drCta) && drBenefits.length >= 3 && drSteps.length >= 2;
+      return {
+        validShape,
+        anchored,
+        bannedMatch,
+        joined,
+        drHeadline,
+        drCta,
+      };
+    };
+
+    const basePrompt = buildLandingPageGeneratorUserPrompt({
+      url: input.url,
+      content: scraped.contentText,
+      goal: input.goal,
+      audience: input.audience,
+      trafficSource: input.trafficSource,
+      urlResearch: research,
+      funnelStrategy: null,
     });
-    if (!(drLanding.meta as any)?.used) {
-      throw new Error("Landing generation failed — model output not used");
+
+    const runLanding = async (extraRule: string | null) => {
+      const prompt = extraRule
+        ? `${basePrompt}\n\nREWRITE_RULE:\n${extraRule}\n`
+        : basePrompt;
+      return await runWorkerAndPersist({
+        organizationId,
+        campaignId,
+        pipelineRunId,
+        stageKey: "creation",
+        workerKey: "landing_page_generator",
+        actorUserId: params.actorUserId,
+        provider: input.provider,
+        input: { url: input.url, content: scraped.contentText, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource, rewrite_rule: extraRule },
+        schemaHint:
+          "Return STRICT JSON: {headline,subheadline,benefits[4],steps[3],cta,lead_hook,trust}. Do not use generic phrases.",
+        prompt,
+        fallback: {},
+      });
+    };
+
+    // Attempt 1 + up to 2 rewrite attempts if generic phrases are detected.
+    let drLanding = await runLanding(null);
+    if (!(drLanding.meta as any)?.used) throw new Error("Landing generation failed — model output not used");
+    let verdict = validateDr(drLanding.output);
+
+    for (let attempt = 2; attempt <= 3; attempt++) {
+      if (verdict.validShape && verdict.anchored && !verdict.bannedMatch) break;
+      const reason = !verdict.validShape ? "invalid_shape" : verdict.bannedMatch ? "banned_phrase" : "not_anchored";
+      await log("creation", "warn", "Landing copy needs rewrite", {
+        attempt,
+        reason,
+        banned_match: verdict.bannedMatch,
+        headline: verdict.drHeadline,
+        cta: verdict.drCta,
+      });
+      const rule =
+        reason === "banned_phrase" && verdict.bannedMatch
+          ? `You included the banned generic phrase "${verdict.bannedMatch}". Rewrite the JSON to remove it and replace with specific language from content_excerpt. Do NOT include that phrase anywhere.`
+          : reason === "not_anchored"
+            ? "Your copy is not anchored to the site. Rewrite using the company/product/offer terminology found in content_excerpt (names, product terms, pricing, programs, locations)."
+            : "Rewrite to fully comply with required_json_shape and constraints. Use concrete, specific language from content_excerpt.";
+      drLanding = await runLanding(rule);
+      if (!(drLanding.meta as any)?.used) throw new Error("Landing generation failed — model output not used");
+      verdict = validateDr(drLanding.output);
     }
-    const dr = asRecord(drLanding.output);
-    const drHeadline = String(dr.headline ?? "").trim();
-    const drSub = String(dr.subheadline ?? "").trim();
-    const drBenefits = asStringArray(dr.benefits).map((s) => String(s).trim()).filter(Boolean);
-    const drSteps = asStringArray(dr.steps).map((s) => String(s).trim()).filter(Boolean);
-    const drCta = String(dr.cta ?? "").trim();
-    const drHook = String(dr.lead_hook ?? "").trim();
-    const drTrust = String(dr.trust ?? "").trim();
-    const joined = [drHeadline, drSub, drCta, drHook, drTrust, ...drBenefits, ...drSteps].join(" ");
-    if (!drHeadline || drBenefits.length < 3 || drSteps.length < 2 || !drCta) {
-      throw new Error("AI output invalid");
-    }
-    {
-      const m = joined.match(banned);
-      if (m?.[1]) {
-        await log("creation", "error", "Generic output detected — banned phrases present", {
-          match: m[1],
-          headline: drHeadline,
-          cta: drCta,
-        });
-        throw new Error(`Generic output detected — banned phrases present: "${m[1]}"`);
-      }
-    }
-    if (anchorKeywords.length) {
-      const hit = anchorKeywords.some((k) => joined.toLowerCase().includes(k));
-      if (!hit) {
-        throw new Error("Generic output detected — not anchored to scraped content");
-      }
-    }
+
+    if (!verdict.validShape) throw new Error("AI output invalid");
+    if (verdict.bannedMatch) throw new Error(`Generic output detected — banned phrases present: "${verdict.bannedMatch}"`);
+    if (!verdict.anchored) throw new Error("Generic output detected — not anchored to scraped content");
 
     // Landing variants (strict, derived from DR base; hard-fail if generic)
     const variantsOut = await runWorkerAndPersist({
