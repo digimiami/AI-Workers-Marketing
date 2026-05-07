@@ -76,6 +76,13 @@ function parseSseBlock(block: string): { event: string; data: string } {
   return { event, data: dataLines.join("\n") };
 }
 
+/** Fetch/stream abort is expected on navigation or when starting a new build — do not treat as failure. */
+function isAbortError(e: unknown): boolean {
+  if (e instanceof DOMException && e.name === "AbortError") return true;
+  if (e instanceof Error && e.name === "AbortError") return true;
+  return false;
+}
+
 export function useLiveWorkspaceBuild() {
   const abortRef = React.useRef<AbortController | null>(null);
   const runIdRef = React.useRef<string | null>(null);
@@ -197,18 +204,33 @@ export function useLiveWorkspaceBuild() {
       if (!reader) return;
       const decoder = new TextDecoder();
       let buf = "";
-      while (!signal.aborted) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        for (;;) {
-          const idx = buf.indexOf("\n\n");
-          if (idx < 0) break;
-          const block = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 2);
-          if (!block) continue;
-          const { event, data } = parseSseBlock(block);
-          if (data) ingestEvent(event, data);
+      try {
+        while (!signal.aborted) {
+          let chunk: ReadableStreamReadResult<Uint8Array>;
+          try {
+            chunk = await reader.read();
+          } catch (e) {
+            if (isAbortError(e)) return;
+            throw e;
+          }
+          const { done, value } = chunk;
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          for (;;) {
+            const idx = buf.indexOf("\n\n");
+            if (idx < 0) break;
+            const block = buf.slice(0, idx).trim();
+            buf = buf.slice(idx + 2);
+            if (!block) continue;
+            const { event, data } = parseSseBlock(block);
+            if (data) ingestEvent(event, data);
+          }
+        }
+      } finally {
+        try {
+          reader.releaseLock();
+        } catch {
+          /* stream may already be invalid after abort */
         }
       }
     },
@@ -265,21 +287,33 @@ export function useLiveWorkspaceBuild() {
         }));
       }
 
-      const res = await fetch("/api/workspace/live-build", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          url: input.url.trim().startsWith("http") ? input.url.trim() : `https://${input.url.trim()}`,
-          goal: input.goal,
-          audience: input.audience,
-          trafficSource: input.trafficSource,
-          funnelStyle: input.funnelStyle ?? "clickfunnels_lead",
-          provider: input.provider ?? "hybrid",
-          approvalMode: input.approvalMode ?? "auto_draft",
-          mode: input.mode ?? "affiliate",
-        }),
-        signal: ac.signal,
-      });
+      let res: Response;
+      try {
+        res = await fetch("/api/workspace/live-build", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            url: input.url.trim().startsWith("http") ? input.url.trim() : `https://${input.url.trim()}`,
+            goal: input.goal,
+            audience: input.audience,
+            trafficSource: input.trafficSource,
+            funnelStyle: input.funnelStyle ?? "clickfunnels_lead",
+            provider: input.provider ?? "hybrid",
+            approvalMode: input.approvalMode ?? "auto_draft",
+            mode: input.mode ?? "affiliate",
+          }),
+          signal: ac.signal,
+        });
+      } catch (e) {
+        abortRef.current = null;
+        if (isAbortError(e)) return;
+        setState((s) => ({
+          ...s,
+          active: false,
+          errors: [...s.errors, { message: e instanceof Error ? e.message : "Live build failed" }],
+        }));
+        return;
+      }
 
       if (!res.ok || !res.body) {
         setState((s) => ({
@@ -287,11 +321,23 @@ export function useLiveWorkspaceBuild() {
           active: false,
           errors: [...s.errors, { message: `Live build failed (${res.status})` }],
         }));
+        abortRef.current = null;
         return;
       }
 
-      await pumpSse(res, ac.signal);
-      abortRef.current = null;
+      try {
+        await pumpSse(res, ac.signal);
+      } catch (e) {
+        if (!isAbortError(e)) {
+          setState((s) => ({
+            ...s,
+            active: false,
+            errors: [...s.errors, { message: e instanceof Error ? e.message : "Stream error" }],
+          }));
+        }
+      } finally {
+        abortRef.current = null;
+      }
     },
     [cancel, pumpSse],
   );
@@ -325,22 +371,46 @@ export function useLiveWorkspaceBuild() {
         }));
       }
 
-      const res = await fetch("/api/workspace/live-build", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ runId }),
-        signal: ac.signal,
-      });
+      let res: Response;
+      try {
+        res = await fetch("/api/workspace/live-build", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId }),
+          signal: ac.signal,
+        });
+      } catch (e) {
+        abortRef.current = null;
+        if (isAbortError(e)) return;
+        setState((s) => ({
+          ...s,
+          active: false,
+          errors: [...s.errors, { message: e instanceof Error ? e.message : "Resume failed" }],
+        }));
+        return;
+      }
       if (!res.ok || !res.body) {
         setState((s) => ({
           ...s,
           active: false,
           errors: [...s.errors, { message: `Resume failed (${res.status})` }],
         }));
+        abortRef.current = null;
         return;
       }
-      await pumpSse(res, ac.signal);
-      abortRef.current = null;
+      try {
+        await pumpSse(res, ac.signal);
+      } catch (e) {
+        if (!isAbortError(e)) {
+          setState((s) => ({
+            ...s,
+            active: false,
+            errors: [...s.errors, { message: e instanceof Error ? e.message : "Stream error" }],
+          }));
+        }
+      } finally {
+        abortRef.current = null;
+      }
     },
     [cancel, pumpSse],
   );
