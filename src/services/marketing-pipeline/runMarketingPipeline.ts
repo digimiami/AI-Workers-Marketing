@@ -5,6 +5,9 @@ import { executeOpenClawTool } from "@/lib/openclaw/tools/executor";
 import { env } from "@/lib/env";
 import { writeAuditLog } from "@/services/audit/auditService";
 import { runWorkerAndPersist } from "@/services/marketing-pipeline/workerRunner";
+import { scrapeUrlTextOrThrow } from "@/services/web/scrapeUrlText";
+import { buildLandingPageGeneratorUserPrompt } from "@/ai/prompts/landing_page_generator.prompt";
+import { buildLandingVariantsUserPrompt } from "@/ai/prompts/landing_variants.prompt";
 
 import {
   marketingPipelineStageKeySchema,
@@ -677,6 +680,16 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
     // ---------------- Stage 1: RESEARCH ----------------
+    // URL scrape/extraction (hard-fail if insufficient content)
+    await log("research", "info", "URL scrape started", { url: input.url });
+    const scraped = await scrapeUrlTextOrThrow({ url: input.url, minChars: 500, timeoutMs: 20000 });
+    await log("research", "info", "URL scrape complete", {
+      url: input.url,
+      finalUrl: scraped.finalUrl,
+      title: scraped.title,
+      contentChars: scraped.contentChars,
+    });
+
     let research = stubResearch(input) as Record<string, unknown>;
     if (startStage === "research") {
       await log("research", "info", "Research stage started", { url: input.url, goal: input.goal, audience: input.audience });
@@ -689,7 +702,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       workerKey: "offer_analyst",
       actorUserId: params.actorUserId,
       provider: input.provider,
-      input: { url: input.url, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource, notes: input.notes ?? null },
+      input: { url: input.url, content: scraped.contentText, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource, notes: input.notes ?? null },
       schemaHint: "Return JSON with keys: offer_summary, pain_points[], objections[], mechanism, cta_recommendations{primary,secondary}.",
       prompt: `Analyze URL=${input.url}.\nMode=${input.mode}.\nAudience=${input.audience}.\nGoal=${input.goal}.\nTraffic=${input.trafficSource}.\n\nReturn concrete, campaign-specific insights (no generic placeholders).`,
       fallback: researchFallback,
@@ -702,7 +715,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       workerKey: "ads_analyst",
       actorUserId: params.actorUserId,
       provider: input.provider,
-      input: { url: input.url, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource },
+      input: { url: input.url, content: scraped.contentText, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource },
       schemaHint: "Return JSON with keys: platform_constraints{}, angle_themes[], hook_starters[], targeting_hypotheses[].",
       prompt: `Analyze platform=${input.trafficSource} for audience=${input.audience} goal=${input.goal}.`,
       fallback: { provider_mode: "stub" },
@@ -715,7 +728,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       workerKey: "competitor_researcher",
       actorUserId: params.actorUserId,
       provider: input.provider,
-      input: { url: input.url, audience: input.audience, goal: input.goal },
+      input: { url: input.url, content: scraped.contentText, audience: input.audience, goal: input.goal },
       schemaHint: "Return JSON with keys: competitor_angle_themes[], common_promises[], differentiation_opportunities[], risk_notes[].",
       prompt: `Summarize competitor messaging patterns relevant to ${input.url} and audience=${input.audience}.`,
       fallback: { provider_mode: "stub" },
@@ -728,7 +741,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       workerKey: "landing_page_analyst",
       actorUserId: params.actorUserId,
       provider: input.provider,
-      input: { offer: offer.output, ads: ads.output, competitors: comp.output },
+      input: { url: input.url, content: scraped.contentText, offer: offer.output, ads: ads.output, competitors: comp.output },
       schemaHint: "Return JSON with keys: headline_options[], section_outline[], cta_plan[], notes[].",
       prompt: `Create landing page analysis for traffic=${input.trafficSource} goal=${input.goal}.`,
       fallback: { provider_mode: "stub" },
@@ -1103,6 +1116,73 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       },
     });
 
+    // ---------------- Direct-response landing generator (strict JSON, hard-fail on generic output) ----------------
+    const banned = /(boost your business|limited time offer|ai solutions|grow faster|unlock your dream|step into your future)/i;
+    const drLanding = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "creation",
+      workerKey: "landing_page_generator",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { url: input.url, content: scraped.contentText, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource },
+      schemaHint:
+        "Return STRICT JSON: {headline,subheadline,benefits[4],steps[3],cta,lead_hook,trust}. No generic phrases.",
+      prompt: buildLandingPageGeneratorUserPrompt({
+        url: input.url,
+        goal: input.goal,
+        audience: input.audience,
+        trafficSource: input.trafficSource,
+        urlResearch: research,
+        funnelStrategy: null,
+      }),
+      fallback: {},
+    });
+    if (!(drLanding.meta as any)?.used) {
+      throw new Error("Landing generation failed — model output not used");
+    }
+    const dr = asRecord(drLanding.output);
+    const drHeadline = String(dr.headline ?? "").trim();
+    const drSub = String(dr.subheadline ?? "").trim();
+    const drBenefits = asStringArray(dr.benefits).map((s) => String(s).trim()).filter(Boolean);
+    const drSteps = asStringArray(dr.steps).map((s) => String(s).trim()).filter(Boolean);
+    const drCta = String(dr.cta ?? "").trim();
+    const drHook = String(dr.lead_hook ?? "").trim();
+    const drTrust = String(dr.trust ?? "").trim();
+    const joined = [drHeadline, drSub, drCta, drHook, drTrust, ...drBenefits, ...drSteps].join(" ");
+    if (!drHeadline || drBenefits.length < 3 || drSteps.length < 2 || !drCta) {
+      throw new Error("AI output invalid");
+    }
+    if (banned.test(joined)) {
+      throw new Error("Generic output detected — banned phrases present");
+    }
+
+    // Landing variants (strict, derived from DR base; hard-fail if generic)
+    const variantsOut = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "creation",
+      workerKey: "landing_variants",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { url: input.url, content: scraped.contentText, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource, base: drLanding.output },
+      schemaHint:
+        "Return STRICT JSON: {variants:[{variantKey,angle,headline,subheadline,ctaText,benefits[{title,description}],steps[{title,description}],trustLine,finalCTA{headline,subheadline,ctaText}}]}",
+      prompt: buildLandingVariantsUserPrompt({
+        url: input.url,
+        goal: input.goal,
+        audience: input.audience,
+        trafficSource: input.trafficSource,
+        baseLanding: drLanding.output,
+      }),
+      fallback: {},
+    });
+    if (!(variantsOut.meta as any)?.used) {
+      throw new Error("Landing variants failed — model output not used");
+    }
+
     const pageDesigner = await runWorkerAndPersist({
       organizationId,
       campaignId,
@@ -1111,7 +1191,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       workerKey: "page_designer",
       actorUserId: params.actorUserId,
       provider: input.provider,
-      input: { ...creationContext, copy: copywriter.output },
+      input: { ...creationContext, url: input.url, content: scraped.contentText, copy: copywriter.output },
       schemaHint:
         "Return JSON with keys: url_analysis{business_type,target_audience,main_offer,tone,classification}, funnel{type,steps[]}, landing_variants[3]{variantKey,angle,headline,subheadline,ctaText,benefits[{title,description}],steps[{title,description}],trustLine,finalCTA{headline,subheadline,ctaText}}, bridge{headline,subheadline,cta,sections[]}, thank_you{headline,subheadline,cta,sections[]}. landing_variants.variantKey must be exactly: direct_response, premium_trust, speed_convenience. sections[] items remain flexible blocks for bridge/thank_you.",
       prompt:
@@ -1358,9 +1438,11 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     const landingStepId = funnelStepIds["landing"];
     const bridgeStepId = funnelStepIds["bridge"];
     if (landingStepId) {
-      const variantsRaw = Array.isArray(asRecord(pageDesigner.output).landing_variants)
-        ? (asRecord(pageDesigner.output).landing_variants as unknown[])
-        : [];
+      const variantsRaw = Array.isArray(asRecord(variantsOut.output).variants)
+        ? (asRecord(variantsOut.output).variants as unknown[])
+        : Array.isArray(asRecord(pageDesigner.output).landing_variants)
+          ? (asRecord(pageDesigner.output).landing_variants as unknown[])
+          : [];
       const variants = variantsRaw.length ? variantsRaw.slice(0, 3).map((v) => asRecord(v)) : [];
       const normalizedVariants =
         variants.length > 0
@@ -1425,16 +1507,23 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
                 .filter((x) => x.title && x.desc)
             : [];
 
-        const trustLine = typeof v.trustLine === "string" ? v.trustLine : "";
+        const trustLine =
+          typeof v.trustLine === "string"
+            ? v.trustLine
+            : typeof (v as any).trust === "string"
+              ? String((v as any).trust)
+              : "";
 
         const headline = typeof v.headline === "string" ? v.headline : input.goal;
         const subheadline = typeof v.subheadline === "string" ? v.subheadline : `For ${input.audience}`;
         const cta =
           typeof v.ctaText === "string"
             ? v.ctaText
-            : typeof v.cta === "string"
-              ? v.cta
-              : "Get started";
+            : typeof (v as any).cta === "string"
+              ? String((v as any).cta)
+              : typeof v.cta === "string"
+                ? v.cta
+                : "Continue";
 
         const blocks: unknown[] = [
           {
@@ -1442,6 +1531,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
             headline,
             subheadline,
             cta_label: cta,
+            trust_line: trustLine,
           },
         ];
 
@@ -1553,7 +1643,27 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
               blocks,
               seo: { title: String(title).slice(0, 120) },
               updated_at: nowIso(),
-              metadata: { variant_key: key, pipeline_run_id: pipelineRunId, trace_id: traceId, worker_run_id: pageDesigner.runId },
+              metadata: {
+                variant_key: key,
+                pipeline_run_id: pipelineRunId,
+                trace_id: traceId,
+                worker_run_id: drLanding.runId,
+                debug: {
+                  url: input.url,
+                  final_url: scraped.finalUrl,
+                  title: scraped.title,
+                  content_chars: scraped.contentChars,
+                  prompt_dr: buildLandingPageGeneratorUserPrompt({
+                    url: input.url,
+                    goal: input.goal,
+                    audience: input.audience,
+                    trafficSource: input.trafficSource,
+                    urlResearch: research,
+                    funnelStrategy: null,
+                  }),
+                  response_dr: drLanding.output,
+                },
+              },
             } as never,
           )
           .select("id")

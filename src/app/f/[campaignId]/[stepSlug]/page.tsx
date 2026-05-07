@@ -65,7 +65,7 @@ function StructuredPage(props: {
   const hero = blocks.map(asRecord).find((b) => str(b.type) === "hero") ?? {};
   const headline = str(hero.headline);
   const subheadline = str(hero.subheadline);
-  const ctaLabel = str(hero.cta_label) || "Continue";
+  const ctaLabel = str(hero.cta_label);
   const trustLine = str(hero.trust_line) || str(hero.trustLine);
 
   const benefitBlock = blocks.map(asRecord).find((b) => str(b.type) === "benefits") ?? {};
@@ -134,13 +134,22 @@ function StructuredPage(props: {
   const finalSubheadline = finalCtaBlock ? str(finalCtaBlock.subheadline) : "";
   const finalCtaLabel = finalCtaBlock ? (str(finalCtaBlock.cta_label) || str(finalCtaBlock.ctaText)) : "";
 
-  // Avoid generic filler: fall back to campaign name + concrete subheadline.
-  const safeHeadline = headline || props.campaignName || "Landing page";
-  const safeSubheadline =
-    subheadline ||
-    (props.campaignName
-      ? `Tell us what you need and we’ll guide you to the best next step for ${props.campaignName}.`
-      : "");
+  // Hard failure mode: do not render generic templates if AI blocks are missing/invalid.
+  const isValid =
+    Boolean(headline.trim()) &&
+    Boolean(subheadline.trim()) &&
+    Boolean(ctaLabel.trim()) &&
+    benefits.length >= 3 &&
+    process.length >= 2;
+
+  if (!isValid) {
+    return (
+      <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
+        <div className="text-xl font-semibold tracking-tight">This landing page could not be generated. Please regenerate.</div>
+        <p className="mt-2 text-sm text-muted-foreground">The page content is missing or incomplete.</p>
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-12">
@@ -155,14 +164,12 @@ function StructuredPage(props: {
               {props.campaignName || "Offer"}
             </div>
 
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-5xl">{safeHeadline}</h1>
-            {safeSubheadline ? (
-              <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">{safeSubheadline}</p>
-            ) : null}
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-5xl">{headline}</h1>
+            <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">{subheadline}</p>
 
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <a href={hasInlineForm ? "#lead-form" : props.nextHref || "#"} className={buttonVariants({})}>
-                {ctaLabel || "Continue"}
+                {ctaLabel}
               </a>
               {props.nextHref ? (
                 <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
@@ -196,7 +203,7 @@ function StructuredPage(props: {
             <div className="mt-1 text-xs text-muted-foreground">Takes ~30 seconds. We’ll send your next steps.</div>
             <div className="mt-4 space-y-3">
               <a href="#lead-form" className={cn(buttonVariants({}), "w-full justify-center")}>
-                {ctaLabel || "Continue"}
+                {ctaLabel}
               </a>
               {trustLine ? (
                 <div className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-3 text-[11px] text-muted-foreground">
@@ -456,7 +463,7 @@ function StructuredPage(props: {
           {finalSubheadline || "Submit your details and we’ll send the fastest path forward."}
         </p>
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          <a href="#lead-form" className={buttonVariants({})}>{finalCtaLabel || ctaLabel || "Get started"}</a>
+          <a href="#lead-form" className={buttonVariants({})}>{finalCtaLabel || ctaLabel}</a>
           {props.nextHref ? (
             <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
               Continue without form
@@ -470,66 +477,13 @@ function StructuredPage(props: {
           <div className="pointer-events-auto mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-border/60 bg-background/90 p-3 shadow-lg backdrop-blur">
             <div className="text-sm font-medium leading-tight">Ready to continue?</div>
             <a href="#lead-form" className={cn(buttonVariants({}), "h-10")}>
-              {ctaLabel || "Continue"}
+              {ctaLabel}
             </a>
           </div>
         </div>
       ) : null}
     </div>
   );
-}
-
-async function buildFallbackStructuredBlocks(admin: ReturnType<typeof createSupabaseAdminClient>, params: {
-  organizationId: string;
-  campaignId: string;
-  stepType: string;
-  stepName: string;
-}) {
-  const { data: camp } = await admin
-    .from("campaigns" as never)
-    .select("name,target_audience,description,metadata")
-    .eq("organization_id", params.organizationId)
-    .eq("id", params.campaignId)
-    .maybeSingle();
-
-  const cName = str((camp as any)?.name) || "Campaign";
-  const audience = str((camp as any)?.target_audience);
-  const desc = str((camp as any)?.description);
-  const meta = asRecord((camp as any)?.metadata);
-  const hooksMeta = asRecord(asRecord(meta.content_hooks_scripts).hooks);
-
-  const { data: assets } = await admin
-    .from("content_assets" as never)
-    .select("angles,captions,metadata,script_markdown")
-    .eq("organization_id", params.organizationId)
-    .eq("campaign_id", params.campaignId)
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  const hooks: string[] = [];
-  for (const a of (assets ?? []) as any[]) {
-    if (Array.isArray(a.angles)) for (const x of a.angles) if (typeof x === "string" && x.trim()) hooks.push(x.trim());
-    if (Array.isArray(a.captions)) for (const x of a.captions) if (typeof x === "string" && x.trim()) hooks.push(x.trim());
-    if (hooks.length >= 8) break;
-  }
-
-  const headline =
-    hooks[0] ||
-    (desc ? desc.split("\n")[0]?.slice(0, 90) : "") ||
-    `${cName}: ${params.stepName}`;
-
-  const sub =
-    audience ? `Built for: ${audience}` : desc ? desc.slice(0, 160) : "Generated by AiWorkers.";
-
-  const cta = params.stepType === "thank_you" ? "Back to start" : "Continue";
-
-  return [
-    { type: "hero", headline, subheadline: sub, cta_label: cta },
-    { type: "benefits", items: hooks.slice(0, 4).map((h, i) => ({ title: `Benefit ${i + 1}`, desc: h })) },
-    { type: "process", items: [{ title: "Share your criteria", desc: "Answer a few questions so we can match you correctly." }, { title: "Review options", desc: "Get a short list of best-fit options." }, { title: "Take the next step", desc: "Book or continue with the right CTA." }] },
-    { type: "lead_capture_form" },
-    { type: "final_cta" },
-  ];
 }
 
 export default async function PublicFunnelStepPage(props: {
@@ -563,6 +517,7 @@ export default async function PublicFunnelStepPage(props: {
   const meta = ((step as any).metadata ?? {}) as Record<string, unknown>;
   const page = asRecord(meta.page);
   const variantKey = typeof sp?.variant === "string" ? sp.variant : undefined;
+  const debugEnabled = sp?.debug === "1";
   const trackingParams = (() => {
     const pick = (k: string) => (typeof sp?.[k] === "string" ? String(sp[k]) : undefined);
     return {
@@ -580,6 +535,7 @@ export default async function PublicFunnelStepPage(props: {
 
   // If structured, prefer rendering from landing_pages/bridge_pages blocks.
   let structuredBlocks: unknown = null;
+  let debugMeta: Record<string, unknown> | null = null;
   if (wantsStructured) {
     if ((step as any).step_type === "landing") {
       const { data: rows } = await admin
@@ -593,14 +549,16 @@ export default async function PublicFunnelStepPage(props: {
         (rows ?? []).find((r: any) => (asRecord(r.metadata).variant_key as any) === variantKey) ??
         (rows ?? [])[0];
       structuredBlocks = match?.blocks ?? null;
+      debugMeta = match?.metadata ? asRecord(match.metadata) : null;
     } else if ((step as any).step_type === "bridge") {
       const { data: row } = await admin
         .from("bridge_pages" as never)
-        .select("blocks")
+        .select("blocks,metadata")
         .eq("funnel_step_id", String((step as any).id))
         .eq("organization_id", String((camp as any).organization_id))
         .maybeSingle();
       structuredBlocks = (row as any)?.blocks ?? null;
+      debugMeta = (row as any)?.metadata ? asRecord((row as any).metadata) : null;
     } else if (Array.isArray((page as any).blocks)) {
       structuredBlocks = (page as any).blocks;
     }
@@ -718,28 +676,45 @@ export default async function PublicFunnelStepPage(props: {
             nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
           />
         ) : (
-          <div className="prose prose-neutral max-w-none">
+          <div className="space-y-4">
             {markdown ? (
-              <pre className="whitespace-pre-wrap">{markdownToText(markdown)}</pre>
+              <div className="prose prose-neutral max-w-none">
+                <pre className="whitespace-pre-wrap">{markdownToText(markdown)}</pre>
+              </div>
             ) : (
-              <StructuredPage
-                blocks={await buildFallbackStructuredBlocks(admin, {
-                  organizationId: String((camp as any).organization_id),
-                  campaignId,
-                  stepType: String((step as any).step_type ?? ""),
-                  stepName: String((step as any).name ?? "Step"),
-                })}
-                campaignName={String((camp as any).name ?? "")}
-                organizationId={String((camp as any).organization_id)}
-                campaignId={campaignId}
-                funnelId={funnelId}
-                funnelStepId={String((step as any).id)}
-                sourcePage={`/f/${campaignId}/${stepSlug}`}
-                nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
-              />
+              <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
+                <div className="text-xl font-semibold tracking-tight">This landing page could not be generated. Please regenerate.</div>
+                <p className="mt-2 text-sm text-muted-foreground">No structured blocks were found for this step.</p>
+              </section>
             )}
           </div>
         )}
+
+        {debugEnabled && debugMeta?.debug ? (
+          <section className="rounded-3xl border border-border/60 bg-muted/10 p-6 text-sm backdrop-blur-xl">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Debug</div>
+            <div className="mt-3 grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <div className="text-xs font-semibold">Scraped</div>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-2xl border border-border/60 bg-background/60 p-3 text-xs">
+                  {JSON.stringify(asRecord(debugMeta.debug), null, 2)}
+                </pre>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs font-semibold">AI prompt</div>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-2xl border border-border/60 bg-background/60 p-3 text-xs">
+                  {str(asRecord(debugMeta.debug).prompt_dr)}
+                </pre>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs font-semibold">AI response</div>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-2xl border border-border/60 bg-background/60 p-3 text-xs">
+                  {JSON.stringify(asRecord(debugMeta.debug).response_dr ?? null, null, 2)}
+                </pre>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <ChatWidget
           organizationId={String((camp as any).organization_id)}

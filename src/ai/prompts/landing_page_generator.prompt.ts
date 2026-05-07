@@ -32,7 +32,7 @@ export function buildLandingPageGeneratorUserPrompt(input: {
         ],
         step2_strong_offer: [
           "Rewrite the offer into a clear outcome + fast benefit + specific transformation.",
-          "Bad: 'AI solutions for business' | Good: 'Get 20–50 qualified leads per month without hiring a marketing team'",
+                  "Bad: 'generic value statement with no mechanism' | Good: 'Get 20–50 qualified leads per month without hiring a marketing team'",
         ],
         step3_conversion_structure: [
           "Headline: outcome-driven and specific",
@@ -45,7 +45,7 @@ export function buildLandingPageGeneratorUserPrompt(input: {
         ],
         banned: [
           "placeholders like 'Benefit 1' or 'Step 1'",
-          "generic phrases like 'unlock your dream', 'step into your future', 'boost your business with AI' unless URL context explicitly supports it",
+                  "generic phrases like 'unlock your dream', 'step into your future' unless URL context explicitly supports it",
           "vague claims without mechanism",
         ],
       },
