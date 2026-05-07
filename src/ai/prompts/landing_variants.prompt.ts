@@ -5,16 +5,19 @@ export const LANDING_VARIANTS_SYSTEM = [
 
 export function buildLandingVariantsUserPrompt(input: {
   url: string;
+  content: string;
   goal: string;
   audience: string;
   trafficSource: string;
   baseLanding: Record<string, unknown> | null;
 }) {
+  const contentExcerpt = String(input.content ?? "").slice(0, 6000);
   return JSON.stringify(
     {
       task: "Produce 3 variants: direct_response, premium_trust, speed_convenience.",
       inputs: {
         url: input.url,
+        content_excerpt: contentExcerpt,
         goal: input.goal,
         audience: input.audience,
         trafficSource: input.trafficSource,
@@ -45,6 +48,7 @@ export function buildLandingVariantsUserPrompt(input: {
         "benefits: 4 items each; steps: 3 items each.",
         "formFields must be a subset ordered from [email,name,phone,company] (practical for paid traffic).",
         "psychologicalTrigger must name the persuasion pattern in plain language (no manipulation tactics).",
+        "Avoid generic phrases; anchor copy to the specific brand/product language found in content_excerpt.",
       ],
     },
     null,

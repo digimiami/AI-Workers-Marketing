@@ -8,17 +8,20 @@ export const LANDING_PAGE_GENERATOR_SYSTEM = [
 
 export function buildLandingPageGeneratorUserPrompt(input: {
   url: string;
+  content: string;
   goal: string;
   audience: string;
   trafficSource: string;
   urlResearch: Record<string, unknown> | null;
   funnelStrategy: Record<string, unknown> | null;
 }) {
+  const contentExcerpt = String(input.content ?? "").slice(0, 8000);
   return JSON.stringify(
     {
       task: "Analyze URL context and rewrite as a high-converting landing page.",
       inputs: {
         url: input.url,
+        content_excerpt: contentExcerpt,
         goal: input.goal,
         audience: input.audience,
         trafficSource: input.trafficSource,
@@ -27,12 +30,13 @@ export function buildLandingPageGeneratorUserPrompt(input: {
       },
       rules: {
         step1_understand_business: [
-          "From the URL, extract what is being sold, who it is for, what problem is solved, what result is promised.",
+          "From the provided content_excerpt, extract what is being sold, who it is for, what problem is solved, what result is promised.",
+          "You MUST use the business/product/brand language found in content_excerpt (names, product terms, offers).",
           "Do NOT guess generically. If uncertain, be explicit in the copy without adding extra fields.",
         ],
         step2_strong_offer: [
           "Rewrite the offer into a clear outcome + fast benefit + specific transformation.",
-                  "Bad: 'generic value statement with no mechanism' | Good: 'Get 20–50 qualified leads per month without hiring a marketing team'",
+          "Bad: 'generic value statement with no mechanism' | Good: 'Get 20–50 qualified leads per month without hiring a marketing team'",
         ],
         step3_conversion_structure: [
           "Headline: outcome-driven and specific",
@@ -45,8 +49,9 @@ export function buildLandingPageGeneratorUserPrompt(input: {
         ],
         banned: [
           "placeholders like 'Benefit 1' or 'Step 1'",
-                  "generic phrases like 'unlock your dream', 'step into your future' unless URL context explicitly supports it",
+          "generic phrases like 'unlock your dream', 'step into your future' unless URL context explicitly supports it",
           "vague claims without mechanism",
+          "generic phrases like 'boost your business', 'limited time offer', 'AI solutions', 'grow faster' (rewrite if detected)",
         ],
       },
       required_json_shape: {

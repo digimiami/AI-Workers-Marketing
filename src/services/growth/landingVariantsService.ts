@@ -12,6 +12,7 @@ function safeParseRecord(jsonText: string): Record<string, unknown> {
 
 export async function generateLandingVariants(input: {
   url: string;
+  content?: string;
   goal: string;
   audience: string;
   trafficSource: string;
@@ -98,6 +99,7 @@ export async function generateLandingVariants(input: {
     system: LANDING_VARIANTS_SYSTEM,
     user: buildLandingVariantsUserPrompt({
       url: input.url,
+      content: String(input.content ?? ""),
       goal: input.goal,
       audience: input.audience,
       trafficSource: input.trafficSource,

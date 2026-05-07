@@ -1118,6 +1118,64 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
 
     // ---------------- Direct-response landing generator (strict JSON, hard-fail on generic output) ----------------
     const banned = /(boost your business|limited time offer|ai solutions|grow faster|unlock your dream|step into your future)/i;
+    const stop = new Set([
+      "the",
+      "and",
+      "for",
+      "with",
+      "your",
+      "you",
+      "our",
+      "are",
+      "from",
+      "that",
+      "this",
+      "to",
+      "of",
+      "in",
+      "on",
+      "a",
+      "an",
+      "as",
+      "at",
+      "by",
+      "or",
+      "it",
+      "is",
+      "be",
+      "we",
+      "they",
+      "their",
+      "not",
+      "can",
+      "will",
+      "get",
+      "fast",
+      "track",
+      "local",
+      "lead",
+      "generation",
+      "ai",
+    ]);
+    const extractKeywords = (s: string, limit = 12) => {
+      const tokens = String(s ?? "")
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/g)
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 4 && !stop.has(t));
+      const freq = new Map<string, number>();
+      for (const t of tokens) freq.set(t, (freq.get(t) ?? 0) + 1);
+      return Array.from(freq.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([t]) => t)
+        .slice(0, limit);
+    };
+    const anchorKeywords = [
+      ...extractKeywords(scraped.title ?? "", 8),
+      ...extractKeywords(scraped.contentText.slice(0, 4000), 12),
+    ].filter(Boolean);
+
     const drLanding = await runWorkerAndPersist({
       organizationId,
       campaignId,
@@ -1131,6 +1189,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         "Return STRICT JSON: {headline,subheadline,benefits[4],steps[3],cta,lead_hook,trust}. No generic phrases.",
       prompt: buildLandingPageGeneratorUserPrompt({
         url: input.url,
+        content: scraped.contentText,
         goal: input.goal,
         audience: input.audience,
         trafficSource: input.trafficSource,
@@ -1157,6 +1216,12 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     if (banned.test(joined)) {
       throw new Error("Generic output detected — banned phrases present");
     }
+    if (anchorKeywords.length) {
+      const hit = anchorKeywords.some((k) => joined.toLowerCase().includes(k));
+      if (!hit) {
+        throw new Error("Generic output detected — not anchored to scraped content");
+      }
+    }
 
     // Landing variants (strict, derived from DR base; hard-fail if generic)
     const variantsOut = await runWorkerAndPersist({
@@ -1172,6 +1237,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         "Return STRICT JSON: {variants:[{variantKey,angle,headline,subheadline,ctaText,benefits[{title,description}],steps[{title,description}],trustLine,finalCTA{headline,subheadline,ctaText}}]}",
       prompt: buildLandingVariantsUserPrompt({
         url: input.url,
+        content: scraped.contentText,
         goal: input.goal,
         audience: input.audience,
         trafficSource: input.trafficSource,
@@ -1655,6 +1721,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
                   content_chars: scraped.contentChars,
                   prompt_dr: buildLandingPageGeneratorUserPrompt({
                     url: input.url,
+                    content: scraped.contentText,
                     goal: input.goal,
                     audience: input.audience,
                     trafficSource: input.trafficSource,
@@ -1662,6 +1729,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
                     funnelStrategy: null,
                   }),
                   response_dr: drLanding.output,
+                  content_excerpt: scraped.contentText.slice(0, 2000),
                 },
               },
             } as never,
