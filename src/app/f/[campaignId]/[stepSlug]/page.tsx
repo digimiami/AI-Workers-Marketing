@@ -142,11 +142,34 @@ function StructuredPage(props: {
     benefits.length >= 3 &&
     process.length >= 2;
 
+  console.info("[landing render] StructuredPage props", {
+    campaignId: props.campaignId,
+    funnelStepId: props.funnelStepId,
+    blocksCount: blocks.length,
+    blockTypes: blocks.map((b) => str(asRecord(b).type)).filter(Boolean),
+    headlinePreview: headline.slice(0, 80),
+    subheadlinePreview: subheadline.slice(0, 80),
+    ctaLabel,
+    benefitsCount: benefits.length,
+    processCount: process.length,
+    isValid,
+  });
+
   if (!isValid) {
     return (
-      <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
-        <div className="text-xl font-semibold tracking-tight">This landing page could not be generated. Please regenerate.</div>
-        <p className="mt-2 text-sm text-muted-foreground">The page content is missing or incomplete.</p>
+      <section className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6 backdrop-blur-xl md:p-8">
+        <div className="text-xl font-semibold tracking-tight">Landing page not generated. Regenerate.</div>
+        <p className="mt-2 text-sm text-amber-200/90">
+          {!headline.trim()
+            ? "Missing AI-generated headline."
+            : !subheadline.trim()
+              ? "Missing AI-generated subheadline."
+              : !ctaLabel.trim()
+                ? "Missing AI-generated CTA."
+                : benefits.length < 3
+                  ? `Only ${benefits.length} benefit(s) — need at least 3.`
+                  : `Only ${process.length} step(s) — need at least 2.`}
+        </p>
       </section>
     );
   }
@@ -159,10 +182,12 @@ function StructuredPage(props: {
 
         <div className="relative grid gap-8 lg:grid-cols-[1.25fr_0.75fr] lg:items-start">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
-              {props.campaignName || "Offer"}
-            </div>
+            {props.campaignName ? (
+              <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
+                {props.campaignName}
+              </div>
+            ) : null}
 
             <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-5xl">{headline}</h1>
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">{subheadline}</p>
@@ -178,24 +203,28 @@ function StructuredPage(props: {
               ) : null}
             </div>
 
-            <div className="mt-6 grid gap-2 sm:grid-cols-3">
-              {(
-                proofPoints.length
-                  ? proofPoints
-                  : benefits.length
-                    ? benefits.map((b) => b.title)
-                    : offerBullets.length
-                      ? offerBullets
-                      : [props.campaignName ? `${props.campaignName} — next steps` : "Clear next steps"]
-              )
-                .slice(0, 3)
-                .map((p) => (
-                <div key={p} className="rounded-2xl border border-border/60 bg-card/30 px-4 py-3 text-xs text-muted-foreground backdrop-blur-xl">
-                  <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-cyan-400/90 align-middle" />
-                  <span className="align-middle">{p}</span>
+            {(() => {
+              const ribbon = (proofPoints.length
+                ? proofPoints
+                : benefits.length
+                  ? benefits.map((b) => b.title)
+                  : offerBullets
+              ).slice(0, 3);
+              if (!ribbon.length) return null;
+              return (
+                <div className="mt-6 grid gap-2 sm:grid-cols-3">
+                  {ribbon.map((p) => (
+                    <div
+                      key={p}
+                      className="rounded-2xl border border-border/60 bg-card/30 px-4 py-3 text-xs text-muted-foreground backdrop-blur-xl"
+                    >
+                      <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-cyan-400/90 align-middle" />
+                      <span className="align-middle">{p}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
 
           <div className="rounded-3xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl md:p-6">
@@ -251,12 +280,10 @@ function StructuredPage(props: {
         </section>
       ) : null}
 
-      {offerBlock && (offerBullets.length || offerItems.length) ? (
+      {offerBlock && (offerBullets.length || offerItems.length) && str(offerBlock.title).trim() ? (
         <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Offer</div>
-          <div className="mt-2 text-2xl font-semibold tracking-tight">
-            {str(offerBlock.title) || "What you get"}
-          </div>
+          <div className="mt-2 text-2xl font-semibold tracking-tight">{str(offerBlock.title)}</div>
           {offerItems.length ? (
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {offerItems.slice(0, 6).map((it) => (
@@ -278,7 +305,7 @@ function StructuredPage(props: {
           ) : null}
           <div className="mt-6">
             <a href="#lead-form" className={buttonVariants({})}>
-              {ctaLabel || "Continue"}
+              {ctaLabel}
             </a>
           </div>
         </section>
@@ -300,7 +327,7 @@ function StructuredPage(props: {
             <div className="grid gap-3 md:grid-cols-2">
               {testimonials.slice(0, 4).map((t) => (
                 <div key={`${t.name}-${t.quote.slice(0, 24)}`} className="rounded-2xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl">
-                  <div className="text-sm font-semibold">{t.name || "Customer"}</div>
+                  {t.name ? <div className="text-sm font-semibold">{t.name}</div> : null}
                   {t.role ? <div className="mt-1 text-xs text-muted-foreground">{t.role}</div> : null}
                   <div className="mt-3 text-sm leading-relaxed text-muted-foreground">“{t.quote}”</div>
                 </div>
@@ -309,7 +336,7 @@ function StructuredPage(props: {
           ) : null}
           <div>
             <a href="#lead-form" className={buttonVariants({ variant: "outline" })}>
-              {ctaLabel || "Continue"}
+              {ctaLabel}
             </a>
           </div>
         </section>
@@ -336,7 +363,7 @@ function StructuredPage(props: {
                 ) : null}
                 <div className="mt-6">
                   <a href="#lead-form" className={buttonVariants({ variant: "outline" })}>
-                    {ctaLabel || "Continue"}
+                    {ctaLabel}
                   </a>
                 </div>
               </section>
@@ -358,20 +385,20 @@ function StructuredPage(props: {
           </div>
           <div className="mt-6">
             <a href="#lead-form" className={buttonVariants({})}>
-              {ctaLabel || "Continue"}
+              {ctaLabel}
             </a>
           </div>
         </section>
       ) : null}
 
-      {guaranteeBlock && (guaranteeTitle || guaranteeBody) ? (
+      {guaranteeBlock && guaranteeTitle.trim() ? (
         <section className="rounded-3xl border border-border/60 bg-gradient-to-r from-emerald-500/10 via-card to-cyan-500/10 p-6 md:p-8">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Risk reversal</div>
-          <div className="mt-2 text-2xl font-semibold tracking-tight">{guaranteeTitle || "Guarantee"}</div>
+          <div className="mt-2 text-2xl font-semibold tracking-tight">{guaranteeTitle}</div>
           {guaranteeBody ? <p className="mt-3 max-w-3xl text-sm leading-relaxed text-muted-foreground">{guaranteeBody}</p> : null}
           <div className="mt-6">
             <a href="#lead-form" className={buttonVariants({})}>
-              {ctaLabel || "Continue"}
+              {ctaLabel}
             </a>
           </div>
         </section>
@@ -390,7 +417,7 @@ function StructuredPage(props: {
           </div>
           <div>
             <a href="#lead-form" className={buttonVariants({})}>
-              {ctaLabel || "Continue"}
+              {ctaLabel}
             </a>
           </div>
         </section>
@@ -399,8 +426,12 @@ function StructuredPage(props: {
       <section id="lead-form" className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="text-2xl font-semibold tracking-tight">Get your next steps</div>
-            <p className="mt-2 text-sm text-muted-foreground">Enter your details and we’ll send the fastest path forward.</p>
+            <div className="text-2xl font-semibold tracking-tight">
+              {finalHeadline || (props.campaignName ? `Continue with ${props.campaignName}` : "Lead capture")}
+            </div>
+            {finalSubheadline ? (
+              <p className="mt-2 text-sm text-muted-foreground">{finalSubheadline}</p>
+            ) : null}
           </div>
           <div className="rounded-full border border-border/60 bg-muted/10 px-3 py-1 text-[11px] text-muted-foreground">
             Secure · Unsubscribe anytime
@@ -448,7 +479,7 @@ function StructuredPage(props: {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button className={cn(buttonVariants({}), "h-11 w-full justify-center md:w-auto")} type="submit">
-              {ctaLabel || "Continue"}
+              {ctaLabel}
             </button>
             <div className="text-xs text-muted-foreground">
               By continuing, you agree to receive messages related to this request.
@@ -457,26 +488,25 @@ function StructuredPage(props: {
         </form>
       </section>
 
-      <section className="rounded-3xl border border-border/60 bg-gradient-to-r from-cyan-500/10 via-card to-emerald-500/10 p-6 md:p-8">
-        <div className="text-2xl font-semibold tracking-tight">{finalHeadline || "Ready to take the next step?"}</div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {finalSubheadline || "Submit your details and we’ll send the fastest path forward."}
-        </p>
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <a href="#lead-form" className={buttonVariants({})}>{finalCtaLabel || ctaLabel}</a>
-          {props.nextHref ? (
-            <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
-              Continue without form
-            </Link>
-          ) : null}
-        </div>
-      </section>
+      {finalHeadline.trim() ? (
+        <section className="rounded-3xl border border-border/60 bg-gradient-to-r from-cyan-500/10 via-card to-emerald-500/10 p-6 md:p-8">
+          <div className="text-2xl font-semibold tracking-tight">{finalHeadline}</div>
+          {finalSubheadline ? <p className="mt-2 text-sm text-muted-foreground">{finalSubheadline}</p> : null}
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <a href="#lead-form" className={buttonVariants({})}>{finalCtaLabel || ctaLabel}</a>
+            {props.nextHref ? (
+              <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
+                Skip without submitting
+              </Link>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {hasInlineForm ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 p-3 md:hidden">
           <div className="pointer-events-auto mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-border/60 bg-background/90 p-3 shadow-lg backdrop-blur">
-            <div className="text-sm font-medium leading-tight">Ready to continue?</div>
-            <a href="#lead-form" className={cn(buttonVariants({}), "h-10")}>
+            <a href="#lead-form" className={cn(buttonVariants({}), "h-10 w-full justify-center")}>
               {ctaLabel}
             </a>
           </div>
@@ -530,60 +560,73 @@ export default async function PublicFunnelStepPage(props: {
       variant_id: pick("variant_id"),
     };
   })();
-  const wantsStructured = str(page.kind) === "structured";
+  // Landing steps are ALWAYS structured and ALWAYS sourced from landing_page_variants.
+  // Other step types may opt into structured rendering via metadata.page.kind === "structured".
+  const stepType = String((step as any).step_type ?? "");
+  const isLandingStep = stepType === "landing";
+  const wantsStructured = isLandingStep || str(page.kind) === "structured";
   const markdown = typeof page.markdown === "string" ? page.markdown : "";
 
-  // If structured, prefer rendering from landing_pages/bridge_pages blocks.
   let structuredBlocks: unknown = null;
   let debugMeta: Record<string, unknown> | null = null;
-  let renderSource: "variant" | "landing_page" | "step_meta" | "none" = "none";
+  let renderSource: "variant" | "bridge_page" | "step_meta" | "none" = "none";
   let renderVariantKey: string | null = null;
-  if (wantsStructured) {
-    if ((step as any).step_type === "landing") {
-      // 1) Source of truth: landing_page_variants (selected by query, then by selected flag).
-      const variantQuery = admin
-        .from("landing_page_variants" as never)
-        .select("id,variant_key,selected,content,updated_at")
-        .eq("organization_id", String((camp as any).organization_id))
-        .eq("campaign_id", String((camp as any).id))
-        .eq("funnel_step_id", String((step as any).id))
-        .order("updated_at", { ascending: false })
-        .limit(10);
-      const { data: variantRows } = await variantQuery;
-      const variantList = ((variantRows ?? []) as any[]) ?? [];
-      const matchedVariant =
-        (variantKey
-          ? variantList.find((r) => String(r.variant_key) === variantKey)
-          : null) ??
-        variantList.find((r) => Boolean(r.selected)) ??
-        variantList[0] ??
-        null;
-      if (matchedVariant && asRecord(matchedVariant.content).blocks) {
-        structuredBlocks = (asRecord(matchedVariant.content).blocks as unknown) ?? null;
-        renderSource = "variant";
-        renderVariantKey = String(matchedVariant.variant_key ?? "");
-      }
+  let landingFixReason: string | null = null;
+  let availableVariantKeys: string[] = [];
 
-      // 2) Fall back to legacy landing_pages snapshot only if no variant blocks exist.
-      if (!structuredBlocks) {
-        const { data: rows } = await admin
-          .from("landing_pages" as never)
-          .select("blocks,metadata,created_at")
-          .eq("funnel_step_id", String((step as any).id))
-          .eq("organization_id", String((camp as any).organization_id))
-          .order("created_at", { ascending: false })
-          .limit(10);
-        const match =
-          (rows ?? []).find((r: any) => (asRecord(r.metadata).variant_key as any) === variantKey) ??
-          (rows ?? [])[0];
-        structuredBlocks = match?.blocks ?? null;
-        debugMeta = match?.metadata ? asRecord(match.metadata) : null;
-        if (structuredBlocks) {
-          renderSource = "landing_page";
-          renderVariantKey = match ? String(asRecord(match.metadata).variant_key ?? "") : null;
-        }
-      }
-    } else if ((step as any).step_type === "bridge") {
+  if (isLandingStep) {
+    // STRICT: landing pages render ONLY from landing_page_variants.content.blocks.
+    // No fallback to landing_pages snapshot, no fallback to step.metadata.page templates.
+    const { data: variantRows } = await admin
+      .from("landing_page_variants" as never)
+      .select("id,variant_key,selected,content,updated_at")
+      .eq("organization_id", String((camp as any).organization_id))
+      .eq("campaign_id", String((camp as any).id))
+      .eq("funnel_step_id", String((step as any).id))
+      .order("updated_at", { ascending: false })
+      .limit(10);
+    const variantList = ((variantRows ?? []) as any[]) ?? [];
+    availableVariantKeys = variantList.map((r) => String(r.variant_key ?? "")).filter(Boolean);
+
+    const matchedVariant =
+      (variantKey ? variantList.find((r) => String(r.variant_key) === variantKey) : null) ??
+      variantList.find((r) => Boolean(r.selected)) ??
+      null;
+
+    const matchedContent = matchedVariant ? asRecord(matchedVariant.content) : null;
+    const matchedBlocks = matchedContent ? matchedContent.blocks : null;
+
+    console.info("[landing render] variant-lookup", {
+      campaignId,
+      stepId: String((step as any).id),
+      requestedVariant: variantKey ?? null,
+      availableVariantKeys,
+      matchedVariantKey: matchedVariant ? String(matchedVariant.variant_key ?? "") : null,
+      matchedHasBlocks: Boolean(matchedBlocks),
+      contentHeadline:
+        matchedContent && typeof matchedContent.headline === "string"
+          ? String(matchedContent.headline).slice(0, 120)
+          : null,
+    });
+
+    if (matchedBlocks && Array.isArray(matchedBlocks) && (matchedBlocks as unknown[]).length > 0) {
+      structuredBlocks = matchedBlocks;
+      renderSource = "variant";
+      renderVariantKey = String(matchedVariant!.variant_key ?? "");
+    } else {
+      // Pull the campaign's needs_generation_fix reason so we can show it.
+      const ge = ((((camp as { metadata?: unknown } | null)?.metadata ?? {}) as Record<string, unknown>)
+        .growth_engine ?? {}) as Record<string, unknown>;
+      const fix = (ge.landing_fix ?? null) as Record<string, unknown> | null;
+      landingFixReason =
+        (typeof ge.landing_status === "string" ? String(ge.landing_status) : null) === "needs_generation_fix"
+          ? String(fix?.reason ?? "missing_variants")
+          : variantList.length === 0
+            ? "missing_variants"
+            : "missing_variants";
+    }
+  } else if (wantsStructured) {
+    if (stepType === "bridge") {
       const { data: row } = await admin
         .from("bridge_pages" as never)
         .select("blocks,metadata")
@@ -592,7 +635,7 @@ export default async function PublicFunnelStepPage(props: {
         .maybeSingle();
       structuredBlocks = (row as any)?.blocks ?? null;
       debugMeta = (row as any)?.metadata ? asRecord((row as any).metadata) : null;
-      if (structuredBlocks) renderSource = "landing_page";
+      if (structuredBlocks) renderSource = "bridge_page";
     } else if (Array.isArray((page as any).blocks)) {
       structuredBlocks = (page as any).blocks;
       renderSource = "step_meta";
@@ -720,6 +763,33 @@ export default async function PublicFunnelStepPage(props: {
             sourcePage={`/f/${campaignId}/${stepSlug}`}
             nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
           />
+        ) : isLandingStep ? (
+          <section className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6 backdrop-blur-xl md:p-8">
+            <div className="text-xl font-semibold tracking-tight">Landing page not generated. Regenerate.</div>
+            <p className="mt-2 text-sm text-amber-200/90">
+              {landingFixReason === "scrape_failed"
+                ? "We couldn't read enough content from the source URL."
+                : landingFixReason === "model_unused"
+                  ? "The AI provider didn't return usable copy."
+                  : landingFixReason === "banned_phrase"
+                    ? "The generated copy contained banned generic phrases."
+                    : landingFixReason === "placeholder"
+                      ? "The generated copy contained scaffolding placeholder text."
+                      : landingFixReason === "not_anchored"
+                        ? "The generated copy wasn't anchored to the real brand or page content."
+                        : landingFixReason === "body_not_anchored"
+                          ? "The variant body copy wasn't anchored to the scraped page content."
+                          : "No AI-generated landing variants exist for this funnel step yet."}
+            </p>
+            {availableVariantKeys.length ? (
+              <p className="mt-3 text-xs text-amber-200/70">
+                Available variant keys: <span className="font-mono">{availableVariantKeys.join(", ")}</span>
+              </p>
+            ) : null}
+            <p className="mt-3 text-xs text-amber-200/70">
+              Open the workspace and click <span className="font-semibold">Regenerate</span> on the Landing variants card.
+            </p>
+          </section>
         ) : (
           <div className="space-y-4">
             {markdown ? (
@@ -728,7 +798,7 @@ export default async function PublicFunnelStepPage(props: {
               </div>
             ) : (
               <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
-                <div className="text-xl font-semibold tracking-tight">This landing page could not be generated. Please regenerate.</div>
+                <div className="text-xl font-semibold tracking-tight">This step has no content yet.</div>
                 <p className="mt-2 text-sm text-muted-foreground">No structured blocks were found for this step.</p>
               </section>
             )}

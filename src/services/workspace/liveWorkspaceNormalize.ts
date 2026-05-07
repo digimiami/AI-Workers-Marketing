@@ -83,13 +83,15 @@ export function normalizeLiveWorkspaceResults(rich: Record<string, unknown>): Li
     const L = asRecord(lRaw);
     const bullets = strArr(L.bullets);
     const headline = str(L.headline) || str(L.title);
-    if (headline || str(L.cta) || bullets.length) {
+    const ctaText = str(L.cta) || str(L.primaryCta);
+    // Only emit a landing when AI provided real headline+cta. No template fallbacks.
+    if (headline.trim() && ctaText.trim()) {
       landing = {
         id: L.id != null ? String(L.id) : null,
-        headline: headline || "Get More Qualified Leads with AI-Powered Marketing",
+        headline,
         subheadline: str(L.subheadline) || str(L.subtitle) || "",
         bullets,
-        ctaText: str(L.cta) || str(L.primaryCta) || "Get started",
+        ctaText,
         previewUrl: str(L.previewUrl) || str(L.preview_url) || undefined,
         origin: originFrom(lRaw),
       };

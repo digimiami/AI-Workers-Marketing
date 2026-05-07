@@ -110,11 +110,13 @@ export function buildLandingStreamPayload(lp: Record<string, unknown> | null | u
   const headline = str(lp.display_headline) || str(lp.title) || "";
   const sub = str(lp.display_subheadline) || str(lp.description) || "";
   const cta = str(lp.primary_cta_label) || firstCtaFromBlocks(lp.blocks);
+  // Only return a payload when real AI-generated headline + cta exist. No template fallbacks.
+  if (!headline.trim() || !cta.trim()) return null;
   return {
     id: str(lp.id) || null,
     headline,
     subheadline: sub,
-    cta: cta || "Get started",
+    cta,
     title: str(lp.title) || headline,
   };
 }

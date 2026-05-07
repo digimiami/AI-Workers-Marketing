@@ -1440,89 +1440,20 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         "Return JSON with keys: url_analysis{business_type,target_audience,main_offer,tone,classification}, funnel{type,steps[]}, landing_variants[3]{variantKey,angle,headline,subheadline,ctaText,benefits[{title,description}],steps[{title,description}],trustLine,finalCTA{headline,subheadline,ctaText}}, bridge{headline,subheadline,cta,sections[]}, thank_you{headline,subheadline,cta,sections[]}. landing_variants.variantKey must be exactly: direct_response, premium_trust, speed_convenience. sections[] items remain flexible blocks for bridge/thank_you.",
       prompt:
         `Build a universal funnel package for URL=${input.url}.\nGoal=${input.goal}.\nAudience=${input.audience}.\nTraffic=${input.trafficSource}.\n\nRules:\n- Do NOT hardcode any niche.\n- First analyze the URL to infer business type, offer, tone, and classification (service/SaaS/ecommerce/affiliate/info product).\n- Choose an appropriate funnel type + step sequence.\n- Produce 3 landing variants: problem-focused, benefit-focused, urgency/offer.\n- Output structured JSON only.`,
+      // EMPTY FALLBACK: never inject template marketing copy. If the AI provider returns nothing,
+      // downstream code marks the campaign as needs_generation_fix instead of writing fake variants.
       fallback: {
         url_analysis: {
-          business_type: "Unknown",
-          target_audience: input.audience,
-          main_offer: input.goal,
-          tone: "Clear, helpful",
-          classification: input.mode === "affiliate" ? "affiliate" : "service",
+          business_type: "",
+          target_audience: "",
+          main_offer: "",
+          tone: "",
+          classification: "",
         },
-        funnel: { type: "lead_gen", steps: ["landing", "bridge", "form", "cta", "thank_you", "email_trigger"] },
-        landing_variants: [
-          {
-            variantKey: "direct_response",
-            angle: "direct_response",
-            headline: input.goal,
-            subheadline: `For ${input.audience}`,
-            ctaText: "Get started",
-            benefits: [
-              { title: "Clear outcome", description: `Moves you toward ${input.goal} without guesswork.` },
-              { title: "Fast filtering", description: "Skips irrelevant options so you don’t waste time." },
-              { title: "Simple next step", description: "Shows exactly what to do after you opt in." },
-              { title: "Aligned messaging", description: "Matches what you clicked so the page feels consistent." },
-            ],
-            steps: [
-              { title: "Tell us what you need", description: "Answer a few specifics tied to your situation." },
-              { title: "See best-fit options", description: "We narrow choices to what actually matches." },
-              { title: "Take action", description: "Book, register, or continue with the next step." },
-            ],
-            trustLine: "Built for speed and clarity — not hype.",
-            finalCTA: { headline: "Ready to move forward?", subheadline: "Take the next step now.", ctaText: "Continue" },
-          },
-          {
-            variantKey: "premium_trust",
-            angle: "premium_trust",
-            headline: input.goal,
-            subheadline: `For ${input.audience}`,
-            ctaText: "Get started",
-            benefits: [
-              { title: "Proof-first framing", description: "Explains how the solution works before asking for commitment." },
-              { title: "Risk clarity", description: "Addresses what could go wrong and how it’s prevented." },
-              { title: "Transparent expectations", description: "States timelines and requirements plainly." },
-              { title: "Confident positioning", description: "Sounds premium without vague superlatives." },
-            ],
-            steps: [
-              { title: "Understand the approach", description: "Learn the method behind the outcome." },
-              { title: "Validate fit", description: "Confirm this matches your constraints and priorities." },
-              { title: "Proceed with confidence", description: "Choose the next step when it feels right." },
-            ],
-            trustLine: "Clear process. No mystery mechanics.",
-            finalCTA: { headline: "If this fits your situation…", subheadline: "Continue with the safest next step.", ctaText: "Continue" },
-          },
-          {
-            variantKey: "speed_convenience",
-            angle: "speed_convenience",
-            headline: input.goal,
-            subheadline: `For ${input.audience}`,
-            ctaText: "Get started",
-            benefits: [
-              { title: "Less back-and-forth", description: "Fewer steps between interest and progress." },
-              { title: "Fast scheduling path", description: "Gets you to the action item quickly." },
-              { title: "Mobile-friendly clarity", description: "Works cleanly on phones where ads are clicked." },
-              { title: "Minimal friction", description: "Only asks what’s needed to qualify you." },
-            ],
-            steps: [
-              { title: "Submit the essentials", description: "Small input set so you can finish fast." },
-              { title: "Instant routing", description: "You’re guided to the correct next step automatically." },
-              { title: "Confirm & go", description: "Receive what you need without delay." },
-            ],
-            trustLine: "Built for fast clicks and faster follow-through.",
-            finalCTA: { headline: "Do this in minutes", subheadline: "Keep momentum from the ad click.", ctaText: "Continue" },
-          },
-        ],
-        bridge: {
-          headline: "Here’s the plan",
-          subheadline: "A quick overview of what happens next.",
-          cta: "Continue",
-          sections: [{ type: "steps", title: "Next steps", bullets: ["Step 1", "Step 2", "Step 3"] }],
-        },
-        thank_you: {
-          headline: "You're in",
-          subheadline: "Check your inbox for next steps.",
-          cta: "Back to start",
-          sections: [{ type: "next_steps", title: "Next", bullets: ["Watch for email", "Save this link"] }],
-        },
+        funnel: { type: "", steps: [] as string[] },
+        landing_variants: [] as unknown[],
+        bridge: { headline: "", subheadline: "", cta: "", sections: [] as unknown[] },
+        thank_you: { headline: "", subheadline: "", cta: "", sections: [] as unknown[] },
       },
     });
 
@@ -1688,20 +1619,22 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
           ? (asRecord(pageDesigner.output).landing_variants as unknown[])
           : [];
       const variants = variantsRaw.length ? variantsRaw.slice(0, 3).map((v) => asRecord(v)) : [];
-      const normalizedVariants =
-        variants.length > 0
-          ? variants
-          : [
-              {
-                variantKey: "direct_response",
-                headline: input.goal,
-                subheadline: `For ${input.audience}`,
-                ctaText: "Get started",
-                benefits: [],
-                steps: [],
-                sections: [{ type: "benefits", title: "Benefits", bullets: [] }],
-              },
-            ];
+      // STRICT: if the AI returned no variants, do not synthesize template copy.
+      // Mark the campaign as needs_generation_fix and skip the variant writer below.
+      const normalizedVariants = variants;
+      if (normalizedVariants.length === 0) {
+        await markCampaignNeedsLandingFix({
+          admin,
+          organizationId,
+          campaignId,
+          reason: "model_unused",
+          detail: "Universal funnel: AI returned zero landing_variants",
+        });
+        console.error("[landing] universal-funnel-empty-variants", {
+          campaignId,
+          message: "AI provider returned no landing variants; campaign marked needs_generation_fix",
+        });
+      }
 
       const toBlocks = (v: Record<string, unknown>) => {
         const sections = Array.isArray(v.sections) ? (v.sections as unknown[]).map((s) => asRecord(s)) : [];
@@ -1758,8 +1691,8 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
               ? String((v as any).trust)
               : "";
 
-        const headline = typeof v.headline === "string" ? v.headline : input.goal;
-        const subheadline = typeof v.subheadline === "string" ? v.subheadline : `For ${input.audience}`;
+        const headline = typeof v.headline === "string" ? v.headline : "";
+        const subheadline = typeof v.subheadline === "string" ? v.subheadline : "";
         const cta =
           typeof v.ctaText === "string"
             ? v.ctaText
@@ -1767,7 +1700,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
               ? String((v as any).cta)
               : typeof v.cta === "string"
                 ? v.cta
-                : "Continue";
+                : "";
 
         const blocks: unknown[] = [
           {
@@ -1873,8 +1806,24 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
             : typeof (v as any).key === "string"
               ? String((v as any).key)
               : "variant";
-        const title = typeof v.headline === "string" ? v.headline : `Landing · ${input.goal}`;
-        const desc = typeof v.subheadline === "string" ? v.subheadline : `Landing page for ${input.audience}`;
+        const headlineRaw = typeof v.headline === "string" ? v.headline.trim() : "";
+        const ctaRaw =
+          typeof (v as any).ctaText === "string"
+            ? String((v as any).ctaText).trim()
+            : typeof (v as any).cta === "string"
+              ? String((v as any).cta).trim()
+              : "";
+        // STRICT: refuse to write any landing variant without a real AI headline + cta.
+        if (!headlineRaw || !ctaRaw) {
+          console.warn("[landing] universal-funnel-skip-variant", {
+            campaignId,
+            variantKey: key,
+            reason: !headlineRaw ? "missing-headline" : "missing-cta",
+          });
+          continue;
+        }
+        const title = headlineRaw;
+        const desc = typeof v.subheadline === "string" ? v.subheadline : "";
         const blocks = toBlocks(v);
         const { data: lp, error: lpErr } = await admin
           .from("landing_pages" as never)
@@ -1937,14 +1886,9 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
               variant_key: key,
               angle,
               content: {
-                headline: typeof v.headline === "string" ? v.headline : input.goal,
-                subheadline: typeof v.subheadline === "string" ? v.subheadline : `For ${input.audience}`,
-                ctaText:
-                  typeof (v as any).ctaText === "string"
-                    ? String((v as any).ctaText)
-                    : typeof (v as any).cta === "string"
-                      ? String((v as any).cta)
-                      : "Get started",
+                headline: headlineRaw,
+                subheadline: desc,
+                ctaText: ctaRaw,
                 benefits: Array.isArray((v as any).benefits) ? (v as any).benefits : [],
                 steps: Array.isArray((v as any).steps) ? (v as any).steps : [],
                 trustLine: typeof (v as any).trustLine === "string" ? String((v as any).trustLine) : "",

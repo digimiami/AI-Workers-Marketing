@@ -17,8 +17,9 @@ export type LandingCardData = {
 
 export function LandingCard(props: { data?: unknown; campaignId: string | null; className?: string }) {
   const d = (props.data && typeof props.data === "object" ? props.data : {}) as LandingCardData;
-  if (!d.headline && !d.title && !d.cta) return null;
-  const headline = d.headline || d.title || "Landing";
+  // STRICT: render nothing unless AI produced a real headline. No "Landing" / template defaults.
+  const headline = (d.headline || d.title || "").trim();
+  if (!headline) return null;
   return (
     <Card
       className={cn(

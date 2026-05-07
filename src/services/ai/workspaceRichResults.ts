@@ -107,27 +107,10 @@ export function buildLandingRichPayload(bundle: WorkspaceDisplayBundle | null) {
       updatedAt: str(lp.updated_at) || str(lp.created_at),
     };
   }
-  const c = bundle?.campaign;
-  if (!c) return null;
-  const meta = asRecord(c.metadata);
-  const ls = asRecord(meta.landing_settings);
-  const headline = str(ls.meta_title) || (str(c.name) ? `${str(c.name)} — ${str(c.description).slice(0, 72)}` : "");
-  const sub = str(ls.meta_description) || str(c.description).slice(0, 200);
-  const cta = str(ls.cta_button_text);
-  if (!headline && !cta && !str(ls.landing_url)) return null;
-  return {
-    id: null as string | null,
-    headline: headline || str(c.name) || "Landing",
-    subheadline: sub,
-    cta: cta || "Get started",
-    title: headline || str(c.name),
-    bullets: [] as string[],
-    leadMagnetTitle: str(meta.lead_magnet_title) || undefined,
-    primaryCta: cta || "Get started",
-    previewUrl: str(ls.landing_url) || undefined,
-    source: "metadata" as const,
-    updatedAt: str(c.updated_at),
-  };
+  // INTENTIONAL: only return real AI-generated landing data. Do NOT synthesize a "metadata"
+  // landing from campaign.name/description/landing_settings — that produced template copy
+  // ("Get More Qualified Leads with AI-Powered Marketing", etc.) instead of real AI output.
+  return null;
 }
 
 export function buildResearchRichPayload(bundle: WorkspaceDisplayBundle | null) {
@@ -571,20 +554,10 @@ export function mergeLiveBuildDefaults(
     };
   }
 
-  const L = asRecord(out.landing);
-  if (!str(L.headline) && !str(L.title) && (goal || audience || hint)) {
-    const homeish = /home|buyer|house|mortgage/i.test(`${audience} ${goal} ${hint}`);
-    out.landing = {
-      headline: homeish
-        ? "Get Your Free Home Buyer Strategy Today"
-        : "Get More Qualified Leads with AI-Powered Marketing",
-      subheadline: goal || `Built from ${hint || "your URL"}`,
-      cta: str(L.cta) || str(L.primaryCta) || "Get my strategy",
-      bullets: Array.isArray(L.bullets) && (L.bullets as unknown[]).length ? L.bullets : [audience ? `Guidance tailored to ${audience}` : "Guidance tailored to your market", traffic ? `Channels: ${traffic}` : "Multi-channel ready"],
-      source: str(L.source) || "live_preview",
-      ...L,
-    };
-  }
+  // INTENTIONAL: do NOT synthesize a fake landing during live preview.
+  // The landing page must come from landing_page_variants.content via the AI pipeline.
+  // If no real landing has been generated yet, leave out.landing as-is (null/empty)
+  // so the UI surfaces the "needs regeneration" state instead of placeholder marketing copy.
 
   const C = asRecord(out.content);
   const items = Array.isArray(C.items) ? (C.items as unknown[]) : [];
