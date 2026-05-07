@@ -49,6 +49,7 @@ export function buildLandingVariantsUserPrompt(input: {
         "formFields must be a subset ordered from [email,name,phone,company] (practical for paid traffic).",
         "psychologicalTrigger must name the persuasion pattern in plain language (no manipulation tactics).",
         "Avoid generic phrases; anchor copy to the specific brand/product language found in content_excerpt.",
+        "Unless the URL is aiworkers.vip or aiworkers.com, never name or promote AiWorkers — write for the business at the URL.",
       ],
     },
     null,

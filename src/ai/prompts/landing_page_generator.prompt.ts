@@ -52,6 +52,7 @@ export function buildLandingPageGeneratorUserPrompt(input: {
           "generic phrases like 'unlock your dream', 'step into your future' unless URL context explicitly supports it",
           "vague claims without mechanism",
           "generic phrases like 'boost your business', 'limited time offer', 'AI solutions', 'grow faster' (rewrite if detected)",
+          "Unless the URL hostname is aiworkers.vip (or aiworkers.com), do NOT name or promote 'AiWorkers' — write for the business at the provided URL only.",
         ],
       },
       required_json_shape: {

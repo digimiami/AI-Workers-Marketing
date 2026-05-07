@@ -126,7 +126,86 @@ export const LANDING_BANNED_SUBSTRINGS = [
   "experience the convenience",
   "leverage powerful tools",
   "without the hassle",
+  "transform your marketing",
+  "transform your marketing with",
+  "ai-driven workforce",
+  "ai driven workforce",
+  "rapid growth and efficiency",
+  "schedule your free consultation",
+  "free consultation now",
+  "automated workflows",
+  "optimized advertising",
+  "optimized advertising spend",
+  "data-driven insights",
+  "data driven insights",
+  "without the need for extensive resources",
+  "discover opportunities",
+  "architect your funnel",
+  "produce and publish",
+  "score angles and offers",
+  "ship content on schedule",
 ];
+
+/** Stopwords for keyword frequency extraction (URL/title anchoring). */
+export const LANDING_FREQ_STOPWORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "your",
+  "you",
+  "our",
+  "are",
+  "from",
+  "that",
+  "this",
+  "to",
+  "of",
+  "in",
+  "on",
+  "a",
+  "an",
+  "as",
+  "at",
+  "by",
+  "or",
+  "it",
+  "is",
+  "be",
+  "we",
+  "they",
+  "their",
+  "not",
+  "can",
+  "will",
+  "get",
+  "fast",
+  "track",
+  "local",
+  "lead",
+  "generation",
+  "ai",
+]);
+
+/**
+ * True when the campaign URL is our own product/marketing site (allowed to say “AiWorkers”).
+ */
+export function isSelfBrandCampaignUrl(url: string): boolean {
+  try {
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    const host = new URL(normalized).hostname.replace(/^www\./i, "").toLowerCase();
+    if (host === "localhost" || host.startsWith("127.0.0.1")) return true;
+    if (host.endsWith(".vercel.app")) return true;
+    return /\.aiworkers\.(vip|com|io)$/i.test(host) || host === "aiworkers.vip" || host === "aiworkers.com";
+  } catch {
+    return false;
+  }
+}
+
+/** Marketing copy that names our platform (reject on client-site campaigns). */
+export function mentionsAiWorkersPlatform(text: string): boolean {
+  return /\bai[\s-]*workers\b/i.test(text);
+}
 
 /**
  * Tokens that are unmistakable scaffolding placeholders left over from templating.
@@ -231,13 +310,22 @@ export function findBannedSubstring(text: string): string | null {
 
 export type LandingVariantQuality =
   | { ok: true }
-  | { ok: false; reason: "missing_fields" | "too_short" | "banned_phrase" | "placeholder"; detail?: string };
+  | { ok: false; reason: "missing_fields" | "too_short" | "banned_phrase" | "placeholder" | "not_anchored"; detail?: string };
+
+export type LandingVariantQualityCtx = {
+  campaignUrl: string;
+  scrapedTitle?: string | null;
+  scrapedContentPrefix?: string;
+};
 
 /**
  * Variant-level quality gate used at the DB-save boundary in /api/growth/landing-variants
  * and other regen paths. Rejects empty/sentinel/AI-fallback content before it reaches the renderer.
  */
-export function validateLandingVariantQuality(content: Record<string, unknown>): LandingVariantQuality {
+export function validateLandingVariantQuality(
+  content: Record<string, unknown>,
+  ctx?: LandingVariantQualityCtx,
+): LandingVariantQuality {
   const headline = String(content?.headline ?? "").trim();
   const subheadline = String(content?.subheadline ?? "").trim();
   const cta =
@@ -271,12 +359,54 @@ export function validateLandingVariantQuality(content: Record<string, unknown>):
       return `${String(r.title ?? "")} ${String(r.description ?? r.desc ?? "")}`;
     })
     .join(" ");
-  const haystack = [headline, subheadline, cta, benefitText, stepText].join(" ");
+    const trustLine = typeof (content as { trustLine?: unknown }).trustLine === "string" ? String((content as { trustLine?: unknown }).trustLine) : "";
+    const finalCtaRaw = (content as { finalCTA?: unknown }).finalCTA;
+    const finalCta =
+      finalCtaRaw && typeof finalCtaRaw === "object" && !Array.isArray(finalCtaRaw)
+        ? (finalCtaRaw as Record<string, unknown>)
+        : {};
+    const finalHead = typeof finalCta.headline === "string" ? finalCta.headline : "";
+    const finalSub = typeof finalCta.subheadline === "string" ? finalCta.subheadline : "";
+    const finalCtaText = typeof finalCta.ctaText === "string" ? String(finalCta.ctaText) : "";
+
+    const haystack = [headline, subheadline, cta, benefitText, stepText, trustLine, finalHead, finalSub, finalCtaText].join(" ");
 
   const placeholder = findPlaceholderText(haystack);
   if (placeholder) return { ok: false, reason: "placeholder", detail: placeholder };
   const banned = LANDING_BANNED_SUBSTRINGS.find((p) => haystack.toLowerCase().includes(p.toLowerCase()));
   if (banned) return { ok: false, reason: "banned_phrase", detail: banned };
+
+  if (ctx?.campaignUrl) {
+    if (!isSelfBrandCampaignUrl(ctx.campaignUrl) && mentionsAiWorkersPlatform(haystack)) {
+      return {
+        ok: false,
+        reason: "banned_phrase",
+        detail: "AiWorkers platform copy is not allowed when the campaign URL is a client site",
+      };
+    }
+    const hostBrand = hostBrandFromUrl(ctx.campaignUrl);
+    const title = ctx.scrapedTitle ?? "";
+    const prefix = ctx.scrapedContentPrefix ?? "";
+    const strong = strongTitleAnchors(title, LANDING_FREQ_STOPWORDS);
+    if (!isSelfBrandCampaignUrl(ctx.campaignUrl) && (hostBrand || strong.length)) {
+      if (!isHeroAnchored({ headline, subheadline, hostBrand, strongTitleTokens: strong })) {
+        return {
+          ok: false,
+          reason: "not_anchored",
+          detail: `Headline/subheadline must reference the client site or page (e.g. "${hostBrand ?? strong[0] ?? "brand"}")`,
+        };
+      }
+      const bodyBits = [cta, benefitText, stepText].join(" ").toLowerCase();
+      const bodyKeys = specificPageKeywords(title, prefix.slice(0, 4000), LANDING_FREQ_STOPWORDS, 16);
+      if (bodyKeys.length && !bodyKeys.some((k) => bodyBits.includes(k.toLowerCase()))) {
+        return {
+          ok: false,
+          reason: "not_anchored",
+          detail: "Benefits/steps must include at least one concrete term from the scraped page",
+        };
+      }
+    }
+  }
 
   return { ok: true };
 }

@@ -177,7 +177,11 @@ export async function regenerateLandingVariantsForCampaign(params: {
           : "",
       regenerated_at: now,
     };
-    const verdict = validateLandingVariantQuality(content);
+    const verdict = validateLandingVariantQuality(content, {
+      campaignUrl: finalUrl,
+      scrapedTitle: scrapedTitle,
+      scrapedContentPrefix: scrapedContent,
+    });
     if (!verdict.ok) {
       rejections.push({ key, reason: verdict.reason, detail: verdict.detail });
       continue;
@@ -199,7 +203,9 @@ export async function regenerateLandingVariantsForCampaign(params: {
         ? "banned_phrase"
         : first?.reason === "placeholder"
           ? "placeholder"
-          : "invalid_shape";
+          : first?.reason === "not_anchored"
+            ? "not_anchored"
+            : "invalid_shape";
     await markCampaignNeedsLandingFix({
       admin,
       organizationId,
@@ -217,7 +223,9 @@ export async function regenerateLandingVariantsForCampaign(params: {
           ? `Generic phrase "${first.detail}" detected — refusing to publish placeholder copy.`
           : first?.reason === "placeholder"
             ? `Placeholder text "${first.detail}" detected — refusing to publish scaffolding copy.`
-            : "AI output failed quality gates — landing variants were not updated.",
+            : first?.reason === "not_anchored"
+              ? `Copy is not anchored to the client URL/page: ${first.detail ?? "fix headline and benefits"}.`
+              : "AI output failed quality gates — landing variants were not updated.",
     };
   }
 

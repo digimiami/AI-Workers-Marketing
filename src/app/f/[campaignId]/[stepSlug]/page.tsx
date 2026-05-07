@@ -22,6 +22,15 @@ function strArr(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
+/** Hide raw goal+traffic strings used as campaign names (e.g. "AFFILIATE · ADWORDS · …"). */
+function looksLikeRawCampaignTags(name: string): boolean {
+  const n = name.trim();
+  if (!n) return false;
+  if (n.includes(" · ") && n.length > 32) return true;
+  if (/^(AFFILIATE|ADWORDS|GOOGLE|META|FACEBOOK|PAID\s+SOCIAL)\b/i.test(n)) return true;
+  return false;
+}
+
 function markdownToText(md: string) {
   // Minimal markdown to text for MVP rendering without adding new deps.
   return String(md ?? "")
@@ -142,19 +151,6 @@ function StructuredPage(props: {
     benefits.length >= 3 &&
     process.length >= 2;
 
-  console.info("[landing render] StructuredPage props", {
-    campaignId: props.campaignId,
-    funnelStepId: props.funnelStepId,
-    blocksCount: blocks.length,
-    blockTypes: blocks.map((b) => str(asRecord(b).type)).filter(Boolean),
-    headlinePreview: headline.slice(0, 80),
-    subheadlinePreview: subheadline.slice(0, 80),
-    ctaLabel,
-    benefitsCount: benefits.length,
-    processCount: process.length,
-    isValid,
-  });
-
   if (!isValid) {
     return (
       <section className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6 backdrop-blur-xl md:p-8">
@@ -182,7 +178,7 @@ function StructuredPage(props: {
 
         <div className="relative grid gap-8 lg:grid-cols-[1.25fr_0.75fr] lg:items-start">
           <div>
-            {props.campaignName ? (
+            {props.campaignName && !looksLikeRawCampaignTags(props.campaignName) ? (
               <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
                 {props.campaignName}
@@ -427,7 +423,7 @@ function StructuredPage(props: {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="text-2xl font-semibold tracking-tight">
-              {finalHeadline || (props.campaignName ? `Continue with ${props.campaignName}` : "Lead capture")}
+              {finalHeadline.trim() ? finalHeadline : "Get your next steps"}
             </div>
             {finalSubheadline ? (
               <p className="mt-2 text-sm text-muted-foreground">{finalSubheadline}</p>

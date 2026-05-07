@@ -12,7 +12,10 @@ import {
   findBannedSubstring,
   hostBrandFromUrl,
   isHeroAnchored,
+  isSelfBrandCampaignUrl,
+  LANDING_FREQ_STOPWORDS,
   markCampaignNeedsLandingFix,
+  mentionsAiWorkersPlatform,
   specificPageKeywords,
   strongTitleAnchors,
   type LandingFixReason,
@@ -1126,51 +1129,12 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     });
 
     // ---------------- Direct-response landing generator (strict JSON, hard-fail on generic output) ----------------
-    const stop = new Set([
-      "the",
-      "and",
-      "for",
-      "with",
-      "your",
-      "you",
-      "our",
-      "are",
-      "from",
-      "that",
-      "this",
-      "to",
-      "of",
-      "in",
-      "on",
-      "a",
-      "an",
-      "as",
-      "at",
-      "by",
-      "or",
-      "it",
-      "is",
-      "be",
-      "we",
-      "they",
-      "their",
-      "not",
-      "can",
-      "will",
-      "get",
-      "fast",
-      "track",
-      "local",
-      "lead",
-      "generation",
-      "ai",
-    ]);
     const hostBrand = hostBrandFromUrl(input.url);
-    const strongTitleTokens = strongTitleAnchors(scraped.title, stop);
+    const strongTitleTokens = strongTitleAnchors(scraped.title, LANDING_FREQ_STOPWORDS);
     const bodyAnchorKeywords = specificPageKeywords(
       scraped.title ?? "",
       scraped.contentText.slice(0, 4000),
-      stop,
+      LANDING_FREQ_STOPWORDS,
       16,
     );
 
@@ -1184,7 +1148,10 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       const drHook = String(dr.lead_hook ?? "").trim();
       const drTrust = String(dr.trust ?? "").trim();
       const joined = [drHeadline, drSub, drCta, drHook, drTrust, ...drBenefits, ...drSteps].join(" ");
-      const bannedMatch = findBannedSubstring(joined);
+      let bannedMatch = findBannedSubstring(joined);
+      if (!bannedMatch && !isSelfBrandCampaignUrl(input.url) && mentionsAiWorkersPlatform(joined)) {
+        bannedMatch = "ai_workers_platform_on_client_campaign";
+      }
       const heroAnchored = isHeroAnchored({
         headline: drHeadline,
         subheadline: drSub,
@@ -1204,6 +1171,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         bannedMatch,
         joined,
         drHeadline,
+        drSub,
         drCta,
       };
     };
@@ -1249,7 +1217,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
           : reason === "placeholder"
             ? `Placeholder text detected — "${detail}"`
             : reason === "not_anchored"
-              ? "Generic output detected — not anchored to scraped content"
+              ? `Generic output detected — not anchored to scraped content${detail ? `: ${detail}` : ""}`
               : reason === "model_unused"
                 ? "Landing generation failed — model output not used"
                 : "AI output invalid";
@@ -1286,7 +1254,9 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       });
       const rule =
         reason === "banned_phrase" && verdict.bannedMatch
-          ? `You included the banned generic phrase "${verdict.bannedMatch}". Rewrite the JSON to remove it and replace with specific language from content_excerpt. Do NOT include that phrase anywhere.`
+          ? verdict.bannedMatch === "ai_workers_platform_on_client_campaign"
+            ? `The campaign URL is a CLIENT website, not AiWorkers. Remove ALL references to "AiWorkers". Headline and subheadline MUST include "${hostBrand ?? "the hostname brand"}" or a distinctive product/person name from content_excerpt.`
+            : `You included the banned generic phrase "${verdict.bannedMatch}". Rewrite the JSON to remove it and replace with specific language from content_excerpt. Do NOT include that phrase anywhere.`
           : reason === "not_anchored"
             ? `Your headline/subheadline must mention the real brand from the URL (use "${hostBrand ?? "brand from URL"}") OR a distinctive product name from content_excerpt. Do not write generic "local business + AI" templates.`
             : "Rewrite to fully comply with required_json_shape and constraints. Use concrete, specific language from content_excerpt.";
@@ -1304,7 +1274,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
 
     if (!verdict.validShape) await failLanding("invalid_shape", "missing required fields after retries");
     if (verdict.bannedMatch) await failLanding("banned_phrase", String(verdict.bannedMatch));
-    if (!verdict.anchored) await failLanding("not_anchored", verdict.drHeadline || "(no headline)");
+    if (!verdict.anchored) await failLanding("not_anchored", `${verdict.drHeadline} / ${verdict.drSub ?? ""}`.trim());
 
     const variantTextsJoined = (v: Record<string, unknown>) => {
       const bits: string[] = [];
@@ -1326,7 +1296,10 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       for (const raw of varsRaw) {
         const v = asRecord(raw);
         const joined = variantTextsJoined(v);
-        const bannedMatch = findBannedSubstring(joined);
+        let bannedMatch = findBannedSubstring(joined);
+        if (!bannedMatch && !isSelfBrandCampaignUrl(input.url) && mentionsAiWorkersPlatform(joined)) {
+          bannedMatch = "ai_workers_platform_on_client_campaign";
+        }
         if (bannedMatch) return { ok: false as const, reason: "banned", bannedMatch, variantKey: String(v.variantKey ?? "") };
         const hl = String(v.headline ?? "").trim();
         const sub = String(v.subheadline ?? "").trim();
@@ -1386,7 +1359,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         reason === "banned_phrase"
           ? `Generic output detected in variants — banned phrases present: "${detail}"`
           : reason === "not_anchored"
-            ? "Generic output detected — variant headlines not anchored to the real brand/page"
+            ? `Generic output detected — variant headlines not anchored to the real brand/page${detail ? `: ${detail}` : ""}`
             : reason === "body_not_anchored"
               ? "Generic output detected — variant body copy not anchored to scraped content"
               : reason === "model_unused"
@@ -1404,7 +1377,9 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       if (variantsVerdict.ok) break;
       const rule =
         variantsVerdict.reason === "banned"
-          ? `Remove generic phrase "${variantsVerdict.bannedMatch}" from ALL variants. Use wording grounded in content_excerpt only. Every headline/subheadline must include "${hostBrand}" or a distinctive product term from the page.`
+          ? variantsVerdict.bannedMatch === "ai_workers_platform_on_client_campaign"
+            ? `CLIENT URL — remove ALL "AiWorkers" references from every variant. Headlines/subheadlines MUST name "${hostBrand ?? "the client brand"}" or a person/product from content_excerpt. Bodies must use concrete terms from content_excerpt.`
+            : `Remove generic phrase "${variantsVerdict.bannedMatch}" from ALL variants. Use wording grounded in content_excerpt only. Every headline/subheadline must include "${hostBrand}" or a distinctive product term from the page.`
           : variantsVerdict.reason === "not_anchored"
             ? `Each variant headline+subheadline must include the brand "${hostBrand}" or a distinctive term from the page title. No generic "local business + AI" copy.`
             : `Each variant body (benefits/steps/trust) must reference at least one concrete term from content_excerpt (product, place, program, service line). Variant: ${variantsVerdict.variantKey}.`;
