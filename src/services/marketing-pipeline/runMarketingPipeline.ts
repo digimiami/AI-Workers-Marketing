@@ -8,6 +8,13 @@ import { runWorkerAndPersist } from "@/services/marketing-pipeline/workerRunner"
 import { scrapeUrlTextOrThrow } from "@/services/web/scrapeUrlText";
 import { buildLandingPageGeneratorUserPrompt } from "@/ai/prompts/landing_page_generator.prompt";
 import { buildLandingVariantsUserPrompt } from "@/ai/prompts/landing_variants.prompt";
+import {
+  findBannedSubstring,
+  hostBrandFromUrl,
+  isHeroAnchored,
+  specificPageKeywords,
+  strongTitleAnchors,
+} from "@/services/marketing-pipeline/landingCopyGuards";
 
 import {
   marketingPipelineStageKeySchema,
@@ -1117,7 +1124,6 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     });
 
     // ---------------- Direct-response landing generator (strict JSON, hard-fail on generic output) ----------------
-    const banned = /\b(boost your business|limited time offer|ai solutions|grow faster|unlock your dream|step into your future)\b/i;
     const stop = new Set([
       "the",
       "and",
@@ -1157,24 +1163,14 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       "generation",
       "ai",
     ]);
-    const extractKeywords = (s: string, limit = 12) => {
-      const tokens = String(s ?? "")
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, " ")
-        .split(/\s+/g)
-        .map((t) => t.trim())
-        .filter((t) => t.length >= 4 && !stop.has(t));
-      const freq = new Map<string, number>();
-      for (const t of tokens) freq.set(t, (freq.get(t) ?? 0) + 1);
-      return Array.from(freq.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([t]) => t)
-        .slice(0, limit);
-    };
-    const anchorKeywords = [
-      ...extractKeywords(scraped.title ?? "", 8),
-      ...extractKeywords(scraped.contentText.slice(0, 4000), 12),
-    ].filter(Boolean);
+    const hostBrand = hostBrandFromUrl(input.url);
+    const strongTitleTokens = strongTitleAnchors(scraped.title, stop);
+    const bodyAnchorKeywords = specificPageKeywords(
+      scraped.title ?? "",
+      scraped.contentText.slice(0, 4000),
+      stop,
+      16,
+    );
 
     const validateDr = (out: Record<string, unknown>) => {
       const dr = asRecord(out);
@@ -1186,8 +1182,19 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       const drHook = String(dr.lead_hook ?? "").trim();
       const drTrust = String(dr.trust ?? "").trim();
       const joined = [drHeadline, drSub, drCta, drHook, drTrust, ...drBenefits, ...drSteps].join(" ");
-      const bannedMatch = joined.match(banned)?.[1] ?? null;
-      const anchored = anchorKeywords.length ? anchorKeywords.some((k) => joined.toLowerCase().includes(k)) : true;
+      const bannedMatch = findBannedSubstring(joined);
+      const heroAnchored = isHeroAnchored({
+        headline: drHeadline,
+        subheadline: drSub,
+        hostBrand,
+        strongTitleTokens,
+      });
+      const bodyJoined = [drCta, drHook, drTrust, ...drBenefits, ...drSteps].join(" ").toLowerCase();
+      const bodyAnchored =
+        bodyAnchorKeywords.length === 0
+          ? true
+          : bodyAnchorKeywords.some((k) => bodyJoined.includes(k.toLowerCase()));
+      const anchored = heroAnchored && bodyAnchored;
       const validShape = Boolean(drHeadline) && Boolean(drSub) && Boolean(drCta) && drBenefits.length >= 3 && drSteps.length >= 2;
       return {
         validShape,
@@ -1248,7 +1255,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         reason === "banned_phrase" && verdict.bannedMatch
           ? `You included the banned generic phrase "${verdict.bannedMatch}". Rewrite the JSON to remove it and replace with specific language from content_excerpt. Do NOT include that phrase anywhere.`
           : reason === "not_anchored"
-            ? "Your copy is not anchored to the site. Rewrite using the company/product/offer terminology found in content_excerpt (names, product terms, pricing, programs, locations)."
+            ? `Your headline/subheadline must mention the real brand from the URL (use "${hostBrand ?? "brand from URL"}") OR a distinctive product name from content_excerpt. Do not write generic "local business + AI" templates.`
             : "Rewrite to fully comply with required_json_shape and constraints. Use concrete, specific language from content_excerpt.";
       drLanding = await runLanding(rule);
       if (!(drLanding.meta as any)?.used) throw new Error("Landing generation failed — model output not used");
@@ -1259,30 +1266,104 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     if (verdict.bannedMatch) throw new Error(`Generic output detected — banned phrases present: "${verdict.bannedMatch}"`);
     if (!verdict.anchored) throw new Error("Generic output detected — not anchored to scraped content");
 
-    // Landing variants (strict, derived from DR base; hard-fail if generic)
-    const variantsOut = await runWorkerAndPersist({
-      organizationId,
-      campaignId,
-      pipelineRunId,
-      stageKey: "creation",
-      workerKey: "landing_variants",
-      actorUserId: params.actorUserId,
-      provider: input.provider,
-      input: { url: input.url, content: scraped.contentText, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource, base: drLanding.output },
-      schemaHint:
-        "Return STRICT JSON: {variants:[{variantKey,angle,headline,subheadline,ctaText,benefits[{title,description}],steps[{title,description}],trustLine,finalCTA{headline,subheadline,ctaText}}]}",
-      prompt: buildLandingVariantsUserPrompt({
-        url: input.url,
-        content: scraped.contentText,
-        goal: input.goal,
-        audience: input.audience,
-        trafficSource: input.trafficSource,
-        baseLanding: drLanding.output,
-      }),
-      fallback: {},
+    const variantTextsJoined = (v: Record<string, unknown>) => {
+      const bits: string[] = [];
+      bits.push(String(v.headline ?? ""), String(v.subheadline ?? ""), String(v.ctaText ?? ""), String(v.trustLine ?? ""));
+      const finalCta = asRecord(v.finalCTA);
+      bits.push(String(finalCta.headline ?? ""), String(finalCta.subheadline ?? ""), String(finalCta.ctaText ?? ""));
+      const benefits = Array.isArray(v.benefits) ? (v.benefits as unknown[]).map((x) => asRecord(x)) : [];
+      for (const b of benefits) {
+        bits.push(String(b.title ?? ""), String(b.description ?? ""));
+      }
+      const steps = Array.isArray(v.steps) ? (v.steps as unknown[]).map((x) => asRecord(x)) : [];
+      for (const s of steps) bits.push(String(s.title ?? ""), String(s.description ?? ""));
+      return bits.join(" ");
+    };
+
+    const validateVariantsShape = (variantsRoot: Record<string, unknown>) => {
+      const varsRaw = variantsRoot.variants;
+      if (!Array.isArray(varsRaw) || varsRaw.length < 3) return { ok: false as const, reason: "invalid_shape" };
+      for (const raw of varsRaw) {
+        const v = asRecord(raw);
+        const joined = variantTextsJoined(v);
+        const bannedMatch = findBannedSubstring(joined);
+        if (bannedMatch) return { ok: false as const, reason: "banned", bannedMatch, variantKey: String(v.variantKey ?? "") };
+        const hl = String(v.headline ?? "").trim();
+        const sub = String(v.subheadline ?? "").trim();
+        if (!isHeroAnchored({ headline: hl, subheadline: sub, hostBrand, strongTitleTokens })) {
+          return { ok: false as const, reason: "not_anchored", variantKey: String(v.variantKey ?? "") };
+        }
+        const bodyOnly = joined.replace(hl, " ").replace(sub, " ").toLowerCase();
+        const bodyAnchored =
+          bodyAnchorKeywords.length === 0 ||
+          bodyAnchorKeywords.some((k) => bodyOnly.includes(k.toLowerCase()));
+        if (!bodyAnchored) return { ok: false as const, reason: "body_not_anchored", variantKey: String(v.variantKey ?? "") };
+      }
+      return { ok: true as const };
+    };
+
+    const baseVariantsPrompt = buildLandingVariantsUserPrompt({
+      url: input.url,
+      content: scraped.contentText,
+      goal: input.goal,
+      audience: input.audience,
+      trafficSource: input.trafficSource,
+      baseLanding: drLanding.output,
     });
-    if (!(variantsOut.meta as any)?.used) {
-      throw new Error("Landing variants failed — model output not used");
+
+    const runVariants = async (extra: string | null) => {
+      const prompt = extra ? `${baseVariantsPrompt}\n\nREWRITE_RULE:\n${extra}\n` : baseVariantsPrompt;
+      return await runWorkerAndPersist({
+        organizationId,
+        campaignId,
+        pipelineRunId,
+        stageKey: "creation",
+        workerKey: "landing_variants",
+        actorUserId: params.actorUserId,
+        provider: input.provider,
+        input: {
+          url: input.url,
+          content: scraped.contentText,
+          goal: input.goal,
+          audience: input.audience,
+          trafficSource: input.trafficSource,
+          base: drLanding.output,
+          rewrite_rule: extra,
+        },
+        schemaHint:
+          "Return STRICT JSON: {variants:[{variantKey,angle,headline,subheadline,ctaText,benefits[{title,description}],steps[{title,description}],trustLine,finalCTA{headline,subheadline,ctaText}}]}",
+        prompt,
+        fallback: {},
+      });
+    };
+
+    let variantsOut = await runVariants(null);
+    if (!(variantsOut.meta as any)?.used) throw new Error("Landing variants failed — model output not used");
+    let variantsVerdict = validateVariantsShape(asRecord(variantsOut.output));
+
+    for (let vAttempt = 2; vAttempt <= 4; vAttempt++) {
+      if (variantsVerdict.ok) break;
+      const rule =
+        variantsVerdict.reason === "banned"
+          ? `Remove generic phrase "${variantsVerdict.bannedMatch}" from ALL variants. Use wording grounded in content_excerpt only. Every headline/subheadline must include "${hostBrand}" or a distinctive product term from the page.`
+          : variantsVerdict.reason === "not_anchored"
+            ? `Each variant headline+subheadline must include the brand "${hostBrand}" or a distinctive term from the page title. No generic "local business + AI" copy.`
+            : `Each variant body (benefits/steps/trust) must reference at least one concrete term from content_excerpt (product, place, program, service line). Variant: ${variantsVerdict.variantKey}.`;
+      await log("creation", "warn", "Landing variants need rewrite", { attempt: vAttempt, ...variantsVerdict });
+      variantsOut = await runVariants(rule);
+      if (!(variantsOut.meta as any)?.used) throw new Error("Landing variants failed — model output not used");
+      variantsVerdict = validateVariantsShape(asRecord(variantsOut.output));
+    }
+
+    if (!variantsVerdict.ok) {
+      if (variantsVerdict.reason === "banned") {
+        throw new Error(`Generic output detected in variants — banned phrases present: "${variantsVerdict.bannedMatch}"`);
+      }
+      throw new Error(
+        variantsVerdict.reason === "not_anchored"
+          ? "Generic output detected — variant headlines not anchored to the real brand/page"
+          : "Generic output detected — variant body copy not anchored to scraped content",
+      );
     }
 
     const pageDesigner = await runWorkerAndPersist({

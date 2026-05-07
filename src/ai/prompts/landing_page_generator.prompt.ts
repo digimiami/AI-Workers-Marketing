@@ -69,6 +69,7 @@ export function buildLandingPageGeneratorUserPrompt(input: {
         "steps must be exactly 3 strings; each must be simple, believable, and outcome-linked.",
         "cta must be ACTION + RESULT and short enough for a button.",
         "trust must reassure without inventing facts.",
+        "headline OR subheadline must include a concrete brand/product term from content_excerpt (not generic 'local business' templates).",
       ],
     },
     null,
