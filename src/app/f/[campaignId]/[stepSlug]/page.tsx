@@ -66,6 +66,7 @@ function StructuredPage(props: {
   const headline = str(hero.headline);
   const subheadline = str(hero.subheadline);
   const ctaLabel = str(hero.cta_label) || "Continue";
+  const trustLine = str(hero.trust_line) || str(hero.trustLine);
 
   const benefitBlock = blocks.map(asRecord).find((b) => str(b.type) === "benefits") ?? {};
   const benefitItemsFromItems: BenefitItem[] = asItems(benefitBlock.items).map((it) => ({
@@ -124,31 +125,72 @@ function StructuredPage(props: {
   const guaranteeBlock = blocks.map(asRecord).find((b) => str(b.type) === "guarantee") ?? null;
   const guaranteeTitle = guaranteeBlock ? str(guaranteeBlock.title) : "";
   const guaranteeBody = guaranteeBlock ? str(guaranteeBlock.body) : "";
+  const finalCtaBlock = blocks.map(asRecord).find((b) => str(b.type) === "final_cta") ?? null;
+  const finalHeadline = finalCtaBlock ? str(finalCtaBlock.headline) : "";
+  const finalSubheadline = finalCtaBlock ? str(finalCtaBlock.subheadline) : "";
+  const finalCtaLabel = finalCtaBlock ? (str(finalCtaBlock.cta_label) || str(finalCtaBlock.ctaText)) : "";
+
+  // Avoid generic filler: fall back to campaign name + concrete subheadline.
+  const safeHeadline = headline || props.campaignName || "Landing page";
+  const safeSubheadline =
+    subheadline ||
+    (props.campaignName
+      ? `Tell us what you need and we’ll guide you to the best next step for ${props.campaignName}.`
+      : "");
 
   return (
-    <div className="space-y-10">
-      <section className="rounded-3xl border border-border/60 bg-gradient-to-b from-muted/25 to-background p-6 shadow-[0_0_70px_-30px_rgba(34,211,238,0.35)] md:p-10">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {props.campaignName}
-        </div>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-5xl">
-          {headline || "Get results faster — with a page built for your offer"}
-        </h1>
-        {subheadline ? (
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">{subheadline}</p>
-        ) : null}
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <a
-            href={hasInlineForm ? "#lead-form" : props.nextHref || "#"}
-            className={buttonVariants({})}
-          >
-            {ctaLabel || "Continue"}
-          </a>
-          {props.nextHref ? (
-            <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
-              Next
-            </Link>
-          ) : null}
+    <div className="space-y-12">
+      <section className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-b from-muted/25 via-background to-background p-6 shadow-[0_0_90px_-40px_rgba(34,211,238,0.45)] md:p-10">
+        <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-28 -right-24 h-80 w-80 rounded-full bg-emerald-500/10 blur-3xl" />
+
+        <div className="relative grid gap-8 lg:grid-cols-[1.25fr_0.75fr] lg:items-start">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
+              {props.campaignName || "Offer"}
+            </div>
+
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-5xl">{safeHeadline}</h1>
+            {safeSubheadline ? (
+              <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">{safeSubheadline}</p>
+            ) : null}
+
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <a href={hasInlineForm ? "#lead-form" : props.nextHref || "#"} className={buttonVariants({})}>
+                {ctaLabel || "Continue"}
+              </a>
+              {props.nextHref ? (
+                <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
+                  Next step
+                </Link>
+              ) : null}
+            </div>
+
+            <div className="mt-6 grid gap-2 sm:grid-cols-3">
+              {(proofPoints.length ? proofPoints : ["Fast to complete", "Clear next steps", "No spam. Real follow‑up"]).slice(0, 3).map((p) => (
+                <div key={p} className="rounded-2xl border border-border/60 bg-card/30 px-4 py-3 text-xs text-muted-foreground backdrop-blur-xl">
+                  <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-cyan-400/90 align-middle" />
+                  <span className="align-middle">{p}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl md:p-6">
+            <div className="text-sm font-semibold">Get started</div>
+            <div className="mt-1 text-xs text-muted-foreground">Takes ~30 seconds. We’ll send your next steps.</div>
+            <div className="mt-4 space-y-3">
+              <a href="#lead-form" className={cn(buttonVariants({}), "w-full justify-center")}>
+                {ctaLabel || "Continue"}
+              </a>
+              {trustLine ? (
+                <div className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-3 text-[11px] text-muted-foreground">
+                  {trustLine}
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -157,9 +199,16 @@ function StructuredPage(props: {
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Benefits</div>
           <div className="grid gap-3 md:grid-cols-2">
             {benefits.slice(0, 6).map((b) => (
-              <div key={b.title} className="rounded-2xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl">
-                <div className="text-base font-semibold">{b.title}</div>
-                <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{b.desc}</div>
+              <div key={b.title} className="group rounded-2xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl transition-colors hover:bg-card/55">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 h-8 w-8 shrink-0 rounded-xl border border-border/60 bg-muted/15 p-2">
+                    <div className="h-full w-full rounded-md bg-gradient-to-br from-cyan-400/60 to-emerald-400/40" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-base font-semibold">{b.title}</div>
+                    <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{b.desc}</div>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -327,17 +376,22 @@ function StructuredPage(props: {
       ) : null}
 
       <section id="lead-form" className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
-        <div className="text-xl font-semibold tracking-tight">Get started in minutes</div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Share your email so we can send your matches and next steps.
-        </p>
-        <form className="mt-5 space-y-4" action="/api/leads/capture" method="post">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-2xl font-semibold tracking-tight">Get your next steps</div>
+            <p className="mt-2 text-sm text-muted-foreground">Enter your details and we’ll send the fastest path forward.</p>
+          </div>
+          <div className="rounded-full border border-border/60 bg-muted/10 px-3 py-1 text-[11px] text-muted-foreground">
+            Secure · Unsubscribe anytime
+          </div>
+        </div>
+        <form className="mt-6 space-y-4" action="/api/leads/capture" method="post">
           <input type="hidden" name="organizationId" value={props.organizationId} />
           <input type="hidden" name="campaignId" value={props.campaignId} />
           <input type="hidden" name="funnelId" value={props.funnelId} />
           <input type="hidden" name="funnelStepId" value={props.funnelStepId} />
           <input type="hidden" name="sourcePage" value={props.sourcePage} />
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-3">
             <div className="space-y-1">
               <label className="text-sm font-medium" htmlFor="email">Email</label>
               <input
@@ -345,7 +399,8 @@ function StructuredPage(props: {
                 name="email"
                 type="email"
                 required
-                className="h-11 w-full rounded-lg border border-border/60 bg-background px-3 text-sm"
+                placeholder="you@domain.com"
+                className="h-11 w-full rounded-xl border border-border/60 bg-background/60 px-3 text-sm outline-none transition focus:border-cyan-400/50 focus:bg-background"
               />
             </div>
             <div className="space-y-1">
@@ -354,23 +409,45 @@ function StructuredPage(props: {
                 id="fullName"
                 name="fullName"
                 type="text"
-                className="h-11 w-full rounded-lg border border-border/60 bg-background px-3 text-sm"
+                placeholder="First + last"
+                className="h-11 w-full rounded-xl border border-border/60 bg-background/60 px-3 text-sm outline-none transition focus:border-cyan-400/50 focus:bg-background"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="phone">Phone (optional)</label>
+              <input
+                id="phone"
+                name="phone"
+                type="tel"
+                inputMode="tel"
+                placeholder="(555) 555‑5555"
+                className="h-11 w-full rounded-xl border border-border/60 bg-background/60 px-3 text-sm outline-none transition focus:border-cyan-400/50 focus:bg-background"
               />
             </div>
           </div>
-          <button className={cn(buttonVariants({}), "h-11 w-full md:w-auto") } type="submit">
-            {ctaLabel || "Continue"}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className={cn(buttonVariants({}), "h-11 w-full justify-center md:w-auto")} type="submit">
+              {ctaLabel || "Continue"}
+            </button>
+            <div className="text-xs text-muted-foreground">
+              By continuing, you agree to receive messages related to this request.
+            </div>
+          </div>
         </form>
       </section>
 
       <section className="rounded-3xl border border-border/60 bg-gradient-to-r from-cyan-500/10 via-card to-emerald-500/10 p-6 md:p-8">
-        <div className="text-2xl font-semibold tracking-tight">Ready to move faster?</div>
+        <div className="text-2xl font-semibold tracking-tight">{finalHeadline || "Ready to take the next step?"}</div>
         <p className="mt-2 text-sm text-muted-foreground">
-          Get your best options and a clear plan to act—without wasting time.
+          {finalSubheadline || "Submit your details and we’ll send the fastest path forward."}
         </p>
-        <div className="mt-5">
-          <a href="#lead-form" className={buttonVariants({})}>{ctaLabel || "Get started"}</a>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <a href="#lead-form" className={buttonVariants({})}>{finalCtaLabel || ctaLabel || "Get started"}</a>
+          {props.nextHref ? (
+            <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
+              Continue without form
+            </Link>
+          ) : null}
         </div>
       </section>
 
