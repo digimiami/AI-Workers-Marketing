@@ -100,19 +100,24 @@ export function AiWorkspacePage(props: Props) {
     !live.state.active &&
     (live.state.finalStatus === "completed" || live.state.finalStatus === "complete" || live.state.reviewUrl);
 
+  const stripeDisabled =
+    (process.env.NEXT_PUBLIC_BILLING_DISABLE_STRIPE ?? "").toLowerCase() === "1" ||
+    (process.env.NEXT_PUBLIC_BILLING_DISABLE_STRIPE ?? "").toLowerCase() === "true";
+
   const planSignal = React.useMemo<{ reason: PlanUpgradeReason; plan: PlanKey } | null>(() => {
+    if (stripeDisabled) return null;
     for (const e of live.state.errors) {
       const hit = parsePlanLimitMessage(e.message);
       if (hit) return hit;
     }
     return null;
-  }, [live.state.errors]);
+  }, [live.state.errors, stripeDisabled]);
 
   const [paywallOpen, setPaywallOpen] = React.useState(false);
   const [existingCampaignId, setExistingCampaignId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (planSignal) setPaywallOpen(true);
+    if (!stripeDisabled && planSignal) setPaywallOpen(true);
   }, [planSignal]);
 
   React.useEffect(() => {
@@ -134,6 +139,7 @@ export function AiWorkspacePage(props: Props) {
   }, [planSignal, organizationId]);
 
   const friendlyError = React.useCallback((message: string) => {
+    if (stripeDisabled) return message;
     const hit = parsePlanLimitMessage(message);
     if (!hit) return message;
     if (hit.reason === "campaign_limit") {
@@ -146,7 +152,7 @@ export function AiWorkspacePage(props: Props) {
       return `You've hit the monthly AI generation limit on your ${hit.plan} plan. Upgrade for higher limits.`;
     }
     return message;
-  }, []);
+  }, [stripeDisabled]);
 
   return (
     <div className="pb-6">
