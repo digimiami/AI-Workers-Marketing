@@ -112,12 +112,26 @@ export async function generatePaidAdsDraftPack(params: {
     fallbackJsonText: JSON.stringify({
       campaignName: `${campaignSlug}-meta`,
       objective: params.objective,
-      audienceSuggestions: [`${params.context.audience}`.slice(0, 80), "Site visitors (28d)"],
+      audienceSuggestions: {
+        cold: {
+          summary: `${params.context.audience}`.slice(0, 120),
+          interests: ["Category intent aligned to goal", "Problem-aware readers"],
+          exclusions: ["Existing customers (if list available)"],
+        },
+        retargeting: {
+          summary: "Visitors who engaged but did not convert",
+          signals: ["Landing page viewers (7d)", "Lead form starters (14d)"],
+        },
+      },
       adSets: [
         {
           name: "Cold · prospecting",
           budget: Math.max(1, Math.round(params.dailyBudget * 0.65)),
-          audience: "Cold interest targeting derived from URL + goal",
+          audience: {
+            summary: "Cold interest targeting derived from URL + goal",
+            ageRange: "25-54",
+            geo: "US/CA/UK (adjust to business)",
+          },
           placements: ["facebook_feed", "instagram_feed"],
           ads: Array.from({ length: 3 }).map((_, i) => ({
             headline: `Headline ${i + 1}`,
@@ -131,7 +145,11 @@ export async function generatePaidAdsDraftPack(params: {
         {
           name: "Warm · retargeting",
           budget: Math.max(1, Math.round(params.dailyBudget * 0.35)),
-          audience: "Retarget engaged visitors / leads",
+          audience: {
+            summary: "Retarget engaged visitors / leads",
+            ageRange: "25-54",
+            geo: "Same as cold (tighten after learning)",
+          },
           placements: ["facebook_feed", "instagram_stories"],
           ads: Array.from({ length: 3 }).map((_, i) => ({
             headline: `Reminder ${i + 1}`,

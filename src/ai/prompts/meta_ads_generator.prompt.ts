@@ -18,12 +18,15 @@ export function buildMetaCampaignDraftUserPrompt(input: {
       required_json_shape: {
         campaignName: "string",
         objective: "string",
-        audienceSuggestions: ["string"],
+        audienceSuggestions: {
+          cold: { summary: "string", interests: ["string"], exclusions: ["string"] },
+          retargeting: { summary: "string", signals: ["string"] },
+        },
         adSets: [
           {
             name: "string",
             budget: "number",
-            audience: "string",
+            audience: { summary: "string", ageRange: "string", geo: "string" },
             placements: ["string"],
             ads: [
               {

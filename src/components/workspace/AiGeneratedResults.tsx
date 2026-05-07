@@ -11,6 +11,7 @@ import { CampaignResultCard } from "@/components/workspace/CampaignResultCard";
 import { ContentResultCard } from "@/components/workspace/ContentResultCard";
 import { EmailResultCard } from "@/components/workspace/EmailResultCard";
 import { FunnelResultCard } from "@/components/workspace/FunnelResultCard";
+import { GrowthEngineOverviewCard } from "@/components/workspace/GrowthEngineOverviewCard";
 import { LandingResultCard } from "@/components/workspace/LandingResultCard";
 import { LandingVariantsResultCard } from "@/components/workspace/LandingVariantsResultCard";
 import { LeadCaptureResultCard } from "@/components/workspace/LeadCaptureResultCard";
@@ -83,6 +84,7 @@ export function AiGeneratedResults(props: {
         props.className,
       )}
     >
+      {wrap("growth_engine", <GrowthEngineOverviewCard organizationId={props.organizationId} campaignId={campaignId} />)}
       {wrap(
         "research",
         r.research ? (

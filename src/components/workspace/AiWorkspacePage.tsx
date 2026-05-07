@@ -104,9 +104,13 @@ export function AiWorkspacePage(props: Props) {
       <div className="sticky top-0 z-20 mb-4 border-b border-border/60 bg-background/70 backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-3 px-1 py-3">
           <div className="min-w-0">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI Workspace</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {campaignId ? "AI Growth Engine" : "AI Workspace"}
+            </div>
             <div className="truncate text-base font-semibold tracking-tight">
-              {live.state.results.campaign?.name || (cmd.url ? cmd.url.replace(/^https?:\/\//, "") : "Live build")}
+              {campaignId
+                ? "Your AI Growth Engine is Live"
+                : live.state.results.campaign?.name || (cmd.url ? cmd.url.replace(/^https?:\/\//, "") : "Live build")}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">

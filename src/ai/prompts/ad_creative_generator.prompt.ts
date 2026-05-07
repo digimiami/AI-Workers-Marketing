@@ -35,7 +35,7 @@ export function buildAdCreativeGeneratorUserPrompt(input: {
             visualIdea: "string",
             hook: "string",
             script: "string",
-            platform: "string",
+            platform: "google|meta|tiktok|youtube|linkedin",
           },
         ],
         videoScripts: ["string"],

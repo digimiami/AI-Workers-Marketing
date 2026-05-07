@@ -37,7 +37,8 @@ async function resolveMarketingInputs(admin: ReturnType<typeof createSupabaseAdm
   };
 }
 
-async function resolveLandingDestination(params: {
+/** Resolves public funnel landing path + variant for paid destination URLs. */
+export async function resolveLandingDestination(params: {
   admin: ReturnType<typeof createSupabaseAdminClient>;
   organizationId: string;
   campaignId: string;
