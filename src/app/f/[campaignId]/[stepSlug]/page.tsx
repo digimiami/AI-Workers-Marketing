@@ -92,7 +92,11 @@ function StructuredPage(props: {
 
   const hasInlineForm = blocks.map(asRecord).some((b) => str(b.type) === "lead_capture_form");
 
-  const sectionBlocks = blocks.map(asRecord).filter((b) => str(b.type) === "section");
+  const sectionBlocks = blocks
+    .map(asRecord)
+    .filter((b) => str(b.type) === "section")
+    // Suppress generic "Trust" sections; we render trust as part of the hero/form instead.
+    .filter((b) => str(b.title).trim().toLowerCase() !== "trust");
   const offerBlock = blocks.map(asRecord).find((b) => str(b.type) === "offer") ?? null;
   const offerBullets = offerBlock ? strArr(offerBlock.bullets) : [];
   const offerItems: LabeledValue[] = offerBlock
@@ -168,7 +172,17 @@ function StructuredPage(props: {
             </div>
 
             <div className="mt-6 grid gap-2 sm:grid-cols-3">
-              {(proofPoints.length ? proofPoints : ["Fast to complete", "Clear next steps", "No spam. Real follow‑up"]).slice(0, 3).map((p) => (
+              {(
+                proofPoints.length
+                  ? proofPoints
+                  : benefits.length
+                    ? benefits.map((b) => b.title)
+                    : offerBullets.length
+                      ? offerBullets
+                      : [props.campaignName ? `${props.campaignName} — next steps` : "Clear next steps"]
+              )
+                .slice(0, 3)
+                .map((p) => (
                 <div key={p} className="rounded-2xl border border-border/60 bg-card/30 px-4 py-3 text-xs text-muted-foreground backdrop-blur-xl">
                   <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-cyan-400/90 align-middle" />
                   <span className="align-middle">{p}</span>
@@ -679,53 +693,61 @@ export default async function PublicFunnelStepPage(props: {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10 space-y-6">
-      <div className="space-y-2">
-        <div className="text-xs text-muted-foreground">{String((camp as any).name ?? "")}</div>
-        <h1 className="text-3xl font-semibold tracking-tight">{String((step as any).name ?? "")}</h1>
-      </div>
+    <main className="min-h-screen bg-[radial-gradient(1100px_700px_at_20%_-10%,rgba(34,211,238,0.10),transparent_60%),radial-gradient(900px_600px_at_95%_15%,rgba(167,139,250,0.10),transparent_55%),radial-gradient(900px_600px_at_60%_110%,rgba(16,185,129,0.10),transparent_55%)]">
+      <div className="mx-auto max-w-6xl px-4 py-10 space-y-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {String((camp as any).name ?? "")}
+          </div>
+          {nextSlug ? (
+            <Link className={buttonVariants({ variant: "outline", size: "sm" })} href={`/f/${campaignId}/${nextSlug}`}>
+              Next
+            </Link>
+          ) : null}
+        </div>
 
-      {structuredBlocks ? (
-        <StructuredPage
-          blocks={structuredBlocks}
-          campaignName={String((camp as any).name ?? "")}
+        {structuredBlocks ? (
+          <StructuredPage
+            blocks={structuredBlocks}
+            campaignName={String((camp as any).name ?? "")}
+            organizationId={String((camp as any).organization_id)}
+            campaignId={campaignId}
+            funnelId={funnelId}
+            funnelStepId={String((step as any).id)}
+            sourcePage={`/f/${campaignId}/${stepSlug}`}
+            nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
+          />
+        ) : (
+          <div className="prose prose-neutral max-w-none">
+            {markdown ? (
+              <pre className="whitespace-pre-wrap">{markdownToText(markdown)}</pre>
+            ) : (
+              <StructuredPage
+                blocks={await buildFallbackStructuredBlocks(admin, {
+                  organizationId: String((camp as any).organization_id),
+                  campaignId,
+                  stepType: String((step as any).step_type ?? ""),
+                  stepName: String((step as any).name ?? "Step"),
+                })}
+                campaignName={String((camp as any).name ?? "")}
+                organizationId={String((camp as any).organization_id)}
+                campaignId={campaignId}
+                funnelId={funnelId}
+                funnelStepId={String((step as any).id)}
+                sourcePage={`/f/${campaignId}/${stepSlug}`}
+                nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
+              />
+            )}
+          </div>
+        )}
+
+        <ChatWidget
           organizationId={String((camp as any).organization_id)}
           campaignId={campaignId}
           funnelId={funnelId}
           funnelStepId={String((step as any).id)}
-          sourcePage={`/f/${campaignId}/${stepSlug}`}
-          nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
         />
-      ) : (
-        <div className="prose prose-neutral max-w-none">
-          {markdown ? (
-            <pre className="whitespace-pre-wrap">{markdownToText(markdown)}</pre>
-          ) : (
-            <StructuredPage
-              blocks={await buildFallbackStructuredBlocks(admin, {
-                organizationId: String((camp as any).organization_id),
-                campaignId,
-                stepType: String((step as any).step_type ?? ""),
-                stepName: String((step as any).name ?? "Step"),
-              })}
-              campaignName={String((camp as any).name ?? "")}
-              organizationId={String((camp as any).organization_id)}
-              campaignId={campaignId}
-              funnelId={funnelId}
-              funnelStepId={String((step as any).id)}
-              sourcePage={`/f/${campaignId}/${stepSlug}`}
-              nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
-            />
-          )}
-        </div>
-      )}
-
-      <ChatWidget
-        organizationId={String((camp as any).organization_id)}
-        campaignId={campaignId}
-        funnelId={funnelId}
-        funnelStepId={String((step as any).id)}
-      />
+      </div>
     </main>
   );
 }
