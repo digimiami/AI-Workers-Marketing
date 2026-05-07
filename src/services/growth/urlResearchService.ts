@@ -10,6 +10,30 @@ function safeParseRecord(jsonText: string): Record<string, unknown> {
   }
 }
 
+/**
+ * Empty sentinel — intentionally NO marketing copy. Callers must treat
+ * an empty `businessName`/`offerSummary` as `needs_generation_fix` and surface
+ * a regenerate action instead of rendering the placeholder downstream.
+ */
+function emptyResearchFallback(input: {
+  goal: string;
+  audience: string;
+}) {
+  return JSON.stringify({
+    businessName: "",
+    businessType: "other",
+    offerSummary: "",
+    targetAudience: input.audience,
+    primaryPainPoints: [],
+    desiredOutcome: input.goal,
+    objections: [],
+    trustSignals: [],
+    tone: "",
+    recommendedCTA: "",
+    conversionGoal: input.goal,
+  });
+}
+
 export async function analyzeUrlResearch(input: {
   url: string;
   goal: string;
@@ -17,38 +41,13 @@ export async function analyzeUrlResearch(input: {
   trafficSource: string;
   orgName?: string | null;
 }): Promise<Record<string, unknown>> {
-  const fallbackJsonText = JSON.stringify({
-    businessName: "Unknown business",
-    businessType: "other",
-    offerSummary: `Help ${input.audience} achieve: ${input.goal} (URL signals were limited).`,
-    targetAudience: input.audience,
-    primaryPainPoints: [
-      "Time wasted on unclear next steps",
-      "Hard to compare options confidently",
-      "Uncertainty about fit and outcomes",
-      "Friction getting started",
-      "Risk of choosing the wrong path",
-    ],
-    desiredOutcome: input.goal,
-    objections: [
-      "Is this credible for my situation?",
-      "What exactly happens after I click?",
-      "How long until I see results?",
-      "Is pricing transparent?",
-      "What if it does not work for me?",
-    ],
-    trustSignals: [
-      "Clear explanation of the process",
-      "Specific language tied to the audience",
-      "Concrete next steps after opt-in",
-      "No exaggerated claims in copy",
-      "Privacy-conscious lead capture",
-    ],
-    tone: "Direct, specific, and calm",
-    recommendedCTA: "Get the shortlist + next steps",
-    conversionGoal: input.goal,
+  console.info("[landing] url-research-prompt", {
+    url: input.url,
+    goal: input.goal,
+    audience: input.audience,
+    trafficSource: input.trafficSource,
+    org: input.orgName ?? null,
   });
-
   const out = await runStrictJsonPrompt({
     system: URL_RESEARCH_SYSTEM,
     user: buildUrlResearchUserPrompt({
@@ -58,7 +57,15 @@ export async function analyzeUrlResearch(input: {
       trafficSource: input.trafficSource,
       orgName: input.orgName ?? undefined,
     }),
-    fallbackJsonText,
+    fallbackJsonText: emptyResearchFallback({ goal: input.goal, audience: input.audience }),
   });
-  return safeParseRecord(out.jsonText);
+  const parsed = safeParseRecord(out.jsonText);
+  console.info("[landing] url-research-response", {
+    used: out.meta.used,
+    cacheHit: out.meta.cacheHit,
+    rawChars: out.jsonText.length,
+    businessName: String(parsed.businessName ?? ""),
+    businessType: String(parsed.businessType ?? ""),
+  });
+  return parsed;
 }

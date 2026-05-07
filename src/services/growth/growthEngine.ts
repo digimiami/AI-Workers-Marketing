@@ -117,13 +117,14 @@ export async function runAiGrowthEngine(params: {
     classification,
   });
 
-  const landingVariants = await generateLandingVariants({
+  const landingVariantsResult = await generateLandingVariants({
     url: input.url,
     goal: input.goal,
     audience: input.audience,
     trafficSource: input.trafficSource,
     baseLanding: null,
   });
+  const landingVariants = landingVariantsResult.variants;
 
   const router = await routeTrafficToVariant({
     trafficSource: input.trafficSource,

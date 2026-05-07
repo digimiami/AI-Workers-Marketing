@@ -12,8 +12,10 @@ import {
   findBannedSubstring,
   hostBrandFromUrl,
   isHeroAnchored,
+  markCampaignNeedsLandingFix,
   specificPageKeywords,
   strongTitleAnchors,
+  type LandingFixReason,
 } from "@/services/marketing-pipeline/landingCopyGuards";
 
 import {
@@ -1236,10 +1238,41 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       });
     };
 
-    // Attempt 1 + up to 2 rewrite attempts if generic phrases are detected.
+    const failLanding = async (reason: LandingFixReason, detail: string) => {
+      console.warn("[landing] dr-failed", { url: input.url, reason, detail, campaignId });
+      if (campaignId) {
+        await markCampaignNeedsLandingFix({ admin, organizationId, campaignId, reason, detail });
+      }
+      const message =
+        reason === "banned_phrase"
+          ? `Generic output detected — banned phrases present: "${detail}"`
+          : reason === "placeholder"
+            ? `Placeholder text detected — "${detail}"`
+            : reason === "not_anchored"
+              ? "Generic output detected — not anchored to scraped content"
+              : reason === "model_unused"
+                ? "Landing generation failed — model output not used"
+                : "AI output invalid";
+      throw new Error(message);
+    };
+
+    console.info("[landing] dr-start", {
+      url: input.url,
+      hostBrand,
+      strongTitleTokens,
+      contentChars: scraped.contentText.length,
+    });
+
     let drLanding = await runLanding(null);
-    if (!(drLanding.meta as any)?.used) throw new Error("Landing generation failed — model output not used");
+    if (!(drLanding.meta as any)?.used) await failLanding("model_unused", "first attempt");
     let verdict = validateDr(drLanding.output);
+    console.info("[landing] dr-attempt", {
+      attempt: 1,
+      validShape: verdict.validShape,
+      anchored: verdict.anchored,
+      bannedMatch: verdict.bannedMatch,
+      headline: verdict.drHeadline,
+    });
 
     for (let attempt = 2; attempt <= 3; attempt++) {
       if (verdict.validShape && verdict.anchored && !verdict.bannedMatch) break;
@@ -1258,13 +1291,20 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
             ? `Your headline/subheadline must mention the real brand from the URL (use "${hostBrand ?? "brand from URL"}") OR a distinctive product name from content_excerpt. Do not write generic "local business + AI" templates.`
             : "Rewrite to fully comply with required_json_shape and constraints. Use concrete, specific language from content_excerpt.";
       drLanding = await runLanding(rule);
-      if (!(drLanding.meta as any)?.used) throw new Error("Landing generation failed — model output not used");
+      if (!(drLanding.meta as any)?.used) await failLanding("model_unused", `retry attempt ${attempt}`);
       verdict = validateDr(drLanding.output);
+      console.info("[landing] dr-attempt", {
+        attempt,
+        validShape: verdict.validShape,
+        anchored: verdict.anchored,
+        bannedMatch: verdict.bannedMatch,
+        headline: verdict.drHeadline,
+      });
     }
 
-    if (!verdict.validShape) throw new Error("AI output invalid");
-    if (verdict.bannedMatch) throw new Error(`Generic output detected — banned phrases present: "${verdict.bannedMatch}"`);
-    if (!verdict.anchored) throw new Error("Generic output detected — not anchored to scraped content");
+    if (!verdict.validShape) await failLanding("invalid_shape", "missing required fields after retries");
+    if (verdict.bannedMatch) await failLanding("banned_phrase", String(verdict.bannedMatch));
+    if (!verdict.anchored) await failLanding("not_anchored", verdict.drHeadline || "(no headline)");
 
     const variantTextsJoined = (v: Record<string, unknown>) => {
       const bits: string[] = [];
@@ -1337,9 +1377,28 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       });
     };
 
+    const failVariants = async (reason: LandingFixReason, detail: string) => {
+      console.warn("[landing] variants-failed", { url: input.url, reason, detail, campaignId });
+      if (campaignId) {
+        await markCampaignNeedsLandingFix({ admin, organizationId, campaignId, reason, detail });
+      }
+      const message =
+        reason === "banned_phrase"
+          ? `Generic output detected in variants — banned phrases present: "${detail}"`
+          : reason === "not_anchored"
+            ? "Generic output detected — variant headlines not anchored to the real brand/page"
+            : reason === "body_not_anchored"
+              ? "Generic output detected — variant body copy not anchored to scraped content"
+              : reason === "model_unused"
+                ? "Landing variants failed — model output not used"
+                : "Landing variants failed — invalid shape";
+      throw new Error(message);
+    };
+
     let variantsOut = await runVariants(null);
-    if (!(variantsOut.meta as any)?.used) throw new Error("Landing variants failed — model output not used");
+    if (!(variantsOut.meta as any)?.used) await failVariants("model_unused", "first attempt");
     let variantsVerdict = validateVariantsShape(asRecord(variantsOut.output));
+    console.info("[landing] variants-attempt", { attempt: 1, verdict: variantsVerdict });
 
     for (let vAttempt = 2; vAttempt <= 4; vAttempt++) {
       if (variantsVerdict.ok) break;
@@ -1351,19 +1410,21 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
             : `Each variant body (benefits/steps/trust) must reference at least one concrete term from content_excerpt (product, place, program, service line). Variant: ${variantsVerdict.variantKey}.`;
       await log("creation", "warn", "Landing variants need rewrite", { attempt: vAttempt, ...variantsVerdict });
       variantsOut = await runVariants(rule);
-      if (!(variantsOut.meta as any)?.used) throw new Error("Landing variants failed — model output not used");
+      if (!(variantsOut.meta as any)?.used) await failVariants("model_unused", `retry attempt ${vAttempt}`);
       variantsVerdict = validateVariantsShape(asRecord(variantsOut.output));
+      console.info("[landing] variants-attempt", { attempt: vAttempt, verdict: variantsVerdict });
     }
 
     if (!variantsVerdict.ok) {
       if (variantsVerdict.reason === "banned") {
-        throw new Error(`Generic output detected in variants — banned phrases present: "${variantsVerdict.bannedMatch}"`);
+        await failVariants("banned_phrase", String(variantsVerdict.bannedMatch ?? ""));
+      } else if (variantsVerdict.reason === "not_anchored") {
+        await failVariants("not_anchored", `variant=${variantsVerdict.variantKey ?? "?"}`);
+      } else if (variantsVerdict.reason === "body_not_anchored") {
+        await failVariants("body_not_anchored", `variant=${variantsVerdict.variantKey ?? "?"}`);
+      } else {
+        await failVariants("invalid_shape", "verdict=invalid_shape");
       }
-      throw new Error(
-        variantsVerdict.reason === "not_anchored"
-          ? "Generic output detected — variant headlines not anchored to the real brand/page"
-          : "Generic output detected — variant body copy not anchored to scraped content",
-      );
     }
 
     const pageDesigner = await runWorkerAndPersist({
@@ -1912,6 +1973,16 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         .eq("organization_id", organizationId)
         .eq("campaign_id", campaignId)
         .eq("variant_key", "direct_response");
+
+      console.info("[landing] variants-persisted", {
+        url: input.url,
+        campaignId,
+        funnelId,
+        funnelStepId: landingStepId,
+        variantsWritten: createdLandingIds.length,
+        selectedVariantKey: "direct_response",
+        keys: createdLandingIds.map((x) => x.key),
+      });
 
       const selectedKey =
         typeof (normalizedVariants[0] as any)?.variantKey === "string"

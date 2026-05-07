@@ -1,3 +1,97 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
+
+export type LandingFixReason =
+  | "scrape_failed"
+  | "model_unused"
+  | "invalid_shape"
+  | "banned_phrase"
+  | "placeholder"
+  | "not_anchored"
+  | "body_not_anchored"
+  | "missing_variants";
+
+/**
+ * Mark a campaign as `landing_status: needs_generation_fix` so the workspace UI can
+ * surface a regenerate action instead of silently rendering placeholder pages.
+ * Best-effort: never throws.
+ */
+export async function markCampaignNeedsLandingFix(params: {
+  admin: SupabaseClient;
+  organizationId: string;
+  campaignId: string;
+  reason: LandingFixReason;
+  detail?: string | null;
+}): Promise<void> {
+  try {
+    const { data: camp } = await params.admin
+      .from("campaigns" as never)
+      .select("metadata")
+      .eq("organization_id", params.organizationId)
+      .eq("id", params.campaignId)
+      .maybeSingle();
+    const prev = asMetadataRecord((camp as { metadata?: unknown } | null)?.metadata);
+    const ge = asMetadataRecord(prev.growth_engine);
+    const next = mergeJsonbRecords(prev, {
+      growth_engine: {
+        ...ge,
+        landing_status: "needs_generation_fix",
+        landing_fix: {
+          reason: params.reason,
+          detail: params.detail ?? null,
+          marked_at: new Date().toISOString(),
+        },
+      },
+    });
+    await params.admin
+      .from("campaigns" as never)
+      .update({ metadata: next, updated_at: new Date().toISOString() } as never)
+      .eq("organization_id", params.organizationId)
+      .eq("id", params.campaignId);
+  } catch (error) {
+    console.warn("[landing] failed to mark needs_generation_fix", {
+      organizationId: params.organizationId,
+      campaignId: params.campaignId,
+      reason: params.reason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Clear the landing_status flag once a healthy variant is saved.
+ */
+export async function clearCampaignLandingFix(params: {
+  admin: SupabaseClient;
+  organizationId: string;
+  campaignId: string;
+}): Promise<void> {
+  try {
+    const { data: camp } = await params.admin
+      .from("campaigns" as never)
+      .select("metadata")
+      .eq("organization_id", params.organizationId)
+      .eq("id", params.campaignId)
+      .maybeSingle();
+    const prev = asMetadataRecord((camp as { metadata?: unknown } | null)?.metadata);
+    const ge = asMetadataRecord(prev.growth_engine);
+    if (ge.landing_status !== "needs_generation_fix" && !ge.landing_fix) return;
+    const nextGe = { ...ge };
+    delete (nextGe as Record<string, unknown>).landing_status;
+    delete (nextGe as Record<string, unknown>).landing_fix;
+    // Replace growth_engine wholesale (mergeJsonbRecords cannot delete keys).
+    const next: Record<string, unknown> = { ...prev, growth_engine: nextGe };
+    await params.admin
+      .from("campaigns" as never)
+      .update({ metadata: next, updated_at: new Date().toISOString() } as never)
+      .eq("organization_id", params.organizationId)
+      .eq("id", params.campaignId);
+  } catch {
+    // best-effort
+  }
+}
+
 /** Phrases that indicate template / filler copy (case-insensitive substring match). */
 export const LANDING_BANNED_SUBSTRINGS = [
   "boost your business",
@@ -5,6 +99,10 @@ export const LANDING_BANNED_SUBSTRINGS = [
   "ai solutions",
   "grow faster",
   "unlock your dream",
+  "unlock your potential",
+  "welcome to our service",
+  "welcome to our community",
+  "enhance your experience",
   "step into your future",
   "transform your local business with ai",
   "quickly transform your local business",
@@ -29,6 +127,27 @@ export const LANDING_BANNED_SUBSTRINGS = [
   "leverage powerful tools",
   "without the hassle",
 ];
+
+/**
+ * Tokens that are unmistakable scaffolding placeholders left over from templating.
+ * Matched as whole words / case-insensitive — `Benefit 1`, `Step 1`, `Outcome 1`, etc.
+ */
+const LANDING_PLACEHOLDER_PATTERNS: RegExp[] = [
+  /\bbenefit\s*\d+\b/i,
+  /\boutcome\s*\d+\b/i,
+  /\bproof\s*point\s*\d+\b/i,
+  /\bfast\s*win\s*\d+\b/i,
+  /\blorem\s+ipsum\b/i,
+  /\byour\s+headline\s+here\b/i,
+];
+
+export function findPlaceholderText(text: string): string | null {
+  for (const re of LANDING_PLACEHOLDER_PATTERNS) {
+    const m = re.exec(text);
+    if (m) return m[0];
+  }
+  return null;
+}
 
 const GENERIC_ANCHOR_TOKENS = new Set([
   "business",
@@ -107,7 +226,59 @@ export function findBannedSubstring(text: string): string | null {
   for (const p of LANDING_BANNED_SUBSTRINGS) {
     if (lower.includes(p.toLowerCase())) return p;
   }
-  return null;
+  return findPlaceholderText(lower);
+}
+
+export type LandingVariantQuality =
+  | { ok: true }
+  | { ok: false; reason: "missing_fields" | "too_short" | "banned_phrase" | "placeholder"; detail?: string };
+
+/**
+ * Variant-level quality gate used at the DB-save boundary in /api/growth/landing-variants
+ * and other regen paths. Rejects empty/sentinel/AI-fallback content before it reaches the renderer.
+ */
+export function validateLandingVariantQuality(content: Record<string, unknown>): LandingVariantQuality {
+  const headline = String(content?.headline ?? "").trim();
+  const subheadline = String(content?.subheadline ?? "").trim();
+  const cta =
+    String(
+      (content as { ctaText?: unknown }).ctaText ??
+        (content as { cta?: unknown }).cta ??
+        "",
+    ).trim();
+  const benefits = Array.isArray(content?.benefits) ? (content.benefits as unknown[]) : [];
+  const steps = Array.isArray(content?.steps) ? (content.steps as unknown[]) : [];
+
+  if (!headline || !subheadline || !cta) {
+    return { ok: false, reason: "missing_fields", detail: "headline+subheadline+cta required" };
+  }
+  if (headline.length < 12 || subheadline.length < 16) {
+    return { ok: false, reason: "too_short", detail: `headline=${headline.length} sub=${subheadline.length}` };
+  }
+  if (benefits.length < 3 || steps.length < 2) {
+    return { ok: false, reason: "missing_fields", detail: `benefits=${benefits.length} steps=${steps.length}` };
+  }
+
+  const benefitText = benefits
+    .map((b) => {
+      const r = (b ?? {}) as Record<string, unknown>;
+      return `${String(r.title ?? "")} ${String(r.description ?? r.desc ?? "")}`;
+    })
+    .join(" ");
+  const stepText = steps
+    .map((s) => {
+      const r = (s ?? {}) as Record<string, unknown>;
+      return `${String(r.title ?? "")} ${String(r.description ?? r.desc ?? "")}`;
+    })
+    .join(" ");
+  const haystack = [headline, subheadline, cta, benefitText, stepText].join(" ");
+
+  const placeholder = findPlaceholderText(haystack);
+  if (placeholder) return { ok: false, reason: "placeholder", detail: placeholder };
+  const banned = LANDING_BANNED_SUBSTRINGS.find((p) => haystack.toLowerCase().includes(p.toLowerCase()));
+  if (banned) return { ok: false, reason: "banned_phrase", detail: banned };
+
+  return { ok: true };
 }
 
 export function extractFreqKeywords(text: string, stop: Set<string>, limit: number): string[] {

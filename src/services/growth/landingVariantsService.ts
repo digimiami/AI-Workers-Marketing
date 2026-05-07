@@ -1,5 +1,5 @@
 import { buildLandingVariantsUserPrompt, LANDING_VARIANTS_SYSTEM } from "@/ai/prompts/landing_variants.prompt";
-import { runStrictJsonPrompt } from "@/services/ai/jsonPrompt";
+import { runStrictJsonPrompt, type JsonPromptMeta } from "@/services/ai/jsonPrompt";
 
 function safeParseRecord(jsonText: string): Record<string, unknown> {
   try {
@@ -10,6 +10,20 @@ function safeParseRecord(jsonText: string): Record<string, unknown> {
   }
 }
 
+/**
+ * Sentinel shape used as `fallback` when the AI provider is unavailable.
+ * Intentionally contains NO marketing copy. Callers must validate via
+ * `validateLandingVariantQuality` and treat empty content as `needs_generation_fix`.
+ */
+function emptyVariantsFallback() {
+  return JSON.stringify({ variants: [] });
+}
+
+export type LandingVariantsResult = {
+  variants: Record<string, unknown>;
+  meta: JsonPromptMeta;
+};
+
 export async function generateLandingVariants(input: {
   url: string;
   content?: string;
@@ -17,95 +31,45 @@ export async function generateLandingVariants(input: {
   audience: string;
   trafficSource: string;
   baseLanding: Record<string, unknown> | null;
-}): Promise<Record<string, unknown>> {
-  const fallbackJsonText = JSON.stringify({
-    variants: [
-      {
-        variantLabel: "A",
-        variantKey: "direct_response",
-        angle: "Direct response",
-        headline: `Get clarity on ${input.goal} without guesswork`,
-        subheadline: "Tell us what you need — we’ll show the fastest next step.",
-        ctaText: "Get the plan",
-        trustLine: "Built for busy buyers who hate fluff.",
-        benefits: Array.from({ length: 4 }).map((_, i) => ({
-          title: `Outcome ${i + 1}`,
-          description: `A concrete benefit aligned to ${input.goal}.`,
-        })),
-        steps: Array.from({ length: 3 }).map((_, i) => ({
-          title: `Step ${i + 1}`,
-          description: "A simple action that moves you forward.",
-        })),
-        formFields: ["email", "name"],
-        psychologicalTrigger: "Clarity + control (reduce uncertainty)",
-        finalCTA: {
-          headline: "Ready to move?",
-          subheadline: "Submit your email and we’ll send the next step.",
-          ctaText: "Send my next step",
-        },
-      },
-      {
-        variantLabel: "B",
-        variantKey: "premium_trust",
-        angle: "Trust / authority",
-        headline: `A safer way to choose the right path for ${input.audience}`,
-        subheadline: "See how the process works before you commit time.",
-        ctaText: "See how it works",
-        trustLine: "Plain-language explanation. No mystery mechanics.",
-        benefits: Array.from({ length: 4 }).map((_, i) => ({
-          title: `Proof point ${i + 1}`,
-          description: "A credibility-oriented benefit tied to the offer.",
-        })),
-        steps: Array.from({ length: 3 }).map((_, i) => ({
-          title: `Step ${i + 1}`,
-          description: "Build confidence with specifics.",
-        })),
-        formFields: ["email"],
-        psychologicalTrigger: "Risk reduction (explain the mechanism)",
-        finalCTA: {
-          headline: "Prefer proof before speed?",
-          subheadline: "Get the breakdown in your inbox.",
-          ctaText: "Email me the breakdown",
-        },
-      },
-      {
-        variantLabel: "C",
-        variantKey: "speed_convenience",
-        angle: "Speed / convenience",
-        headline: `Get matched faster — built for ${input.trafficSource} traffic`,
-        subheadline: "Short page. Fast form. Clear next step.",
-        ctaText: "Continue",
-        trustLine: "Optimized for mobile skimmers.",
-        benefits: Array.from({ length: 4 }).map((_, i) => ({
-          title: `Fast win ${i + 1}`,
-          description: "A benefit framed around speed and simplicity.",
-        })),
-        steps: Array.from({ length: 3 }).map((_, i) => ({
-          title: `Step ${i + 1}`,
-          description: "Keep momentum; remove extra decisions.",
-        })),
-        formFields: ["email"],
-        psychologicalTrigger: "Momentum (reduce friction)",
-        finalCTA: {
-          headline: "In a hurry?",
-          subheadline: "One field. One click. Next step delivered.",
-          ctaText: "Continue",
-        },
-      },
-    ],
+}): Promise<LandingVariantsResult> {
+  const userPrompt = buildLandingVariantsUserPrompt({
+    url: input.url,
+    content: String(input.content ?? ""),
+    goal: input.goal,
+    audience: input.audience,
+    trafficSource: input.trafficSource,
+    baseLanding: input.baseLanding,
+  });
+
+  console.info("[landing] variants-prompt", {
+    url: input.url,
+    contentChars: String(input.content ?? "").length,
+    goal: input.goal,
+    audience: input.audience,
+    trafficSource: input.trafficSource,
+    hasBase: Boolean(input.baseLanding),
   });
 
   const out = await runStrictJsonPrompt({
     system: LANDING_VARIANTS_SYSTEM,
-    user: buildLandingVariantsUserPrompt({
-      url: input.url,
-      content: String(input.content ?? ""),
-      goal: input.goal,
-      audience: input.audience,
-      trafficSource: input.trafficSource,
-      baseLanding: input.baseLanding,
-    }),
-    fallbackJsonText,
+    user: userPrompt,
+    fallbackJsonText: emptyVariantsFallback(),
   });
-  return safeParseRecord(out.jsonText);
+
+  const parsed = safeParseRecord(out.jsonText);
+  const variantsArr = Array.isArray((parsed as { variants?: unknown }).variants)
+    ? ((parsed as { variants: unknown[] }).variants as unknown[])
+    : [];
+
+  console.info("[landing] variants-response", {
+    used: out.meta.used,
+    cacheHit: out.meta.cacheHit,
+    rawChars: out.jsonText.length,
+    variantsCount: variantsArr.length,
+    keys: variantsArr
+      .map((v) => (v && typeof v === "object" ? String((v as Record<string, unknown>).variantKey ?? "") : ""))
+      .filter(Boolean),
+  });
+
+  return { variants: parsed, meta: out.meta };
 }

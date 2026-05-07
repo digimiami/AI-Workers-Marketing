@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { generateLandingVariants } from "@/services/growth/landingVariantsService";
+import { regenerateLandingVariantsForCampaign } from "@/services/growth/regenerateLandingVariants";
 
 const bodySchema = z.object({
   organizationId: z.string().uuid(),
@@ -23,55 +23,31 @@ export async function POST(request: Request) {
   const orgCtx = await withOrgOperator(parsed.data.organizationId);
   if (orgCtx.error) return orgCtx.error;
 
-  const pack = await generateLandingVariants({
-    url: parsed.data.url,
-    goal: parsed.data.goal,
-    audience: parsed.data.audience,
-    trafficSource: parsed.data.trafficSource,
-    baseLanding: null,
+  const admin = createSupabaseAdminClient();
+  const result = await regenerateLandingVariantsForCampaign({
+    admin,
+    input: parsed.data,
   });
 
-  const variants = Array.isArray((pack as { variants?: unknown }).variants)
-    ? ((pack as { variants: unknown[] }).variants as Record<string, unknown>[])
-    : [];
-
-  const admin = createSupabaseAdminClient();
-  const now = new Date().toISOString();
-
-  for (const v of variants) {
-    const key =
-      typeof v.variantKey === "string"
-        ? v.variantKey
-        : typeof (v as { key?: string }).key === "string"
-          ? String((v as { key?: string }).key)
-          : "";
-    if (!key) continue;
-    const angle = typeof v.angle === "string" ? v.angle : key;
-    const content = {
-      headline: typeof v.headline === "string" ? v.headline : "",
-      subheadline: typeof v.subheadline === "string" ? v.subheadline : "",
-      ctaText: typeof v.ctaText === "string" ? v.ctaText : typeof v.cta === "string" ? String(v.cta) : "",
-      benefits: Array.isArray(v.benefits) ? v.benefits : [],
-      steps: Array.isArray(v.steps) ? v.steps : [],
-      trustLine: typeof v.trustLine === "string" ? v.trustLine : "",
-      finalCTA: (v as { finalCTA?: unknown }).finalCTA ?? {},
-      psychologicalTrigger: typeof (v as { psychologicalTrigger?: string }).psychologicalTrigger === "string"
-        ? String((v as { psychologicalTrigger?: string }).psychologicalTrigger)
-        : "",
-      variantLabel: typeof (v as { variantLabel?: string }).variantLabel === "string" ? String((v as { variantLabel?: string }).variantLabel) : "",
-      regenerated_at: now,
-    };
-
-    const { error } = await admin
-      .from("landing_page_variants" as never)
-      .update({ angle, content: content as never, updated_at: now, status: "draft" } as never)
-      .eq("organization_id", parsed.data.organizationId)
-      .eq("campaign_id", parsed.data.campaignId)
-      .eq("variant_key", key);
-    if (error) {
-      return NextResponse.json({ ok: false, message: error.message, variantKey: key }, { status: 500 });
-    }
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        needsGenerationFix: true,
+        reason: result.reason,
+        message: result.message,
+        rejections: result.rejections,
+        detail: "detail" in result ? result.detail : undefined,
+      },
+      { status: result.status },
+    );
   }
 
-  return NextResponse.json({ ok: true, landingVariants: pack });
+  return NextResponse.json({
+    ok: true,
+    variantsWritten: result.variantsWritten,
+    keys: result.keys,
+    finalUrl: result.finalUrl,
+    landingVariants: result.raw,
+  });
 }

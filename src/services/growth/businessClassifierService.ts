@@ -10,6 +10,18 @@ function safeParseRecord(jsonText: string): Record<string, unknown> {
   }
 }
 
+/** Empty sentinel — no fabricated risk notes / recommendations. */
+function emptyClassifierFallback(trafficSource: string) {
+  return JSON.stringify({
+    classification: "",
+    confidence: 0,
+    bestFunnelType: "direct_response",
+    bestTrafficSources: [trafficSource].filter(Boolean),
+    recommendedLeadCapture: ["email"],
+    riskNotes: [],
+  });
+}
+
 export async function classifyBusiness(input: {
   url: string;
   goal: string;
@@ -17,18 +29,13 @@ export async function classifyBusiness(input: {
   trafficSource: string;
   urlResearch: Record<string, unknown> | null;
 }): Promise<Record<string, unknown>> {
-  const fallbackJsonText = JSON.stringify({
-    classification: "general_market",
-    confidence: 0.35,
-    bestFunnelType: "direct_response",
-    bestTrafficSources: [input.trafficSource, "google_search", "meta_feed"],
-    recommendedLeadCapture: ["email", "name"],
-    riskNotes: [
-      "Limited URL evidence — validate claims on the live site before scaling spend.",
-      "Ensure compliance with platform policies for the stated vertical.",
-    ],
+  console.info("[landing] classifier-prompt", {
+    url: input.url,
+    goal: input.goal,
+    audience: input.audience,
+    trafficSource: input.trafficSource,
+    hasResearch: Boolean(input.urlResearch),
   });
-
   const out = await runStrictJsonPrompt({
     system: BUSINESS_CLASSIFIER_SYSTEM,
     user: buildBusinessClassifierUserPrompt({
@@ -38,7 +45,14 @@ export async function classifyBusiness(input: {
       trafficSource: input.trafficSource,
       urlResearch: input.urlResearch ?? undefined,
     }),
-    fallbackJsonText,
+    fallbackJsonText: emptyClassifierFallback(input.trafficSource),
   });
-  return safeParseRecord(out.jsonText);
+  const parsed = safeParseRecord(out.jsonText);
+  console.info("[landing] classifier-response", {
+    used: out.meta.used,
+    cacheHit: out.meta.cacheHit,
+    classification: String(parsed.classification ?? ""),
+    bestFunnelType: String(parsed.bestFunnelType ?? ""),
+  });
+  return parsed;
 }

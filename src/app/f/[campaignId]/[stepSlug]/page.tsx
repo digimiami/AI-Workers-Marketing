@@ -536,20 +536,53 @@ export default async function PublicFunnelStepPage(props: {
   // If structured, prefer rendering from landing_pages/bridge_pages blocks.
   let structuredBlocks: unknown = null;
   let debugMeta: Record<string, unknown> | null = null;
+  let renderSource: "variant" | "landing_page" | "step_meta" | "none" = "none";
+  let renderVariantKey: string | null = null;
   if (wantsStructured) {
     if ((step as any).step_type === "landing") {
-      const { data: rows } = await admin
-        .from("landing_pages" as never)
-        .select("blocks,metadata,created_at")
-        .eq("funnel_step_id", String((step as any).id))
+      // 1) Source of truth: landing_page_variants (selected by query, then by selected flag).
+      const variantQuery = admin
+        .from("landing_page_variants" as never)
+        .select("id,variant_key,selected,content,updated_at")
         .eq("organization_id", String((camp as any).organization_id))
-        .order("created_at", { ascending: false })
+        .eq("campaign_id", String((camp as any).id))
+        .eq("funnel_step_id", String((step as any).id))
+        .order("updated_at", { ascending: false })
         .limit(10);
-      const match =
-        (rows ?? []).find((r: any) => (asRecord(r.metadata).variant_key as any) === variantKey) ??
-        (rows ?? [])[0];
-      structuredBlocks = match?.blocks ?? null;
-      debugMeta = match?.metadata ? asRecord(match.metadata) : null;
+      const { data: variantRows } = await variantQuery;
+      const variantList = ((variantRows ?? []) as any[]) ?? [];
+      const matchedVariant =
+        (variantKey
+          ? variantList.find((r) => String(r.variant_key) === variantKey)
+          : null) ??
+        variantList.find((r) => Boolean(r.selected)) ??
+        variantList[0] ??
+        null;
+      if (matchedVariant && asRecord(matchedVariant.content).blocks) {
+        structuredBlocks = (asRecord(matchedVariant.content).blocks as unknown) ?? null;
+        renderSource = "variant";
+        renderVariantKey = String(matchedVariant.variant_key ?? "");
+      }
+
+      // 2) Fall back to legacy landing_pages snapshot only if no variant blocks exist.
+      if (!structuredBlocks) {
+        const { data: rows } = await admin
+          .from("landing_pages" as never)
+          .select("blocks,metadata,created_at")
+          .eq("funnel_step_id", String((step as any).id))
+          .eq("organization_id", String((camp as any).organization_id))
+          .order("created_at", { ascending: false })
+          .limit(10);
+        const match =
+          (rows ?? []).find((r: any) => (asRecord(r.metadata).variant_key as any) === variantKey) ??
+          (rows ?? [])[0];
+        structuredBlocks = match?.blocks ?? null;
+        debugMeta = match?.metadata ? asRecord(match.metadata) : null;
+        if (structuredBlocks) {
+          renderSource = "landing_page";
+          renderVariantKey = match ? String(asRecord(match.metadata).variant_key ?? "") : null;
+        }
+      }
     } else if ((step as any).step_type === "bridge") {
       const { data: row } = await admin
         .from("bridge_pages" as never)
@@ -559,10 +592,22 @@ export default async function PublicFunnelStepPage(props: {
         .maybeSingle();
       structuredBlocks = (row as any)?.blocks ?? null;
       debugMeta = (row as any)?.metadata ? asRecord((row as any).metadata) : null;
+      if (structuredBlocks) renderSource = "landing_page";
     } else if (Array.isArray((page as any).blocks)) {
       structuredBlocks = (page as any).blocks;
+      renderSource = "step_meta";
     }
   }
+
+  console.info("[landing render]", {
+    campaignId,
+    stepSlug,
+    stepType: (step as any).step_type,
+    requestedVariant: variantKey ?? null,
+    renderSource,
+    renderVariantKey,
+    blocksCount: Array.isArray(structuredBlocks) ? (structuredBlocks as unknown[]).length : 0,
+  });
 
   // Log page_view (server-side)
   try {
