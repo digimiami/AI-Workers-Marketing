@@ -7,9 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PlanUpgradeDialog, type PlanKey } from "@/components/billing/PlanUpgradeDialog";
 import { cn } from "@/lib/utils";
 
 type Platform = "meta" | "google" | "tiktok";
@@ -40,7 +40,7 @@ export function AdsEngineResultCard(props: {
   const [paidCounts, setPaidCounts] = React.useState<{ ad_campaigns?: number; ads?: number; approvals_pending?: number }>({});
   const [variants, setVariants] = React.useState<Array<{ id: string; variant_key: string; selected: boolean }>>([]);
   const [paywallOpen, setPaywallOpen] = React.useState(false);
-  const [paywallPlan, setPaywallPlan] = React.useState<"free" | "starter" | "pro" | "agency">("free");
+  const [paywallPlan, setPaywallPlan] = React.useState<PlanKey>("free");
   const [lastError, setLastError] = React.useState<string | null>(null);
 
   const fetchState = React.useCallback(async () => {
@@ -145,10 +145,9 @@ export function AdsEngineResultCard(props: {
         const j = (await res.json().catch(() => null)) as { ok?: boolean; message?: string };
         if (!res.ok) {
           const msg = j?.message ?? "Action failed";
-          // Plan gating signals from server.
           if (msg.startsWith("PLAN_BLOCK_AD_LAUNCH:")) {
-            const plan = msg.split(":")[1] as any;
-            setPaywallPlan(plan === "starter" || plan === "pro" || plan === "agency" ? plan : "free");
+            const plan = msg.split(":")[1];
+            setPaywallPlan(plan === "starter" || plan === "pro" || plan === "agency" ? (plan as PlanKey) : "free");
             setPaywallOpen(true);
             throw new Error("Upgrade required to launch ads.");
           }
@@ -179,53 +178,13 @@ export function AdsEngineResultCard(props: {
 
   return (
     <>
-      <Dialog open={paywallOpen} onOpenChange={setPaywallOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogTitle className="text-base">Upgrade to launch paid ads</DialogTitle>
-          <div className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              Paid ad launch is locked on your current plan. Upgrade to unlock Meta/Google launch, approvals, and the optimization loop.
-            </p>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {[
-                { key: "starter", name: "Starter", price: "$29/mo", note: "3 campaigns · limited AI" },
-                { key: "pro", name: "Pro", price: "$97/mo", note: "Unlimited · ads launch · optimization" },
-                { key: "agency", name: "Agency", price: "$297/mo", note: "Unlimited · white-label ready" },
-              ].map((p) => (
-                <button
-                  key={p.key}
-                  type="button"
-                  className={cn(
-                    "rounded-xl border px-3 py-3 text-left transition-colors",
-                    p.key === "pro" ? "border-primary/40 bg-primary/5" : "border-border/60 bg-muted/10 hover:bg-muted/20",
-                  )}
-                  onClick={() => {
-                    void (async () => {
-                      const res = await fetch("/api/stripe/create-checkout-session", {
-                        method: "POST",
-                        headers: { "content-type": "application/json" },
-                        body: JSON.stringify({ organizationId: props.organizationId, plan: p.key }),
-                      });
-                      const j = (await res.json().catch(() => null)) as { ok?: boolean; checkoutUrl?: string; message?: string };
-                      if (!res.ok || !j?.checkoutUrl) throw new Error(j?.message ?? "Failed to start checkout");
-                      window.location.href = j.checkoutUrl;
-                    })().catch((err) => setLastError(err instanceof Error ? err.message : "Checkout failed"));
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-foreground">{p.name}</span>
-                    <span className="text-xs text-muted-foreground">{p.price}</span>
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">{p.note}</div>
-                </button>
-              ))}
-            </div>
-            <p className="text-xs">
-              Current plan: <span className="font-mono text-foreground">{paywallPlan}</span>
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PlanUpgradeDialog
+        open={paywallOpen}
+        onOpenChange={setPaywallOpen}
+        organizationId={props.organizationId}
+        reason="ads_launch"
+        currentPlan={paywallPlan}
+      />
 
       <Card className={cn("border-border/50 bg-card/40 shadow-[0_0_28px_-12px_rgba(251,146,60,0.18)] backdrop-blur-xl", props.className)}>
       <CardHeader className="pb-2">

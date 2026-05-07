@@ -10,6 +10,7 @@ import { AiBuildTimeline } from "@/components/workspace/AiBuildTimeline";
 import { AiCommandCard, type AiCommandValues } from "@/components/workspace/AiCommandCard";
 import { AiGeneratedResults } from "@/components/workspace/AiGeneratedResults";
 import { AiWorkspaceFullGrid } from "@/components/workspace/AiWorkspaceFullGrid";
+import { PlanUpgradeDialog, parsePlanLimitMessage, type PlanKey, type PlanUpgradeReason } from "@/components/billing/PlanUpgradeDialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useLiveWorkspaceBuild } from "@/hooks/useLiveWorkspaceBuild";
 import { cn } from "@/lib/utils";
@@ -98,6 +99,54 @@ export function AiWorkspacePage(props: Props) {
   const ready =
     !live.state.active &&
     (live.state.finalStatus === "completed" || live.state.finalStatus === "complete" || live.state.reviewUrl);
+
+  const planSignal = React.useMemo<{ reason: PlanUpgradeReason; plan: PlanKey } | null>(() => {
+    for (const e of live.state.errors) {
+      const hit = parsePlanLimitMessage(e.message);
+      if (hit) return hit;
+    }
+    return null;
+  }, [live.state.errors]);
+
+  const [paywallOpen, setPaywallOpen] = React.useState(false);
+  const [existingCampaignId, setExistingCampaignId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (planSignal) setPaywallOpen(true);
+  }, [planSignal]);
+
+  React.useEffect(() => {
+    if (!planSignal || planSignal.reason !== "campaign_limit") return;
+    let aborted = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/admin/campaigns?organizationId=${encodeURIComponent(organizationId)}`);
+        const j = (await res.json().catch(() => null)) as { ok?: boolean; campaigns?: Array<{ id: string }> };
+        if (aborted || !j?.ok || !Array.isArray(j.campaigns) || j.campaigns.length === 0) return;
+        setExistingCampaignId(j.campaigns[0].id);
+      } catch {
+        // silent — secondary action just won't show
+      }
+    })();
+    return () => {
+      aborted = true;
+    };
+  }, [planSignal, organizationId]);
+
+  const friendlyError = React.useCallback((message: string) => {
+    const hit = parsePlanLimitMessage(message);
+    if (!hit) return message;
+    if (hit.reason === "campaign_limit") {
+      return `You've reached the campaign limit on your ${hit.plan} plan. Upgrade or open your existing campaign to continue.`;
+    }
+    if (hit.reason === "ads_launch") {
+      return `Paid ad launch is locked on your ${hit.plan} plan. Upgrade to unlock launch and optimization.`;
+    }
+    if (hit.reason === "ai_usage") {
+      return `You've hit the monthly AI generation limit on your ${hit.plan} plan. Upgrade for higher limits.`;
+    }
+    return message;
+  }, []);
 
   return (
     <div className="pb-6">
@@ -206,22 +255,59 @@ export function AiWorkspacePage(props: Props) {
           {live.state.errors.length ? (
             <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100">
               {live.state.errors.map((e, i) => (
-                <div key={i}>{e.message}</div>
+                <div key={i}>{friendlyError(e.message)}</div>
               ))}
-              <Button
-                variant="outline"
-                className="mt-3 border-rose-500/50"
-                disabled={!(live.state.runId ?? runIdProp)}
-                onClick={() => {
-                  const rid = live.state.runId ?? runIdProp;
-                  if (rid) void live.resume(rid, { preserveResults: true });
-                }}
-              >
-                Retry stream
-              </Button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {planSignal ? (
+                  <Button
+                    variant="default"
+                    className="border-rose-500/50"
+                    onClick={() => setPaywallOpen(true)}
+                  >
+                    {planSignal.reason === "ads_launch" ? "Upgrade to launch ads" : "Upgrade plan"}
+                  </Button>
+                ) : null}
+                {planSignal?.reason === "campaign_limit" && existingCampaignId ? (
+                  <Link
+                    href={`/admin/campaigns/${existingCampaignId}`}
+                    className={buttonVariants({ variant: "secondary" })}
+                  >
+                    Open existing campaign
+                  </Link>
+                ) : null}
+                <Button
+                  variant="outline"
+                  className="border-rose-500/50"
+                  disabled={!(live.state.runId ?? runIdProp) || Boolean(planSignal)}
+                  onClick={() => {
+                    const rid = live.state.runId ?? runIdProp;
+                    if (rid) void live.resume(rid, { preserveResults: true });
+                  }}
+                >
+                  Retry stream
+                </Button>
+              </div>
             </div>
           ) : null}
         </>
+      ) : null}
+
+      {planSignal ? (
+        <PlanUpgradeDialog
+          open={paywallOpen}
+          onOpenChange={setPaywallOpen}
+          organizationId={organizationId}
+          reason={planSignal.reason}
+          currentPlan={planSignal.plan}
+          secondaryAction={
+            planSignal.reason === "campaign_limit" && existingCampaignId
+              ? {
+                  label: "Open existing campaign",
+                  onClick: () => router.push(`/admin/campaigns/${existingCampaignId}`),
+                }
+              : undefined
+          }
+        />
       ) : null}
     </div>
   );
