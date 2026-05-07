@@ -1117,7 +1117,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     });
 
     // ---------------- Direct-response landing generator (strict JSON, hard-fail on generic output) ----------------
-    const banned = /(boost your business|limited time offer|ai solutions|grow faster|unlock your dream|step into your future)/i;
+    const banned = /\b(boost your business|limited time offer|ai solutions|grow faster|unlock your dream|step into your future)\b/i;
     const stop = new Set([
       "the",
       "and",
@@ -1213,8 +1213,16 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     if (!drHeadline || drBenefits.length < 3 || drSteps.length < 2 || !drCta) {
       throw new Error("AI output invalid");
     }
-    if (banned.test(joined)) {
-      throw new Error("Generic output detected — banned phrases present");
+    {
+      const m = joined.match(banned);
+      if (m?.[1]) {
+        await log("creation", "error", "Generic output detected — banned phrases present", {
+          match: m[1],
+          headline: drHeadline,
+          cta: drCta,
+        });
+        throw new Error(`Generic output detected — banned phrases present: "${m[1]}"`);
+      }
     }
     if (anchorKeywords.length) {
       const hit = anchorKeywords.some((k) => joined.toLowerCase().includes(k));
