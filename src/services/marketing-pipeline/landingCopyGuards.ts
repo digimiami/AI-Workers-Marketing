@@ -147,6 +147,9 @@ export function isHeroAnchored(params: {
   hostBrand: string | null;
   strongTitleTokens: string[];
 }): boolean {
+  if (!params.hostBrand && params.strongTitleTokens.length === 0) {
+    return true;
+  }
   const hero = `${params.headline} ${params.subheadline}`.toLowerCase();
   if (params.hostBrand && params.hostBrand.length >= 3 && hero.includes(params.hostBrand)) {
     return true;
