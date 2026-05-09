@@ -9,6 +9,7 @@ export const LANDING_PAGE_GENERATOR_SYSTEM = [
 export function buildLandingPageGeneratorUserPrompt(input: {
   url: string;
   content: string;
+  businessBrief?: Record<string, unknown> | null;
   goal: string;
   audience: string;
   trafficSource: string;
@@ -22,6 +23,7 @@ export function buildLandingPageGeneratorUserPrompt(input: {
       inputs: {
         url: input.url,
         content_excerpt: contentExcerpt,
+        business_brief: input.businessBrief ?? null,
         goal: input.goal,
         audience: input.audience,
         trafficSource: input.trafficSource,
@@ -30,6 +32,7 @@ export function buildLandingPageGeneratorUserPrompt(input: {
       },
       rules: {
         step1_understand_business: [
+          "Use business_brief as the source of truth for names, locations, offers, and key_terms.",
           "From the provided content_excerpt, extract what is being sold, who it is for, what problem is solved, what result is promised.",
           "You MUST use the business/product/brand language found in content_excerpt (names, product terms, offers).",
           "Do NOT guess generically. If uncertain, be explicit in the copy without adding extra fields.",

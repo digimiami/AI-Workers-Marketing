@@ -6,6 +6,7 @@ import { env } from "@/lib/env";
 import { writeAuditLog } from "@/services/audit/auditService";
 import { runWorkerAndPersist } from "@/services/marketing-pipeline/workerRunner";
 import { scrapeUrlTextOrThrow } from "@/services/web/scrapeUrlText";
+import { buildBusinessBriefUserPrompt } from "@/ai/prompts/business_brief.prompt";
 import { buildLandingPageGeneratorUserPrompt } from "@/ai/prompts/landing_page_generator.prompt";
 import { buildLandingVariantsUserPrompt } from "@/ai/prompts/landing_variants.prompt";
 import {
@@ -1129,6 +1130,59 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     });
 
     // ---------------- Direct-response landing generator (strict JSON, hard-fail on generic output) ----------------
+    // Stage A: extract a grounded business brief (names/locations/offers/terms) from the scrape.
+    const briefRun = await runWorkerAndPersist({
+      organizationId,
+      campaignId,
+      pipelineRunId,
+      stageKey: "creation",
+      workerKey: "business_brief",
+      actorUserId: params.actorUserId,
+      provider: input.provider,
+      input: { url: input.url, content: scraped.contentText, goal: input.goal, audience: input.audience, trafficSource: input.trafficSource },
+      schemaHint:
+        "Return STRICT JSON: {business_name|null,person_name|null,locations[],offer_summary,offers[],service_lines[],audience_signals[],proof{...},cta_verbs_on_site[],key_terms[],forbidden_positioning[]}. No inventions.",
+      prompt: buildBusinessBriefUserPrompt({
+        url: input.url,
+        content: scraped.contentText,
+        goal: input.goal,
+        audience: input.audience,
+        trafficSource: input.trafficSource,
+      }),
+      fallback: {},
+    });
+    const businessBrief = asRecord(briefRun.output);
+    const briefName = String(businessBrief.business_name ?? "").trim();
+    const briefPerson = String(businessBrief.person_name ?? "").trim();
+    const briefOffer = String(businessBrief.offer_summary ?? "").trim();
+    const briefTerms = Array.isArray(businessBrief.key_terms)
+      ? (businessBrief.key_terms as unknown[])
+          .filter((t): t is string => typeof t === "string" && Boolean(t.trim()))
+          .map((t) => t.trim())
+      : [];
+    if (!(briefRun.meta as any)?.used) {
+      await log("creation", "warn", "Business brief model output not used", { url: input.url });
+    }
+    // Brief must give us at least one strong noun anchor (name/person) plus some terms.
+    if ((!briefName && !briefPerson) || !briefOffer || briefTerms.length < 8) {
+      await log("creation", "error", "Business brief insufficient", {
+        business_name: briefName || null,
+        person_name: briefPerson || null,
+        offer_summary_len: briefOffer.length,
+        key_terms_count: briefTerms.length,
+      });
+      if (campaignId) {
+        await markCampaignNeedsLandingFix({
+          admin,
+          organizationId,
+          campaignId,
+          reason: "invalid_shape",
+          detail: "Business brief insufficient (missing name/person, offer_summary, or key_terms).",
+        }).catch(() => null);
+      }
+      throw new Error("Scraping failed — insufficient structured business info");
+    }
+
     const hostBrand = hostBrandFromUrl(input.url);
     const strongTitleTokens = strongTitleAnchors(scraped.title, LANDING_FREQ_STOPWORDS);
     const bodyAnchorKeywords = specificPageKeywords(
@@ -1179,6 +1233,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     const basePrompt = buildLandingPageGeneratorUserPrompt({
       url: input.url,
       content: scraped.contentText,
+      businessBrief,
       goal: input.goal,
       audience: input.audience,
       trafficSource: input.trafficSource,
