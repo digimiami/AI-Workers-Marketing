@@ -115,7 +115,6 @@ export const LANDING_BANNED_SUBSTRINGS = [
   "advanced technology at your fingertips",
   "convenient customer management",
   "launch your workflows instantly",
-  "tailored for local businesses",
   "streamline their operations",
   "streamlined their operations",
   "see results almost immediately",

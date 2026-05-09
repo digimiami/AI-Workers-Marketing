@@ -10,6 +10,7 @@ import { AiBuildTimeline } from "@/components/workspace/AiBuildTimeline";
 import { AiCommandCard, type AiCommandValues } from "@/components/workspace/AiCommandCard";
 import { AiGeneratedResults } from "@/components/workspace/AiGeneratedResults";
 import { AiWorkspaceFullGrid } from "@/components/workspace/AiWorkspaceFullGrid";
+import { WorkspaceSavedRunsList } from "@/components/workspace/WorkspaceSavedRunsList";
 import { PlanUpgradeDialog, parsePlanLimitMessage, type PlanKey, type PlanUpgradeReason } from "@/components/billing/PlanUpgradeDialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useLiveWorkspaceBuild } from "@/hooks/useLiveWorkspaceBuild";
@@ -65,6 +66,14 @@ export function AiWorkspacePage(props: Props) {
     const path = `/admin/workspace/${live.state.runId}`;
     if (window.location.pathname !== path) router.replace(path);
   }, [redirectOnRunId, runIdProp, router, live.state.runId]);
+
+  /** New live build from `/admin/workspace/[runId]` yields a new run id — follow the new URL. */
+  React.useEffect(() => {
+    if (!runIdProp) return;
+    const rid = live.state.runId;
+    if (!rid || rid === runIdProp) return;
+    router.replace(`/admin/workspace/${rid}`);
+  }, [runIdProp, live.state.runId, router]);
 
   const campaignId = live.state.campaignId;
   const runId = live.state.runId;
@@ -194,6 +203,47 @@ export function AiWorkspacePage(props: Props) {
       </div>
 
       {!runIdProp ? <AiCommandCard value={cmd} onChange={setCmd} onSubmit={onBuild} disabled={live.state.active} /> : null}
+
+      {!runIdProp ? (
+        <div className="mt-4">
+          <WorkspaceSavedRunsList
+            variant="full"
+            disabled={live.state.active}
+            onRegenerate={(input) => {
+              setCmd((c) => ({
+                ...c,
+                url: input.url,
+                goal: input.goal,
+                audience: input.audience,
+                trafficSource: input.trafficSource,
+                funnelStyle: input.funnelStyle ?? c.funnelStyle,
+              }));
+              void live.start(input);
+            }}
+          />
+        </div>
+      ) : null}
+
+      {runIdProp ? (
+        <div className="mb-4 mt-2">
+          <WorkspaceSavedRunsList
+            variant="compact"
+            currentRunId={runIdProp}
+            disabled={live.state.active}
+            onRegenerate={(input) => {
+              setCmd((c) => ({
+                ...c,
+                url: input.url,
+                goal: input.goal,
+                audience: input.audience,
+                trafficSource: input.trafficSource,
+                funnelStyle: input.funnelStyle ?? c.funnelStyle,
+              }));
+              void live.start(input);
+            }}
+          />
+        </div>
+      ) : null}
 
       {showLive ? (
         <>

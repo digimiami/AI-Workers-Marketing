@@ -121,3 +121,31 @@ export async function GET(_request: Request, ctx: { params: Promise<{ runId: str
   });
 }
 
+/** Remove a saved pipeline run and all cascaded stage data (org members, same auth as GET). */
+export async function DELETE(_request: Request, ctx: { params: Promise<{ runId: string }> }) {
+  const params = await ctx.params;
+  const parsed = paramsSchema.safeParse(params);
+  if (!parsed.success) return NextResponse.json({ ok: false, message: "Invalid runId" }, { status: 400 });
+
+  const admin = createSupabaseAdminClient();
+  const { data: run, error: runErr } = await admin
+    .from("marketing_pipeline_runs" as never)
+    .select("id,organization_id")
+    .eq("id", parsed.data.runId)
+    .maybeSingle();
+  if (runErr) return NextResponse.json({ ok: false, message: runErr.message }, { status: 500 });
+  if (!run) return NextResponse.json({ ok: false, message: "Not found" }, { status: 404 });
+
+  const orgCtx = await withOrgMember(String((run as { organization_id?: string }).organization_id));
+  if (orgCtx.error) return orgCtx.error;
+
+  const orgId = String((run as { organization_id?: string }).organization_id);
+  const { error: delErr } = await admin
+    .from("marketing_pipeline_runs" as never)
+    .delete()
+    .eq("id", parsed.data.runId)
+    .eq("organization_id", orgId);
+
+  if (delErr) return NextResponse.json({ ok: false, message: delErr.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
