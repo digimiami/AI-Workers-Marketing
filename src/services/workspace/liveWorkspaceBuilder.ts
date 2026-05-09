@@ -39,6 +39,10 @@ function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
 type EmitFn = (event: string, payload: unknown) => void;
 
 /**
@@ -267,7 +271,22 @@ export async function runLiveWorkspaceBuildStream(args: {
 
           const runErrors = asRows<string>((snap.run as { errors?: unknown }).errors);
           if (runStatus === "failed" || runErrors.length) {
-            send("error", { key: currentStage ?? "unknown", message: runErrors[0] ?? "Pipeline failed" });
+            let message = runErrors[0] ?? "Pipeline failed";
+            // If the run error is generic, enrich it from campaign metadata (landing_fix)
+            // so operators can see *which* banned phrase / anchor rule fired.
+            if (message === "Generic output detected — banned phrases present" || message === "Generic output detected — banned phrases present.") {
+              const campMeta = asRecord(asRecord(bundle?.campaign).metadata);
+              const ge = asRecord(campMeta.growth_engine);
+              const fix = asRecord(ge.landing_fix);
+              const reason = str(fix.reason);
+              const detail = str(fix.detail);
+              if (detail) {
+                message = `${message}: ${detail}`;
+              } else if (reason) {
+                message = `${message} (${reason})`;
+              }
+            }
+            send("error", { key: currentStage ?? "unknown", message });
           }
 
           if (runStatus === "completed" || runStatus === "needs_approval" || runStatus === "failed") {

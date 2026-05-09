@@ -261,7 +261,9 @@ export function AiWorkspacePage(props: Props) {
           {live.state.errors.length ? (
             <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100">
               {live.state.errors.map((e, i) => (
-                <div key={i}>{friendlyError(e.message)}</div>
+                <div key={i} className="whitespace-pre-wrap">
+                  {friendlyError(e.message)}
+                </div>
               ))}
               <div className="mt-3 flex flex-wrap gap-2">
                 {planSignal ? (
