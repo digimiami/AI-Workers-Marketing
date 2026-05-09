@@ -8,6 +8,7 @@ import {
   validateLandingVariantQuality,
   type LandingFixReason,
 } from "@/services/marketing-pipeline/landingCopyGuards";
+import { buildLandingVariantBlocks, DEFAULT_LANDING_VISUAL_PRESET } from "@/services/marketing-pipeline/landingVariantBlocks";
 
 export type RegenerateLandingVariantsInput = {
   organizationId: string;
@@ -157,6 +158,9 @@ export async function regenerateLandingVariantsForCampaign(params: {
     const content: Record<string, unknown> = {
       headline: typeof v.headline === "string" ? v.headline : "",
       subheadline: typeof v.subheadline === "string" ? v.subheadline : "",
+      heroBadge:
+        typeof (v as { heroBadge?: unknown }).heroBadge === "string" ? String((v as { heroBadge?: unknown }).heroBadge) : "",
+      sections: Array.isArray((v as { sections?: unknown }).sections) ? (v as { sections: unknown[] }).sections : [],
       ctaText:
         typeof (v as { ctaText?: unknown }).ctaText === "string"
           ? String((v as { ctaText?: unknown }).ctaText)
@@ -175,6 +179,8 @@ export async function regenerateLandingVariantsForCampaign(params: {
         typeof (v as { variantLabel?: unknown }).variantLabel === "string"
           ? String((v as { variantLabel?: unknown }).variantLabel)
           : "",
+      visual_preset: DEFAULT_LANDING_VISUAL_PRESET,
+      blocks: buildLandingVariantBlocks(v as Record<string, unknown>),
       regenerated_at: now,
     };
     const verdict = validateLandingVariantQuality(content, {

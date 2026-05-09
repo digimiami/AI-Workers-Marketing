@@ -21,6 +21,7 @@ import {
   strongTitleAnchors,
   type LandingFixReason,
 } from "@/services/marketing-pipeline/landingCopyGuards";
+import { buildLandingVariantBlocks, DEFAULT_LANDING_VISUAL_PRESET } from "@/services/marketing-pipeline/landingVariantBlocks";
 
 import {
   marketingPipelineStageKeySchema,
@@ -1666,168 +1667,6 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         });
       }
 
-      const toBlocks = (v: Record<string, unknown>) => {
-        const sections = Array.isArray(v.sections) ? (v.sections as unknown[]).map((s) => asRecord(s)) : [];
-        const secBlocks = sections.map((s) => ({
-          type: String(s.type || "section"),
-          title: typeof s.title === "string" ? s.title : undefined,
-          bullets: Array.isArray(s.bullets) ? (s.bullets as unknown[]).filter((x): x is string => typeof x === "string") : undefined,
-          body: typeof s.body === "string" ? s.body : undefined,
-          items: Array.isArray(s.items) ? s.items : undefined,
-        }));
-
-        const benefitsArr = Array.isArray(v.benefits) ? (v.benefits as unknown[]).map((b) => asRecord(b)) : [];
-        const stepsArr = Array.isArray(v.steps) ? (v.steps as unknown[]).map((b) => asRecord(b)) : [];
-        const offer = asRecord((v as any).offer);
-        const socialProof = asRecord((v as any).socialProof);
-        const objectionsArr = Array.isArray((v as any).objections) ? ((v as any).objections as unknown[]).map((x) => asRecord(x)) : [];
-        const faqArr = Array.isArray((v as any).faq) ? ((v as any).faq as unknown[]).map((x) => asRecord(x)) : [];
-        const guarantee = asRecord((v as any).guarantee);
-
-        const benefitItems =
-          benefitsArr.length > 0
-            ? benefitsArr
-                .map((b) => ({
-                  title: typeof b.title === "string" ? b.title : "",
-                  desc:
-                    typeof b.description === "string"
-                      ? b.description
-                      : typeof b.desc === "string"
-                        ? b.desc
-                        : "",
-                }))
-                .filter((x) => x.title && x.desc)
-            : [];
-
-        const processItems =
-          stepsArr.length > 0
-            ? stepsArr
-                .map((b) => ({
-                  title: typeof b.title === "string" ? b.title : "",
-                  desc:
-                    typeof b.description === "string"
-                      ? b.description
-                      : typeof b.desc === "string"
-                        ? b.desc
-                        : "",
-                }))
-                .filter((x) => x.title && x.desc)
-            : [];
-
-        const trustLine =
-          typeof v.trustLine === "string"
-            ? v.trustLine
-            : typeof (v as any).trust === "string"
-              ? String((v as any).trust)
-              : "";
-
-        const headline = typeof v.headline === "string" ? v.headline : "";
-        const subheadline = typeof v.subheadline === "string" ? v.subheadline : "";
-        const cta =
-          typeof v.ctaText === "string"
-            ? v.ctaText
-            : typeof (v as any).cta === "string"
-              ? String((v as any).cta)
-              : typeof v.cta === "string"
-                ? v.cta
-                : "";
-
-        const blocks: unknown[] = [
-          {
-            type: "hero",
-            headline,
-            subheadline,
-            cta_label: cta,
-            trust_line: trustLine,
-          },
-        ];
-
-        if (benefitItems.length) {
-          blocks.push({ type: "benefits", items: benefitItems.map((x) => ({ title: x.title, desc: x.desc })) });
-        }
-        if (processItems.length) {
-          blocks.push({ type: "process", items: processItems.map((x) => ({ title: x.title, desc: x.desc })) });
-        }
-
-        // ClickFunnels-style long-form sections (optional, but supported by the renderer).
-        const offerBullets = Array.isArray((offer as any).bullets) ? ((offer as any).bullets as unknown[]).filter((x): x is string => typeof x === "string") : [];
-        const offerTitle = typeof (offer as any).title === "string" ? String((offer as any).title) : "";
-        const offerValueStack = Array.isArray((offer as any).valueStack) ? ((offer as any).valueStack as unknown[]).map((x) => asRecord(x)) : [];
-        if (offerTitle || offerBullets.length || offerValueStack.length) {
-          blocks.push({
-            type: "offer",
-            title: offerTitle || "What you get",
-            bullets: offerBullets.length ? offerBullets : undefined,
-            items: offerValueStack.length
-              ? offerValueStack
-                  .map((x) => ({ label: typeof x.label === "string" ? x.label : "", value: typeof x.value === "string" ? x.value : "" }))
-                  .filter((x) => x.label && x.value)
-              : undefined,
-          });
-        }
-
-        const proofPoints = Array.isArray((socialProof as any).proofPoints)
-          ? ((socialProof as any).proofPoints as unknown[]).filter((x): x is string => typeof x === "string")
-          : [];
-        const testimonials = Array.isArray((socialProof as any).testimonials)
-          ? ((socialProof as any).testimonials as unknown[]).map((x) => asRecord(x))
-          : [];
-        const testimonialItems = testimonials
-          .map((t) => ({
-            name: typeof t.name === "string" ? t.name : "",
-            role: typeof t.role === "string" ? t.role : "",
-            quote: typeof t.quote === "string" ? t.quote : "",
-          }))
-          .filter((t) => t.quote);
-        if (proofPoints.length || testimonialItems.length) {
-          blocks.push({
-            type: "social_proof",
-            bullets: proofPoints.length ? proofPoints : undefined,
-            items: testimonialItems.length ? testimonialItems : undefined,
-          });
-        }
-
-        const objectionItems = objectionsArr
-          .map((o) => ({
-            question: typeof o.question === "string" ? o.question : "",
-            answer: typeof o.answer === "string" ? o.answer : "",
-          }))
-          .filter((x) => x.question && x.answer);
-        if (objectionItems.length) {
-          blocks.push({ type: "objections", items: objectionItems });
-        }
-
-        const faqItems = faqArr
-          .map((o) => ({
-            question: typeof o.question === "string" ? o.question : "",
-            answer: typeof o.answer === "string" ? o.answer : "",
-          }))
-          .filter((x) => x.question && x.answer);
-        if (faqItems.length) {
-          blocks.push({ type: "faq", items: faqItems });
-        }
-
-        const guaranteeHeadline = typeof (guarantee as any).headline === "string" ? String((guarantee as any).headline) : "";
-        const guaranteeBody = typeof (guarantee as any).body === "string" ? String((guarantee as any).body) : "";
-        if (guaranteeHeadline || guaranteeBody) {
-          blocks.push({
-            type: "guarantee",
-            title: guaranteeHeadline || "Guarantee",
-            body: guaranteeBody || undefined,
-          });
-        }
-
-        blocks.push(...secBlocks);
-
-        if (trustLine.trim()) {
-          blocks.push({ type: "section", title: "Trust", body: trustLine });
-        }
-
-        blocks.push({ type: "lead_capture_form" });
-
-        return blocks;
-      };
-
       const createdLandingIds: Array<{ id: string; key: string }> = [];
       for (const v of normalizedVariants) {
         const key =
@@ -1854,7 +1693,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         }
         const title = headlineRaw;
         const desc = typeof v.subheadline === "string" ? v.subheadline : "";
-        const blocks = toBlocks(v);
+        const blocks = buildLandingVariantBlocks(v as Record<string, unknown>);
         const { data: lp, error: lpErr } = await admin
           .from("landing_pages" as never)
           .insert(
@@ -1923,6 +1762,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
                 steps: Array.isArray((v as any).steps) ? (v as any).steps : [],
                 trustLine: typeof (v as any).trustLine === "string" ? String((v as any).trustLine) : "",
                 finalCTA: (v as any).finalCTA ?? {},
+                visual_preset: DEFAULT_LANDING_VISUAL_PRESET,
                 blocks,
                 landing_page_id: id,
               },

@@ -5,6 +5,8 @@ import { redirect, notFound } from "next/navigation";
 import crypto from "crypto";
 import { z } from "zod";
 
+import { StructuredLandingPage } from "@/components/funnel/StructuredLandingPage";
+import { funnelMainShell, funnelTopBar, type FunnelLandingVisualPreset } from "@/components/funnel/structuredLandingTheme";
 import { buttonVariants } from "@/components/ui/button";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ChatWidget } from "@/components/chat/ChatWidget";
@@ -16,10 +18,6 @@ function asRecord(v: unknown): Record<string, unknown> {
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
-}
-
-function strArr(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
 /** Hide raw goal+traffic strings used as campaign names (e.g. "AFFILIATE · ADWORDS · …"). */
@@ -38,478 +36,6 @@ function markdownToText(md: string) {
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/`([^`]+)`/g, "$1");
-}
-
-type BenefitItem = { title: string; desc: string };
-type ProcessItem = { title: string; desc: string };
-type LabeledValue = { label: string; value: string };
-type Testimonial = { name: string; role: string; quote: string };
-type QAItem = { question: string; answer: string };
-
-function parseColonItem(s: string): BenefitItem | null {
-  const idx = s.indexOf(":");
-  if (idx < 0) return null;
-  const title = s.slice(0, idx).trim();
-  const desc = s.slice(idx + 1).trim();
-  if (!title || !desc) return null;
-  return { title, desc };
-}
-
-function asItems(v: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(v) ? (v as Array<Record<string, unknown>>).filter((x) => x && typeof x === "object") : [];
-}
-
-function StructuredPage(props: {
-  blocks: unknown;
-  campaignName: string;
-  organizationId: string;
-  campaignId: string;
-  funnelId: string;
-  funnelStepId: string;
-  sourcePage: string;
-  nextHref?: string | null;
-}) {
-  const blocks = Array.isArray(props.blocks) ? (props.blocks as unknown[]) : [];
-
-  const hero = blocks.map(asRecord).find((b) => str(b.type) === "hero") ?? {};
-  const headline = str(hero.headline);
-  const subheadline = str(hero.subheadline);
-  const ctaLabel = str(hero.cta_label);
-  const trustLine = str(hero.trust_line) || str(hero.trustLine);
-
-  const benefitBlock = blocks.map(asRecord).find((b) => str(b.type) === "benefits") ?? {};
-  const benefitItemsFromItems: BenefitItem[] = asItems(benefitBlock.items).map((it) => ({
-    title: str(it.title),
-    desc: str(it.desc) || str(it.description),
-  })).filter((x) => x.title && x.desc);
-  const benefitItemsFromBullets: BenefitItem[] = strArr(benefitBlock.bullets)
-    .map((b) => parseColonItem(b))
-    .filter((x): x is BenefitItem => Boolean(x));
-  const benefits: BenefitItem[] = (benefitItemsFromItems.length ? benefitItemsFromItems : benefitItemsFromBullets).slice(0, 8);
-
-  const processBlock =
-    blocks.map(asRecord).find((b) => str(b.type) === "process" || str(b.type) === "steps") ?? {};
-  const processItemsFromItems: ProcessItem[] = asItems(processBlock.items).map((it) => ({
-    title: str(it.title),
-    desc: str(it.desc) || str(it.description),
-  })).filter((x) => x.title && x.desc);
-  const processItemsFromBullets: ProcessItem[] = strArr(processBlock.bullets)
-    .map((b) => parseColonItem(b))
-    .filter((x): x is BenefitItem => Boolean(x))
-    .map((x) => ({ title: x.title, desc: x.desc }));
-  const process: ProcessItem[] = (processItemsFromItems.length ? processItemsFromItems : processItemsFromBullets).slice(0, 6);
-
-  const hasInlineForm = blocks.map(asRecord).some((b) => str(b.type) === "lead_capture_form");
-
-  const sectionBlocks = blocks
-    .map(asRecord)
-    .filter((b) => str(b.type) === "section")
-    // Suppress generic "Trust" sections; we render trust as part of the hero/form instead.
-    .filter((b) => str(b.title).trim().toLowerCase() !== "trust");
-  const offerBlock = blocks.map(asRecord).find((b) => str(b.type) === "offer") ?? null;
-  const offerBullets = offerBlock ? strArr(offerBlock.bullets) : [];
-  const offerItems: LabeledValue[] = offerBlock
-    ? asItems(offerBlock.items)
-        .map((it) => ({ label: str(it.label), value: str(it.value) }))
-        .filter((x) => x.label && x.value)
-    : [];
-  const socialProof = blocks.map(asRecord).find((b) => str(b.type) === "social_proof") ?? null;
-  const proofPoints = socialProof ? strArr(socialProof.bullets) : [];
-  const testimonials: Testimonial[] = socialProof
-    ? asItems(socialProof.items)
-        .map((it) => ({ name: str(it.name), role: str(it.role), quote: str(it.quote) }))
-        .filter((t) => t.quote)
-        .slice(0, 6)
-    : [];
-  const objectionsBlock = blocks.map(asRecord).find((b) => str(b.type) === "objections") ?? null;
-  const objections: QAItem[] = objectionsBlock
-    ? asItems(objectionsBlock.items)
-        .map((it) => ({ question: str(it.question), answer: str(it.answer) }))
-        .filter((x) => x.question && x.answer)
-        .slice(0, 8)
-    : [];
-  const faqBlock = blocks.map(asRecord).find((b) => str(b.type) === "faq") ?? null;
-  const faqs: QAItem[] = faqBlock
-    ? asItems(faqBlock.items)
-        .map((it) => ({ question: str(it.question), answer: str(it.answer) }))
-        .filter((x) => x.question && x.answer)
-        .slice(0, 10)
-    : [];
-  const guaranteeBlock = blocks.map(asRecord).find((b) => str(b.type) === "guarantee") ?? null;
-  const guaranteeTitle = guaranteeBlock ? str(guaranteeBlock.title) : "";
-  const guaranteeBody = guaranteeBlock ? str(guaranteeBlock.body) : "";
-  const finalCtaBlock = blocks.map(asRecord).find((b) => str(b.type) === "final_cta") ?? null;
-  const finalHeadline = finalCtaBlock ? str(finalCtaBlock.headline) : "";
-  const finalSubheadline = finalCtaBlock ? str(finalCtaBlock.subheadline) : "";
-  const finalCtaLabel = finalCtaBlock ? (str(finalCtaBlock.cta_label) || str(finalCtaBlock.ctaText)) : "";
-
-  // Hard failure mode: do not render generic templates if AI blocks are missing/invalid.
-  const isValid =
-    Boolean(headline.trim()) &&
-    Boolean(subheadline.trim()) &&
-    Boolean(ctaLabel.trim()) &&
-    benefits.length >= 3 &&
-    process.length >= 2;
-
-  if (!isValid) {
-    return (
-      <section className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6 backdrop-blur-xl md:p-8">
-        <div className="text-xl font-semibold tracking-tight">Landing page not generated. Regenerate.</div>
-        <p className="mt-2 text-sm text-amber-200/90">
-          {!headline.trim()
-            ? "Missing AI-generated headline."
-            : !subheadline.trim()
-              ? "Missing AI-generated subheadline."
-              : !ctaLabel.trim()
-                ? "Missing AI-generated CTA."
-                : benefits.length < 3
-                  ? `Only ${benefits.length} benefit(s) — need at least 3.`
-                  : `Only ${process.length} step(s) — need at least 2.`}
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <div className="space-y-12">
-      <section className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-b from-muted/25 via-background to-background p-6 shadow-[0_0_90px_-40px_rgba(34,211,238,0.45)] md:p-10">
-        <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-28 -right-24 h-80 w-80 rounded-full bg-emerald-500/10 blur-3xl" />
-
-        <div className="relative grid gap-8 lg:grid-cols-[1.25fr_0.75fr] lg:items-start">
-          <div>
-            {props.campaignName && !looksLikeRawCampaignTags(props.campaignName) ? (
-              <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
-                {props.campaignName}
-              </div>
-            ) : null}
-
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-5xl">{headline}</h1>
-            <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">{subheadline}</p>
-
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              <a href={hasInlineForm ? "#lead-form" : props.nextHref || "#"} className={buttonVariants({})}>
-                {ctaLabel}
-              </a>
-              {props.nextHref ? (
-                <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
-                  Next step
-                </Link>
-              ) : null}
-            </div>
-
-            {(() => {
-              const ribbon = (proofPoints.length
-                ? proofPoints
-                : benefits.length
-                  ? benefits.map((b) => b.title)
-                  : offerBullets
-              ).slice(0, 3);
-              if (!ribbon.length) return null;
-              return (
-                <div className="mt-6 grid gap-2 sm:grid-cols-3">
-                  {ribbon.map((p) => (
-                    <div
-                      key={p}
-                      className="rounded-2xl border border-border/60 bg-card/30 px-4 py-3 text-xs text-muted-foreground backdrop-blur-xl"
-                    >
-                      <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-cyan-400/90 align-middle" />
-                      <span className="align-middle">{p}</span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
-
-          <div className="rounded-3xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl md:p-6">
-            <div className="text-sm font-semibold">Get started</div>
-            <div className="mt-1 text-xs text-muted-foreground">Takes ~30 seconds. We’ll send your next steps.</div>
-            <div className="mt-4 space-y-3">
-              <a href="#lead-form" className={cn(buttonVariants({}), "w-full justify-center")}>
-                {ctaLabel}
-              </a>
-              {trustLine ? (
-                <div className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-3 text-[11px] text-muted-foreground">
-                  {trustLine}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {benefits.length ? (
-        <section className="space-y-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Benefits</div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {benefits.slice(0, 6).map((b) => (
-              <div key={b.title} className="group rounded-2xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl transition-colors hover:bg-card/55">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 h-8 w-8 shrink-0 rounded-xl border border-border/60 bg-muted/15 p-2">
-                    <div className="h-full w-full rounded-md bg-gradient-to-br from-cyan-400/60 to-emerald-400/40" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-base font-semibold">{b.title}</div>
-                    <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{b.desc}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {process.length ? (
-        <section className="space-y-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">How it works</div>
-          <div className="grid gap-3 md:grid-cols-3">
-            {process.slice(0, 3).map((s, i) => (
-              <div key={s.title} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-                <div className="text-xs font-semibold text-cyan-300/90">Step {i + 1}</div>
-                <div className="mt-2 text-base font-semibold">{s.title}</div>
-                <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.desc}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {offerBlock && (offerBullets.length || offerItems.length) && str(offerBlock.title).trim() ? (
-        <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Offer</div>
-          <div className="mt-2 text-2xl font-semibold tracking-tight">{str(offerBlock.title)}</div>
-          {offerItems.length ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {offerItems.slice(0, 6).map((it) => (
-                <div key={it.label} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-                  <div className="text-sm font-semibold">{it.label}</div>
-                  <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{it.value}</div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {offerBullets.length ? (
-            <ul className="mt-4 grid gap-2 md:grid-cols-2">
-              {offerBullets.slice(0, 10).map((b) => (
-                <li key={b} className="rounded-xl border border-border/60 bg-muted/5 px-4 py-3 text-sm leading-relaxed">
-                  {b}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <div className="mt-6">
-            <a href="#lead-form" className={buttonVariants({})}>
-              {ctaLabel}
-            </a>
-          </div>
-        </section>
-      ) : null}
-
-      {socialProof && (proofPoints.length || testimonials.length) ? (
-        <section className="space-y-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Proof</div>
-          {proofPoints.length ? (
-            <div className="grid gap-2 md:grid-cols-2">
-              {proofPoints.slice(0, 6).map((p) => (
-                <div key={p} className="rounded-2xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
-                  {p}
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {testimonials.length ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              {testimonials.slice(0, 4).map((t) => (
-                <div key={`${t.name}-${t.quote.slice(0, 24)}`} className="rounded-2xl border border-border/60 bg-card/40 p-5 backdrop-blur-xl">
-                  {t.name ? <div className="text-sm font-semibold">{t.name}</div> : null}
-                  {t.role ? <div className="mt-1 text-xs text-muted-foreground">{t.role}</div> : null}
-                  <div className="mt-3 text-sm leading-relaxed text-muted-foreground">“{t.quote}”</div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          <div>
-            <a href="#lead-form" className={buttonVariants({ variant: "outline" })}>
-              {ctaLabel}
-            </a>
-          </div>
-        </section>
-      ) : null}
-
-      {sectionBlocks.length
-        ? sectionBlocks.slice(0, 8).map((s, idx) => {
-            const title = str(s.title);
-            const body = str(s.body);
-            const bullets = strArr(s.bullets);
-            if (!title && !body && bullets.length === 0) return null;
-            return (
-              <section key={`${title || "section"}-${idx}`} className="rounded-3xl border border-border/60 bg-muted/5 p-6 md:p-8">
-                {title ? <div className="text-2xl font-semibold tracking-tight">{title}</div> : null}
-                {body ? <p className={cn("mt-3 text-sm leading-relaxed text-muted-foreground", title ? "" : "mt-0")}>{body}</p> : null}
-                {bullets.length ? (
-                  <ul className="mt-4 grid gap-2 md:grid-cols-2">
-                    {bullets.slice(0, 10).map((b) => (
-                      <li key={b} className="rounded-xl border border-border/60 bg-background/50 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
-                        {b}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <div className="mt-6">
-                  <a href="#lead-form" className={buttonVariants({ variant: "outline" })}>
-                    {ctaLabel}
-                  </a>
-                </div>
-              </section>
-            );
-          })
-        : null}
-
-      {objections.length ? (
-        <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Common questions</div>
-          <div className="mt-2 text-2xl font-semibold tracking-tight">Before you continue</div>
-          <div className="mt-4 grid gap-3">
-            {objections.slice(0, 6).map((o) => (
-              <div key={o.question} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-                <div className="text-sm font-semibold">{o.question}</div>
-                <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{o.answer}</div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-6">
-            <a href="#lead-form" className={buttonVariants({})}>
-              {ctaLabel}
-            </a>
-          </div>
-        </section>
-      ) : null}
-
-      {guaranteeBlock && guaranteeTitle.trim() ? (
-        <section className="rounded-3xl border border-border/60 bg-gradient-to-r from-emerald-500/10 via-card to-cyan-500/10 p-6 md:p-8">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Risk reversal</div>
-          <div className="mt-2 text-2xl font-semibold tracking-tight">{guaranteeTitle}</div>
-          {guaranteeBody ? <p className="mt-3 max-w-3xl text-sm leading-relaxed text-muted-foreground">{guaranteeBody}</p> : null}
-          <div className="mt-6">
-            <a href="#lead-form" className={buttonVariants({})}>
-              {ctaLabel}
-            </a>
-          </div>
-        </section>
-      ) : null}
-
-      {faqs.length ? (
-        <section className="space-y-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">FAQ</div>
-          <div className="grid gap-3">
-            {faqs.slice(0, 8).map((f) => (
-              <div key={f.question} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-                <div className="text-sm font-semibold">{f.question}</div>
-                <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.answer}</div>
-              </div>
-            ))}
-          </div>
-          <div>
-            <a href="#lead-form" className={buttonVariants({})}>
-              {ctaLabel}
-            </a>
-          </div>
-        </section>
-      ) : null}
-
-      <section id="lead-form" className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="text-2xl font-semibold tracking-tight">
-              {finalHeadline.trim() ? finalHeadline : "Get your next steps"}
-            </div>
-            {finalSubheadline ? (
-              <p className="mt-2 text-sm text-muted-foreground">{finalSubheadline}</p>
-            ) : null}
-          </div>
-          <div className="rounded-full border border-border/60 bg-muted/10 px-3 py-1 text-[11px] text-muted-foreground">
-            Secure · Unsubscribe anytime
-          </div>
-        </div>
-        <form className="mt-6 space-y-4" action="/api/leads/capture" method="post">
-          <input type="hidden" name="organizationId" value={props.organizationId} />
-          <input type="hidden" name="campaignId" value={props.campaignId} />
-          <input type="hidden" name="funnelId" value={props.funnelId} />
-          <input type="hidden" name="funnelStepId" value={props.funnelStepId} />
-          <input type="hidden" name="sourcePage" value={props.sourcePage} />
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium" htmlFor="email">Email</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                placeholder="you@domain.com"
-                className="h-11 w-full rounded-xl border border-border/60 bg-background/60 px-3 text-sm outline-none transition focus:border-cyan-400/50 focus:bg-background"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium" htmlFor="fullName">Name (optional)</label>
-              <input
-                id="fullName"
-                name="fullName"
-                type="text"
-                placeholder="First + last"
-                className="h-11 w-full rounded-xl border border-border/60 bg-background/60 px-3 text-sm outline-none transition focus:border-cyan-400/50 focus:bg-background"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium" htmlFor="phone">Phone (optional)</label>
-              <input
-                id="phone"
-                name="phone"
-                type="tel"
-                inputMode="tel"
-                placeholder="(555) 555‑5555"
-                className="h-11 w-full rounded-xl border border-border/60 bg-background/60 px-3 text-sm outline-none transition focus:border-cyan-400/50 focus:bg-background"
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button className={cn(buttonVariants({}), "h-11 w-full justify-center md:w-auto")} type="submit">
-              {ctaLabel}
-            </button>
-            <div className="text-xs text-muted-foreground">
-              By continuing, you agree to receive messages related to this request.
-            </div>
-          </div>
-        </form>
-      </section>
-
-      {finalHeadline.trim() ? (
-        <section className="rounded-3xl border border-border/60 bg-gradient-to-r from-cyan-500/10 via-card to-emerald-500/10 p-6 md:p-8">
-          <div className="text-2xl font-semibold tracking-tight">{finalHeadline}</div>
-          {finalSubheadline ? <p className="mt-2 text-sm text-muted-foreground">{finalSubheadline}</p> : null}
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <a href="#lead-form" className={buttonVariants({})}>{finalCtaLabel || ctaLabel}</a>
-            {props.nextHref ? (
-              <Link className={buttonVariants({ variant: "outline" })} href={props.nextHref}>
-                Skip without submitting
-              </Link>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
-      {hasInlineForm ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 p-3 md:hidden">
-          <div className="pointer-events-auto mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-border/60 bg-background/90 p-3 shadow-lg backdrop-blur">
-            <a href="#lead-form" className={cn(buttonVariants({}), "h-10 w-full justify-center")}>
-              {ctaLabel}
-            </a>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 export default async function PublicFunnelStepPage(props: {
@@ -569,6 +95,7 @@ export default async function PublicFunnelStepPage(props: {
   let renderVariantKey: string | null = null;
   let landingFixReason: string | null = null;
   let availableVariantKeys: string[] = [];
+  let funnelVisualPreset: FunnelLandingVisualPreset = "growth_dark";
 
   if (isLandingStep) {
     // STRICT: landing pages render ONLY from landing_page_variants.content.blocks.
@@ -609,6 +136,8 @@ export default async function PublicFunnelStepPage(props: {
       structuredBlocks = matchedBlocks;
       renderSource = "variant";
       renderVariantKey = String(matchedVariant!.variant_key ?? "");
+      funnelVisualPreset =
+        matchedContent && String(matchedContent.visual_preset ?? "") === "growth_dark" ? "growth_dark" : "editorial_light";
     } else {
       // Pull the campaign's needs_generation_fix reason so we can show it.
       const ge = ((((camp as { metadata?: unknown } | null)?.metadata ?? {}) as Record<string, unknown>)
@@ -635,6 +164,9 @@ export default async function PublicFunnelStepPage(props: {
     } else if (Array.isArray((page as any).blocks)) {
       structuredBlocks = (page as any).blocks;
       renderSource = "step_meta";
+    }
+    if (structuredBlocks && (renderSource === "bridge_page" || renderSource === "step_meta")) {
+      funnelVisualPreset = "editorial_light";
     }
   }
 
@@ -734,22 +266,29 @@ export default async function PublicFunnelStepPage(props: {
     );
   }
 
+  const surfaceEd = funnelVisualPreset === "editorial_light";
+
   return (
-    <main className="min-h-screen bg-[radial-gradient(1100px_700px_at_20%_-10%,rgba(34,211,238,0.10),transparent_60%),radial-gradient(900px_600px_at_95%_15%,rgba(167,139,250,0.10),transparent_55%),radial-gradient(900px_600px_at_60%_110%,rgba(16,185,129,0.10),transparent_55%)]">
+    <main className={cn("min-h-screen", funnelMainShell(surfaceEd))}>
       <div className="mx-auto max-w-6xl px-4 py-10 space-y-6">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {String((camp as any).name ?? "")}
-          </div>
+          <div className={cn(funnelTopBar(surfaceEd))}>{String((camp as any).name ?? "")}</div>
           {nextSlug ? (
-            <Link className={buttonVariants({ variant: "outline", size: "sm" })} href={`/f/${campaignId}/${nextSlug}`}>
+            <Link
+              className={buttonVariants({
+                variant: "outline",
+                size: "sm",
+                className: surfaceEd ? "border-[#E2DBD2] bg-white text-[#2C2A29] hover:bg-[#F9F6F0]" : undefined,
+              })}
+              href={`/f/${campaignId}/${nextSlug}`}
+            >
               Next
             </Link>
           ) : null}
         </div>
 
         {structuredBlocks ? (
-          <StructuredPage
+          <StructuredLandingPage
             blocks={structuredBlocks}
             campaignName={String((camp as any).name ?? "")}
             organizationId={String((camp as any).organization_id)}
@@ -758,6 +297,7 @@ export default async function PublicFunnelStepPage(props: {
             funnelStepId={String((step as any).id)}
             sourcePage={`/f/${campaignId}/${stepSlug}`}
             nextHref={nextSlug ? `/f/${campaignId}/${nextSlug}` : null}
+            visualPreset={funnelVisualPreset}
           />
         ) : isLandingStep ? (
           <section className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6 backdrop-blur-xl md:p-8">

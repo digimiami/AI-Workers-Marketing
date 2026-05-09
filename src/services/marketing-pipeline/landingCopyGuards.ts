@@ -358,17 +358,23 @@ export function validateLandingVariantQuality(
       return `${String(r.title ?? "")} ${String(r.description ?? r.desc ?? "")}`;
     })
     .join(" ");
-    const trustLine = typeof (content as { trustLine?: unknown }).trustLine === "string" ? String((content as { trustLine?: unknown }).trustLine) : "";
-    const finalCtaRaw = (content as { finalCTA?: unknown }).finalCTA;
-    const finalCta =
-      finalCtaRaw && typeof finalCtaRaw === "object" && !Array.isArray(finalCtaRaw)
-        ? (finalCtaRaw as Record<string, unknown>)
-        : {};
-    const finalHead = typeof finalCta.headline === "string" ? finalCta.headline : "";
-    const finalSub = typeof finalCta.subheadline === "string" ? finalCta.subheadline : "";
-    const finalCtaText = typeof finalCta.ctaText === "string" ? String(finalCta.ctaText) : "";
+  const trustLine = typeof (content as { trustLine?: unknown }).trustLine === "string" ? String((content as { trustLine?: unknown }).trustLine) : "";
+  const finalCtaRaw = (content as { finalCTA?: unknown }).finalCTA;
+  const finalCta =
+    finalCtaRaw && typeof finalCtaRaw === "object" && !Array.isArray(finalCtaRaw)
+      ? (finalCtaRaw as Record<string, unknown>)
+      : {};
+  const finalHead = typeof finalCta.headline === "string" ? finalCta.headline : "";
+  const finalSub = typeof finalCta.subheadline === "string" ? finalCta.subheadline : "";
+  const finalCtaText = typeof finalCta.ctaText === "string" ? String(finalCta.ctaText) : "";
+  const heroBadge =
+    typeof (content as { heroBadge?: unknown }).heroBadge === "string" ? String((content as { heroBadge?: unknown }).heroBadge) : "";
+  const sectionsArr = Array.isArray((content as { sections?: unknown }).sections)
+    ? ((content as { sections: unknown[] }).sections as unknown[])
+    : [];
+  const sectionsText = sectionsArr.map((s) => (typeof s === "object" && s ? JSON.stringify(s) : "")).join(" ");
 
-    const haystack = [headline, subheadline, cta, benefitText, stepText, trustLine, finalHead, finalSub, finalCtaText].join(" ");
+  const haystack = [headline, subheadline, cta, benefitText, stepText, trustLine, finalHead, finalSub, finalCtaText, heroBadge, sectionsText].join(" ");
 
   const placeholder = findPlaceholderText(haystack);
   if (placeholder) return { ok: false, reason: "placeholder", detail: placeholder };
@@ -395,7 +401,7 @@ export function validateLandingVariantQuality(
           detail: `Headline/subheadline must reference the client site or page (e.g. "${hostBrand ?? strong[0] ?? "brand"}")`,
         };
       }
-      const bodyBits = [cta, benefitText, stepText].join(" ").toLowerCase();
+      const bodyBits = [cta, benefitText, stepText, sectionsText].join(" ").toLowerCase();
       const bodyKeys = specificPageKeywords(title, prefix.slice(0, 4000), LANDING_FREQ_STOPWORDS, 16);
       if (bodyKeys.length && !bodyKeys.some((k) => bodyBits.includes(k.toLowerCase()))) {
         return {
