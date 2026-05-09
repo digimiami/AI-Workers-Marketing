@@ -24,8 +24,19 @@ function str(v: unknown): string {
 function looksLikeRawCampaignTags(name: string): boolean {
   const n = name.trim();
   if (!n) return false;
-  if (n.includes(" · ") && n.length > 32) return true;
+  if (n.includes(" · ") && n.length > 24) return true;
   if (/^(AFFILIATE|ADWORDS|GOOGLE|META|FACEBOOK|PAID\s+SOCIAL)\b/i.test(n)) return true;
+  if (/\bAFFILIATE\b.*\b(GOOGLE\s+ADS|ADWORDS|META|FACEBOOK)\b/i.test(n)) return true;
+  return false;
+}
+
+function isLikelyThanksOrConfirmationStep(slug: string, step: { name?: unknown; step_type?: unknown }): boolean {
+  const s = slug.toLowerCase();
+  if (/thanks|thank-you|thankyou|confirmation|confirm|success|complete/i.test(s)) return true;
+  const nm = String(step?.name ?? "").toLowerCase();
+  if (/thank|confirm|success|done|submitted/i.test(nm)) return true;
+  const ty = String(step?.step_type ?? "").toLowerCase();
+  if (/(thank|confirm|success)/i.test(ty)) return true;
   return false;
 }
 
@@ -266,19 +277,27 @@ export default async function PublicFunnelStepPage(props: {
     );
   }
 
+  const thanksNoContent =
+    !structuredBlocks &&
+    !isLandingStep &&
+    !markdown.trim() &&
+    isLikelyThanksOrConfirmationStep(stepSlug, step as { name?: unknown; step_type?: unknown });
   const surfaceEd = funnelVisualPreset === "editorial_light";
+  const shellEd = surfaceEd || thanksNoContent;
+  const campName = String((camp as any).name ?? "").trim();
+  const showCampHeader = Boolean(campName) && !looksLikeRawCampaignTags(campName);
 
   return (
-    <main className={cn("min-h-screen", funnelMainShell(surfaceEd))}>
+    <main className={cn("min-h-screen", funnelMainShell(shellEd))}>
       <div className="mx-auto max-w-6xl px-4 py-10 space-y-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className={cn(funnelTopBar(surfaceEd))}>{String((camp as any).name ?? "")}</div>
+        <div className={cn("flex items-center gap-3", showCampHeader ? "justify-between" : "justify-end")}>
+          {showCampHeader ? <div className={cn(funnelTopBar(shellEd))}>{campName}</div> : null}
           {nextSlug ? (
             <Link
               className={buttonVariants({
                 variant: "outline",
                 size: "sm",
-                className: surfaceEd ? "border-[#E2DBD2] bg-white text-[#2C2A29] hover:bg-[#F9F6F0]" : undefined,
+                className: shellEd ? "border-[#E2DBD2] bg-white text-[#2C2A29] hover:bg-[#F9F6F0]" : undefined,
               })}
               href={`/f/${campaignId}/${nextSlug}`}
             >
@@ -332,6 +351,39 @@ export default async function PublicFunnelStepPage(props: {
               <div className="prose prose-neutral max-w-none">
                 <pre className="whitespace-pre-wrap">{markdownToText(markdown)}</pre>
               </div>
+            ) : thanksNoContent ? (
+              <section
+                className={
+                  shellEd
+                    ? "rounded-[1.75rem] border border-[#EDE6DD] bg-white p-8 shadow-[0_15px_40px_-20px_rgba(44,42,41,0.12)] md:p-10"
+                    : "rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8"
+                }
+              >
+                <div
+                  className={
+                    shellEd
+                      ? "font-[family-name:var(--font-funnel-display),ui-serif,Georgia,serif] text-3xl font-semibold tracking-tight text-[#2C2A29] md:text-4xl"
+                      : "text-2xl font-semibold tracking-tight md:text-3xl"
+                  }
+                >
+                  {String((step as any).name ?? "").trim() || "Thank you"}
+                </div>
+                <p className={shellEd ? "mt-4 max-w-xl text-base leading-relaxed text-[#4a4542]" : "mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground"}>
+                  Your submission was received. If you asked to be contacted, we&apos;ll follow up using the details you provided.
+                </p>
+                {nextSlug ? (
+                  <div className="mt-8">
+                    <Link
+                      href={`/f/${campaignId}/${nextSlug}`}
+                      className={buttonVariants({
+                        className: shellEd ? "rounded-full bg-[#2C2A29] px-6 text-white hover:bg-[#4a4745]" : undefined,
+                      })}
+                    >
+                      Continue
+                    </Link>
+                  </div>
+                ) : null}
+              </section>
             ) : (
               <section className="rounded-3xl border border-border/60 bg-card/40 p-6 backdrop-blur-xl md:p-8">
                 <div className="text-xl font-semibold tracking-tight">This step has no content yet.</div>
