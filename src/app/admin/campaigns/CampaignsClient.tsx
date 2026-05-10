@@ -123,7 +123,7 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
       toast.success("Campaign created");
       setOpen(false);
       setForm(emptyForm());
-      await qc.invalidateQueries({ queryKey: ["campaigns", organizationId] });
+      await qc.invalidateQueries({ queryKey: ["campaigns", orgId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to create campaign"),
   });
@@ -158,26 +158,27 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
     },
     onSuccess: async () => {
       toast.success("Campaign updated");
-      await qc.invalidateQueries({ queryKey: ["campaigns", organizationId] });
+      await qc.invalidateQueries({ queryKey: ["campaigns", orgId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Update failed"),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async () => {
-      if (!active) throw new Error("No campaign selected");
-      const res = await fetch(`/api/admin/campaigns/${active.id}`, {
+    mutationFn: async (target: { id: string }) => {
+      const res = await fetch(`/api/admin/campaigns/${target.id}`, {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ organizationId }),
       });
       if (!res.ok) throw new Error(await res.text());
     },
-    onSuccess: async () => {
+    onSuccess: async (_, target) => {
       toast.success("Campaign deleted");
-      setEditOpen(false);
-      setActive(null);
-      await qc.invalidateQueries({ queryKey: ["campaigns", organizationId] });
+      if (active?.id === target.id) {
+        setEditOpen(false);
+        setActive(null);
+      }
+      await qc.invalidateQueries({ queryKey: ["campaigns", orgId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
@@ -345,6 +346,7 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
                   <TableHead>Content</TableHead>
                   <TableHead>Events</TableHead>
                   <TableHead className="text-right">Created</TableHead>
+                  <TableHead className="text-right w-[200px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -372,27 +374,58 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
                     <TableCell>{c.content_asset_count ?? 0}</TableCell>
                     <TableCell>{c.analytics_event_count ?? 0}</TableCell>
                     <TableCell className="text-right text-muted-foreground">
-                      <div className="flex items-center justify-end gap-2">
-                        <span>{new Date(c.created_at).toLocaleDateString()}</span>
+                      {new Date(c.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={() => {
                             window.location.href = `/admin/campaigns/${c.id}/automation`;
                           }}
                         >
                           Automation
                         </Button>
                         <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setActive(c);
+                            setEdit({
+                              name: c.name,
+                              type: c.type,
+                              status: c.status,
+                              targetAudience: c.target_audience ?? "",
+                              description: c.description ?? "",
+                            });
+                            setEditOpen(true);
+                          }}
+                        >
+                          Save
+                        </Button>
+                        <Button
                           variant="outline"
                           size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={() => {
                             window.location.href = `/admin/campaigns/${c.id}`;
                           }}
                         >
                           Details
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={deleteMutation.isPending}
+                          onClick={() => {
+                            const ok = window.confirm(
+                              "Delete this campaign? Blocked if funnels, leads, or content assets are linked.",
+                            );
+                            if (!ok) return;
+                            deleteMutation.mutate({ id: c.id });
+                          }}
+                        >
+                          Delete
                         </Button>
                       </div>
                     </TableCell>
@@ -473,7 +506,7 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
                       "Delete this campaign? This is only allowed if there are no linked funnels/leads/content assets.",
                     );
                     if (!ok) return;
-                    deleteMutation.mutate();
+                    if (active) deleteMutation.mutate({ id: active.id });
                   }}
                 >
                   Delete

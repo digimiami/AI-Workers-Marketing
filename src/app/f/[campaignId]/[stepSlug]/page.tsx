@@ -49,6 +49,15 @@ function markdownToText(md: string) {
     .replace(/`([^`]+)`/g, "$1");
 }
 
+/** Same-origin app path only (no open redirects). */
+function pickSafeInternalHref(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const t = raw.trim();
+  if (!t.startsWith("/") || t.startsWith("//")) return null;
+  if (t.includes("..")) return null;
+  return t;
+}
+
 export default async function PublicFunnelStepPage(props: {
   params: Promise<{ campaignId: string; stepSlug: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -60,7 +69,7 @@ export default async function PublicFunnelStepPage(props: {
   const admin = createSupabaseAdminClient();
   const { data: camp } = await admin
     .from("campaigns" as never)
-    .select("id,organization_id,funnel_id,name,status")
+    .select("id,organization_id,funnel_id,name,status,metadata")
     .eq("id", campaignId)
     .maybeSingle();
   if (!camp) notFound();
@@ -229,6 +238,34 @@ export default async function PublicFunnelStepPage(props: {
 
   const nextSlug = (nextStep.data as any)?.slug ? String((nextStep.data as any).slug) : null;
 
+  const thanksLike =
+    stepType === "thank_you" ||
+    isLikelyThanksOrConfirmationStep(stepSlug, step as { name?: unknown; step_type?: unknown });
+
+  let workspaceHref: string | null = null;
+  if (thanksLike) {
+    const campMeta = asRecord((camp as any).metadata);
+    const ge = asRecord(campMeta.growth_engine);
+    const postSubmit = asRecord(meta.post_submit);
+    workspaceHref =
+      pickSafeInternalHref(postSubmit.workspace_href) ??
+      pickSafeInternalHref(postSubmit.href) ??
+      pickSafeInternalHref(campMeta.post_submit_workspace_href) ??
+      pickSafeInternalHref(ge.workspace_href);
+    if (!workspaceHref) {
+      const { data: latestRun } = await admin
+        .from("marketing_pipeline_runs" as never)
+        .select("id")
+        .eq("organization_id", String((camp as any).organization_id))
+        .eq("campaign_id", campaignId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const runId = (latestRun as { id?: string } | null)?.id;
+      workspaceHref = runId ? `/admin/workspace/${runId}` : `/admin/workspace/review/${campaignId}`;
+    }
+  }
+
   if ((step as any).step_type === "cta") {
     redirect(`/f/${campaignId}/go/${stepSlug}`);
   }
@@ -348,8 +385,24 @@ export default async function PublicFunnelStepPage(props: {
         ) : (
           <div className="space-y-4">
             {markdown ? (
-              <div className="prose prose-neutral max-w-none">
-                <pre className="whitespace-pre-wrap">{markdownToText(markdown)}</pre>
+              <div className="space-y-6">
+                <div className="prose prose-neutral max-w-none">
+                  <pre className="whitespace-pre-wrap">{markdownToText(markdown)}</pre>
+                </div>
+                {thanksLike && workspaceHref ? (
+                  <div className="flex flex-wrap gap-3">
+                    <Link
+                      href={workspaceHref}
+                      className={buttonVariants({
+                        className: shellEd
+                          ? "rounded-full bg-[#2C2A29] px-6 text-white hover:bg-[#4a4745]"
+                          : undefined,
+                      })}
+                    >
+                      Open workspace
+                    </Link>
+                  </div>
+                ) : null}
               </div>
             ) : thanksNoContent ? (
               <section
@@ -371,16 +424,35 @@ export default async function PublicFunnelStepPage(props: {
                 <p className={shellEd ? "mt-4 max-w-xl text-base leading-relaxed text-[#4a4542]" : "mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground"}>
                   Your submission was received. If you asked to be contacted, we&apos;ll follow up using the details you provided.
                 </p>
-                {nextSlug ? (
-                  <div className="mt-8">
-                    <Link
-                      href={`/f/${campaignId}/${nextSlug}`}
-                      className={buttonVariants({
-                        className: shellEd ? "rounded-full bg-[#2C2A29] px-6 text-white hover:bg-[#4a4745]" : undefined,
-                      })}
-                    >
-                      Continue
-                    </Link>
+                {nextSlug || workspaceHref ? (
+                  <div className="mt-8 flex flex-wrap gap-3">
+                    {nextSlug ? (
+                      <Link
+                        href={`/f/${campaignId}/${nextSlug}`}
+                        className={buttonVariants({
+                          variant: workspaceHref ? "outline" : "default",
+                          className: shellEd
+                            ? workspaceHref
+                              ? "rounded-full border-[#2C2A29] bg-white text-[#2C2A29] hover:bg-[#F9F6F0]"
+                              : "rounded-full bg-[#2C2A29] px-6 text-white hover:bg-[#4a4745]"
+                            : undefined,
+                        })}
+                      >
+                        Continue in funnel
+                      </Link>
+                    ) : null}
+                    {workspaceHref ? (
+                      <Link
+                        href={workspaceHref}
+                        className={buttonVariants({
+                          className: shellEd
+                            ? "rounded-full bg-[#2C2A29] px-6 text-white hover:bg-[#4a4745]"
+                            : undefined,
+                        })}
+                      >
+                        Open workspace
+                      </Link>
+                    ) : null}
                   </div>
                 ) : null}
               </section>

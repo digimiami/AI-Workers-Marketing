@@ -96,11 +96,19 @@ export function ContentClient({ organizationId }: { organizationId: string }) {
   });
 
   const patchMutation = useMutation({
-    mutationFn: async (vars: { assetId: string; status?: z.infer<typeof ContentStatus> }) => {
+    mutationFn: async (vars: {
+      assetId: string;
+      status?: z.infer<typeof ContentStatus>;
+      title?: string;
+    }) => {
       const res = await fetch(`/api/admin/content-assets/${vars.assetId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ organizationId, status: vars.status }),
+        body: JSON.stringify({
+          organizationId,
+          status: vars.status,
+          ...(vars.title !== undefined ? { title: vars.title } : {}),
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -112,9 +120,37 @@ export function ContentClient({ organizationId }: { organizationId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Update failed"),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (assetId: string) => {
+      const res = await fetch(`/api/admin/content-assets/${assetId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Asset deleted");
+      await qc.invalidateQueries({ queryKey: ["content-assets", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
+  });
+
+  const [titleByAsset, setTitleByAsset] = React.useState<Record<string, string>>({});
+
   const campaigns = campaignsQuery.data ?? [];
   const funnels = funnelsQuery.data ?? [];
   const assets = assetsQuery.data ?? [];
+
+  React.useEffect(() => {
+    setTitleByAsset((prev) => {
+      const next = { ...prev };
+      for (const a of assets) {
+        if (next[a.id] === undefined) next[a.id] = a.title;
+      }
+      return next;
+    });
+  }, [assets]);
 
   return (
     <div className="space-y-6">
@@ -214,12 +250,19 @@ export function ContentClient({ organizationId }: { organizationId: string }) {
                   <TableHead>Funnel</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Updated</TableHead>
+                  <TableHead className="text-right w-[200px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {assets.map((a) => (
                   <TableRow key={a.id}>
-                    <TableCell className="font-medium">{a.title}</TableCell>
+                    <TableCell className="font-medium">
+                      <Input
+                        className="h-8 max-w-[280px]"
+                        value={titleByAsset[a.id] ?? a.title}
+                        onChange={(e) => setTitleByAsset((m) => ({ ...m, [a.id]: e.target.value }))}
+                      />
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{a.campaign_name ?? "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{a.funnel_name ?? "—"}</TableCell>
                     <TableCell>
@@ -244,6 +287,36 @@ export function ContentClient({ organizationId }: { organizationId: string }) {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(a.updated_at).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={patchMutation.isPending}
+                          onClick={() => {
+                            const t = (titleByAsset[a.id] ?? a.title).trim();
+                            if (t.length < 2) {
+                              toast.error("Title must be at least 2 characters.");
+                              return;
+                            }
+                            patchMutation.mutate({ assetId: a.id, title: t, status: a.status });
+                          }}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={deleteMutation.isPending}
+                          onClick={() => {
+                            if (!window.confirm("Delete this content asset?")) return;
+                            deleteMutation.mutate(a.id);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

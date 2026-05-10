@@ -71,6 +71,11 @@ const createSequenceBody = z.object({
 export function EmailClient({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
   const [tab, setTab] = React.useState("templates");
+  const [tplDialog, setTplDialog] = React.useState<EmailTemplate | null>(null);
+  const [tplDraft, setTplDraft] = React.useState({ name: "", subject: "", body_markdown: "" });
+  const [seqDialog, setSeqDialog] = React.useState<EmailSequence | null>(null);
+  const [seqDraft, setSeqDraft] = React.useState({ name: "", description: "" });
+  const [delayDraft, setDelayDraft] = React.useState<Record<string, string>>({});
 
   // Templates
   const [templateOpen, setTemplateOpen] = React.useState(false);
@@ -243,6 +248,85 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
+  const patchTemplateRemote = useMutation({
+    mutationFn: async (vars: { id: string; name: string; subject: string; body_markdown: string }) => {
+      const res = await fetch(`/api/admin/email/templates/${vars.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          name: vars.name,
+          subject: vars.subject,
+          body_markdown: vars.body_markdown,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Template saved");
+      setTplDialog(null);
+      await qc.invalidateQueries({ queryKey: ["email-templates", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
+  });
+
+  const deleteTemplateRemote = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/email/templates/${id}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Template deleted");
+      setTplDialog(null);
+      await qc.invalidateQueries({ queryKey: ["email-templates", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
+  });
+
+  const patchSequenceRemote = useMutation({
+    mutationFn: async (vars: { id: string; name: string; description: string | null }) => {
+      const res = await fetch(`/api/admin/email/sequences/${vars.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          name: vars.name,
+          description: vars.description,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Sequence saved");
+      setSeqDialog(null);
+      await qc.invalidateQueries({ queryKey: ["email-sequences", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
+  });
+
+  const deleteSequenceRemote = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/email/sequences/${id}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async (_, deletedId) => {
+      toast.success("Sequence deleted");
+      setSeqDialog(null);
+      setSelectedSequenceId((cur) => (cur === deletedId ? "" : cur));
+      await qc.invalidateQueries({ queryKey: ["email-sequences", organizationId] });
+      await qc.invalidateQueries({ queryKey: ["email-sequence-steps", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
+  });
+
   // Logs
   const logsQuery = useQuery({
     queryKey: ["email-logs", organizationId],
@@ -264,6 +348,30 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
   React.useEffect(() => {
     if (!selectedSequenceId && defaultSequenceId) setSelectedSequenceId(defaultSequenceId);
   }, [selectedSequenceId, defaultSequenceId]);
+
+  React.useEffect(() => {
+    if (!tplDialog) return;
+    setTplDraft({
+      name: tplDialog.name,
+      subject: tplDialog.subject,
+      body_markdown: tplDialog.body_markdown,
+    });
+  }, [tplDialog]);
+
+  React.useEffect(() => {
+    if (!seqDialog) return;
+    setSeqDraft({ name: seqDialog.name, description: seqDialog.description ?? "" });
+  }, [seqDialog]);
+
+  React.useEffect(() => {
+    setDelayDraft((prev) => {
+      const next = { ...prev };
+      for (const st of steps) {
+        if (next[st.id] === undefined) next[st.id] = String(st.delay_minutes);
+      }
+      return next;
+    });
+  }, [steps]);
 
   return (
     <div className="space-y-6">
@@ -350,6 +458,7 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
                       <TableHead>Name</TableHead>
                       <TableHead>Subject</TableHead>
                       <TableHead className="text-right">Updated</TableHead>
+                      <TableHead className="text-right w-[180px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -360,6 +469,24 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
                         <TableCell className="text-right text-xs text-muted-foreground">
                           {new Date(t.updated_at).toLocaleString()}
                         </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => setTplDialog(t)}>
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={deleteTemplateRemote.isPending}
+                              onClick={() => {
+                                if (!window.confirm(`Delete template “${t.name}”?`)) return;
+                                deleteTemplateRemote.mutate(t.id);
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -367,6 +494,68 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
               )}
             </CardContent>
           </Card>
+
+          <Dialog open={Boolean(tplDialog)} onOpenChange={(o) => !o && setTplDialog(null)}>
+            <DialogContent className="max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Edit template</DialogTitle>
+              </DialogHeader>
+              {tplDialog ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Name</label>
+                    <Input
+                      value={tplDraft.name}
+                      onChange={(e) => setTplDraft((d) => ({ ...d, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Subject</label>
+                    <Input
+                      value={tplDraft.subject}
+                      onChange={(e) => setTplDraft((d) => ({ ...d, subject: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Body (markdown)</label>
+                    <Textarea
+                      rows={10}
+                      value={tplDraft.body_markdown}
+                      onChange={(e) => setTplDraft((d) => ({ ...d, body_markdown: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1"
+                      disabled={patchTemplateRemote.isPending}
+                      onClick={() => {
+                        const parsed = createTemplateBody.safeParse({
+                          name: tplDraft.name,
+                          subject: tplDraft.subject,
+                          body_markdown: tplDraft.body_markdown,
+                        });
+                        if (!parsed.success) {
+                          toast.error("Name (2+ chars), subject, and body are required.");
+                          return;
+                        }
+                        patchTemplateRemote.mutate({
+                          id: tplDialog.id,
+                          name: parsed.data.name,
+                          subject: parsed.data.subject,
+                          body_markdown: parsed.data.body_markdown,
+                        });
+                      }}
+                    >
+                      {patchTemplateRemote.isPending ? "Saving…" : "Save changes"}
+                    </Button>
+                    <Button variant="outline" onClick={() => setTplDialog(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="sequences" className="pt-4 space-y-4">
@@ -430,6 +619,7 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
                       <TableHead>Name</TableHead>
                       <TableHead>Active</TableHead>
                       <TableHead className="text-right">Updated</TableHead>
+                      <TableHead className="text-right w-[180px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -466,6 +656,24 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
                         <TableCell className="text-right text-xs text-muted-foreground">
                           {new Date(s.updated_at).toLocaleString()}
                         </TableCell>
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => setSeqDialog(s)}>
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={deleteSequenceRemote.isPending}
+                              onClick={() => {
+                                if (!window.confirm(`Delete sequence “${s.name}” and its steps?`)) return;
+                                deleteSequenceRemote.mutate(s.id);
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -473,6 +681,59 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
               )}
             </CardContent>
           </Card>
+
+          <Dialog open={Boolean(seqDialog)} onOpenChange={(o) => !o && setSeqDialog(null)}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Edit sequence</DialogTitle>
+              </DialogHeader>
+              {seqDialog ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Name</label>
+                    <Input
+                      value={seqDraft.name}
+                      onChange={(e) => setSeqDraft((d) => ({ ...d, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Description</label>
+                    <Textarea
+                      rows={4}
+                      value={seqDraft.description}
+                      onChange={(e) => setSeqDraft((d) => ({ ...d, description: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1"
+                      disabled={patchSequenceRemote.isPending}
+                      onClick={() => {
+                        const parsed = createSequenceBody.safeParse({
+                          name: seqDraft.name,
+                          description: seqDraft.description || undefined,
+                        });
+                        if (!parsed.success) {
+                          toast.error("Name must be at least 2 characters.");
+                          return;
+                        }
+                        patchSequenceRemote.mutate({
+                          id: seqDialog.id,
+                          name: parsed.data.name.trim(),
+                          description: parsed.data.description?.trim() || null,
+                        });
+                      }}
+                    >
+                      {patchSequenceRemote.isPending ? "Saving…" : "Save changes"}
+                    </Button>
+                    <Button variant="outline" onClick={() => setSeqDialog(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
 
           <Card>
             <CardHeader className="pb-2">
@@ -537,17 +798,10 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
                         <TableCell className="font-mono text-xs">
                           <Input
                             className="h-8 w-[120px]"
-                            defaultValue={String(st.delay_minutes)}
-                            onBlur={(e) => {
-                              const n = Number.parseInt(e.target.value, 10);
-                              if (!Number.isFinite(n) || n < 0) {
-                                toast.error("Delay must be >= 0");
-                                e.target.value = String(st.delay_minutes);
-                                return;
-                              }
-                              if (n === st.delay_minutes) return;
-                              patchStep.mutate({ stepId: st.id, delay_minutes: n });
-                            }}
+                            value={delayDraft[st.id] ?? String(st.delay_minutes)}
+                            onChange={(e) =>
+                              setDelayDraft((m) => ({ ...m, [st.id]: e.target.value }))
+                            }
                           />
                         </TableCell>
                         <TableCell>
@@ -574,14 +828,36 @@ export function EmailClient({ organizationId }: { organizationId: string }) {
                           </Select>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => deleteStep.mutate({ stepId: st.id })}
-                            disabled={deleteStep.isPending}
-                          >
-                            Delete
-                          </Button>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={patchStep.isPending}
+                              onClick={() => {
+                                const raw = delayDraft[st.id] ?? String(st.delay_minutes);
+                                const n = Number.parseInt(raw, 10);
+                                if (!Number.isFinite(n) || n < 0) {
+                                  toast.error("Delay must be >= 0");
+                                  return;
+                                }
+                                patchStep.mutate({
+                                  stepId: st.id,
+                                  delay_minutes: n,
+                                  template_id: st.template_id,
+                                });
+                              }}
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => deleteStep.mutate({ stepId: st.id })}
+                              disabled={deleteStep.isPending}
+                            >
+                              Delete
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

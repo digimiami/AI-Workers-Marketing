@@ -2,10 +2,13 @@
 
 import * as React from "react";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 type ReportRow = {
   id: string;
@@ -13,11 +16,15 @@ type ReportRow = {
   week_start: string;
   week_end: string;
   status: string;
+  report_markdown: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export function ReportsClient({ organizationId }: { organizationId: string }) {
+  const qc = useQueryClient();
+  const [mdById, setMdById] = React.useState<Record<string, string>>({});
+
   const reportQuery = useQuery({
     queryKey: ["weekly-reports", organizationId],
     queryFn: async () => {
@@ -29,6 +36,51 @@ export function ReportsClient({ organizationId }: { organizationId: string }) {
 
   const rows = reportQuery.data?.reports ?? [];
   const generated = rows.filter((r) => r.status === "generated" || r.status === "sent").length;
+
+  React.useEffect(() => {
+    setMdById((prev) => {
+      const next = { ...prev };
+      for (const r of rows) {
+        if (next[r.id] === undefined) next[r.id] = r.report_markdown ?? "";
+      }
+      return next;
+    });
+  }, [rows]);
+
+  const saveReport = useMutation({
+    mutationFn: async (vars: { id: string; report_markdown: string | null }) => {
+      const res = await fetch(`/api/admin/reports/${vars.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          report_markdown: vars.report_markdown,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Report saved");
+      await qc.invalidateQueries({ queryKey: ["weekly-reports", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
+  });
+
+  const deleteReport = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/reports/${id}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Report deleted");
+      await qc.invalidateQueries({ queryKey: ["weekly-reports", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
+  });
 
   return (
     <div className="space-y-4">
@@ -66,7 +118,9 @@ export function ReportsClient({ organizationId }: { organizationId: string }) {
                 <TableHead>Status</TableHead>
                 <TableHead>Week</TableHead>
                 <TableHead>Campaign</TableHead>
+                <TableHead>Notes</TableHead>
                 <TableHead>Updated</TableHead>
+                <TableHead className="text-right w-[180px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -77,7 +131,43 @@ export function ReportsClient({ organizationId }: { organizationId: string }) {
                     {r.week_start} → {r.week_end}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{r.campaign_id ?? "—"}</TableCell>
+                  <TableCell className="min-w-[200px] max-w-[360px]">
+                    <Textarea
+                      rows={2}
+                      className="text-xs font-mono"
+                      value={mdById[r.id] ?? ""}
+                      onChange={(e) => setMdById((m) => ({ ...m, [r.id]: e.target.value }))}
+                    />
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{new Date(r.updated_at).toLocaleString()}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={saveReport.isPending}
+                        onClick={() =>
+                          saveReport.mutate({
+                            id: r.id,
+                            report_markdown: (mdById[r.id] ?? "").trim() || null,
+                          })
+                        }
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={deleteReport.isPending}
+                        onClick={() => {
+                          if (!window.confirm("Delete this weekly report?")) return;
+                          deleteReport.mutate(r.id);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

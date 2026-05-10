@@ -52,6 +52,7 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
     slug: "",
     is_public: true,
   });
+  const [funnelNameById, setFunnelNameById] = React.useState<Record<string, string>>({});
 
   const campaignsQuery = useQuery({
     queryKey: ["campaigns", organizationId],
@@ -99,11 +100,18 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
   });
 
   const patchMutation = useMutation({
-    mutationFn: async (vars: { funnelId: string; status?: z.infer<typeof FunnelStatus> }) => {
+    mutationFn: async (vars: {
+      funnelId: string;
+      status?: z.infer<typeof FunnelStatus>;
+      name?: string;
+    }) => {
+      const body: Record<string, unknown> = { organizationId };
+      if (vars.status !== undefined) body.status = vars.status;
+      if (vars.name !== undefined) body.name = vars.name;
       const res = await fetch(`/api/admin/funnels/${vars.funnelId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ organizationId, status: vars.status }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -113,6 +121,24 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
       await qc.invalidateQueries({ queryKey: ["funnels", organizationId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Update failed"),
+  });
+
+  const deleteFunnelMutation = useMutation({
+    mutationFn: async (funnelId: string) => {
+      const res = await fetch(`/api/admin/funnels/${funnelId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Funnel deleted");
+      setStepsOpen(false);
+      setActiveFunnel(null);
+      await qc.invalidateQueries({ queryKey: ["funnels", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
   const stepsQuery = useQuery({
@@ -220,6 +246,16 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
   const funnels = funnelsQuery.data ?? [];
   const steps = stepsQuery.data ?? [];
 
+  React.useEffect(() => {
+    setFunnelNameById((prev) => {
+      const next = { ...prev };
+      for (const f of funnels) {
+        if (next[f.id] === undefined) next[f.id] = f.name;
+      }
+      return next;
+    });
+  }, [funnels]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -295,6 +331,7 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
                   <TableHead>Steps</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Updated</TableHead>
+                  <TableHead className="text-right w-[200px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -307,10 +344,17 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
                       setStepsOpen(true);
                     }}
                   >
-                    <TableCell className="font-medium">
-                      <div className="space-y-0.5">
-                        <div>{f.name}</div>
-                        <div className="text-xs text-muted-foreground">Click to edit steps</div>
+                    <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
+                      <div className="space-y-1">
+                        <Input
+                          className="h-8 max-w-[260px]"
+                          value={funnelNameById[f.id] ?? f.name}
+                          onChange={(e) =>
+                            setFunnelNameById((m) => ({ ...m, [f.id]: e.target.value }))
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="text-xs text-muted-foreground">Click row to edit steps</div>
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{f.campaign_name ?? "—"}</TableCell>
@@ -337,6 +381,36 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(f.updated_at).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={patchMutation.isPending}
+                          onClick={() => {
+                            const nm = (funnelNameById[f.id] ?? f.name).trim();
+                            if (nm.length < 2) {
+                              toast.error("Name must be at least 2 characters.");
+                              return;
+                            }
+                            patchMutation.mutate({ funnelId: f.id, name: nm, status: f.status });
+                          }}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={deleteFunnelMutation.isPending}
+                          onClick={() => {
+                            if (!window.confirm("Delete this funnel and its steps?")) return;
+                            deleteFunnelMutation.mutate(f.id);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -436,6 +510,7 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
                             <TableCell className="font-mono text-xs">{s.step_index}</TableCell>
                             <TableCell className="font-medium">
                               <Input
+                                id={`funnel-step-name-${s.id}`}
                                 className="h-8"
                                 defaultValue={s.name}
                                 onBlur={(e) => {
@@ -464,6 +539,7 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
                             </TableCell>
                             <TableCell className="font-mono text-xs">
                               <Input
+                                id={`funnel-step-slug-${s.id}`}
                                 className="h-8"
                                 defaultValue={s.slug}
                                 onBlur={(e) => {
@@ -474,6 +550,29 @@ export function FunnelsClient({ organizationId }: { organizationId: string }) {
                               />
                             </TableCell>
                             <TableCell className="text-right space-x-2">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={patchStep.isPending}
+                                onClick={() => {
+                                  const nmEl = document.getElementById(`funnel-step-name-${s.id}`) as HTMLInputElement | null;
+                                  const slEl = document.getElementById(`funnel-step-slug-${s.id}`) as HTMLInputElement | null;
+                                  const nm = (nmEl?.value ?? "").trim();
+                                  const sl = (slEl?.value ?? "").trim();
+                                  if (nm.length < 1 || sl.length < 1) {
+                                    toast.error("Name and slug are required.");
+                                    return;
+                                  }
+                                  patchStep.mutate({
+                                    stepId: s.id,
+                                    name: nm,
+                                    slug: sl,
+                                    step_type: s.step_type,
+                                  });
+                                }}
+                              >
+                                Save
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="outline"

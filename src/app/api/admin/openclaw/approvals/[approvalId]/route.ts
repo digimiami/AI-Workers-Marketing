@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { z } from "zod";
 
-import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
+import { withOrgMember, withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(
@@ -115,5 +115,93 @@ export async function GET(
     outputs: outputs ?? [],
     target: targetRow,
   });
+}
+
+const patchApprovalBody = z.object({
+  organizationId: z.string().uuid(),
+  operator_note: z.string().max(4000).optional(),
+});
+
+const deleteApprovalBody = z.object({
+  organizationId: z.string().uuid(),
+});
+
+export async function PATCH(
+  request: Request,
+  ctx: { params: Promise<{ approvalId?: unknown }> },
+) {
+  const params = (await ctx.params) as { approvalId?: unknown };
+  const approvalId = typeof params?.approvalId === "string" ? params.approvalId : "";
+  const pAppr = z.string().uuid().safeParse(approvalId);
+  if (!pAppr.success) {
+    return NextResponse.json({ ok: false, message: "Invalid approvalId" }, { status: 400 });
+  }
+
+  const json = await request.json().catch(() => null);
+  const parsed = patchApprovalBody.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, message: "Invalid body" }, { status: 400 });
+  }
+
+  const op = await withOrgOperator(parsed.data.organizationId);
+  if (op.error) return op.error;
+
+  const { data: existing, error: loadErr } = await op.supabase
+    .from("approvals" as never)
+    .select("id,payload")
+    .eq("organization_id", parsed.data.organizationId)
+    .eq("id", pAppr.data)
+    .maybeSingle();
+  if (loadErr || !existing) {
+    return NextResponse.json({ ok: false, message: "Approval not found" }, { status: 404 });
+  }
+
+  const prevPayload =
+    (existing as { payload?: unknown }).payload && typeof (existing as { payload?: unknown }).payload === "object"
+      ? ((existing as { payload: Record<string, unknown> }).payload as Record<string, unknown>)
+      : {};
+  const nextPayload = {
+    ...prevPayload,
+    ...(parsed.data.operator_note !== undefined
+      ? { operator_note: parsed.data.operator_note }
+      : {}),
+  };
+
+  const { error } = await op.supabase
+    .from("approvals" as never)
+    .update({ payload: nextPayload as never } as never)
+    .eq("organization_id", parsed.data.organizationId)
+    .eq("id", pAppr.data);
+  if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(
+  request: Request,
+  ctx: { params: Promise<{ approvalId?: unknown }> },
+) {
+  const params = (await ctx.params) as { approvalId?: unknown };
+  const approvalId = typeof params?.approvalId === "string" ? params.approvalId : "";
+  const pAppr = z.string().uuid().safeParse(approvalId);
+  if (!pAppr.success) {
+    return NextResponse.json({ ok: false, message: "Invalid approvalId" }, { status: 400 });
+  }
+
+  const json = await request.json().catch(() => null);
+  const parsed = deleteApprovalBody.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, message: "Invalid body" }, { status: 400 });
+  }
+
+  const op = await withOrgOperator(parsed.data.organizationId);
+  if (op.error) return op.error;
+
+  const { error } = await op.supabase
+    .from("approvals" as never)
+    .delete()
+    .eq("organization_id", parsed.data.organizationId)
+    .eq("id", pAppr.data);
+  if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }
 

@@ -58,6 +58,42 @@ export function ApprovalsQueueClient({ organizationId }: { organizationId: strin
     },
   });
 
+  const saveNote = useMutation({
+    mutationFn: async (vars: { id: string; note: string }) => {
+      const res = await fetch(`/api/admin/openclaw/approvals/${vars.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          operator_note: vars.note,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Note saved");
+      await qc.invalidateQueries({ queryKey: ["openclaw-approvals", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
+  });
+
+  const removeApproval = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/openclaw/approvals/${id}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Removed");
+      await qc.invalidateQueries({ queryKey: ["openclaw-approvals", organizationId] });
+      setDetailId(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
+  });
+
   const decide = useMutation({
     mutationFn: async (vars: {
       id: string;
@@ -113,7 +149,7 @@ export function ApprovalsQueueClient({ organizationId }: { organizationId: strin
                   <TableHead>Status</TableHead>
                   <TableHead>Run</TableHead>
                   <TableHead>Reason</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-right w-[220px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -149,49 +185,72 @@ export function ApprovalsQueueClient({ organizationId }: { organizationId: strin
                         }
                       />
                     </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setDetailId(a.id)}
-                      >
-                        Inspect
-                      </Button>
-                      {a.status === "pending" ? (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() =>
-                              decide.mutate({
-                                id: a.id,
-                                decision: "approved",
-                                reason: (reasons[a.id] ?? "").trim() || undefined,
-                              })
-                            }
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => {
-                              const reason = (reasons[a.id] ?? "").trim();
-                              if (!reason) {
-                                toast.error("Add a rejection reason in the note field.");
-                                return;
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={saveNote.isPending}
+                          onClick={() =>
+                            saveNote.mutate({ id: a.id, note: (reasons[a.id] ?? "").trim() })
+                          }
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setDetailId(a.id)}
+                        >
+                          Inspect
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={removeApproval.isPending}
+                          onClick={() => {
+                            if (!window.confirm("Remove this approval row from the queue?")) return;
+                            removeApproval.mutate(a.id);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                        {a.status === "pending" ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() =>
+                                decide.mutate({
+                                  id: a.id,
+                                  decision: "approved",
+                                  reason: (reasons[a.id] ?? "").trim() || undefined,
+                                })
                               }
-                              decide.mutate({
-                                id: a.id,
-                                decision: "rejected",
-                                reason,
-                              });
-                            }}
-                          >
-                            Reject
-                          </Button>
-                        </>
-                      ) : null}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                const reason = (reasons[a.id] ?? "").trim();
+                                if (!reason) {
+                                  toast.error("Add a rejection reason in the note field.");
+                                  return;
+                                }
+                                decide.mutate({
+                                  id: a.id,
+                                  decision: "rejected",
+                                  reason,
+                                });
+                              }}
+                            >
+                              Reject
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

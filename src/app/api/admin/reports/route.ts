@@ -17,7 +17,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await ctx.supabase
     .from("weekly_reports" as never)
-    .select("id,campaign_id,week_start,week_end,status,created_at,updated_at")
+    .select("id,campaign_id,week_start,week_end,status,report_markdown,created_at,updated_at")
     .eq("organization_id", parsed.data)
     .order("week_start", { ascending: false })
     .limit(120);

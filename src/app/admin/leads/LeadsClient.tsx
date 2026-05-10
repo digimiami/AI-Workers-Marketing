@@ -101,6 +101,22 @@ export function LeadsClient({ organizationId }: { organizationId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Update failed"),
   });
 
+  const deleteLeadMutation = useMutation({
+    mutationFn: async (leadId: string) => {
+      const res = await fetch(`/api/admin/leads/${leadId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: async () => {
+      toast.success("Lead deleted");
+      await qc.invalidateQueries({ queryKey: ["leads", organizationId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
+  });
+
   const leads = leadsQuery.data ?? [];
   const sequences = sequencesQuery.data ?? [];
 
@@ -133,6 +149,7 @@ export function LeadsClient({ organizationId }: { organizationId: string }) {
                   <TableHead>Score</TableHead>
                   <TableHead>Sequences</TableHead>
                   <TableHead>Created</TableHead>
+                  <TableHead className="text-right w-[200px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -170,7 +187,7 @@ export function LeadsClient({ organizationId }: { organizationId: string }) {
                         />
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="secondary"
                           className="h-8"
                           onClick={() => {
                             const raw = scoreDraft[l.id] ?? String(l.score);
@@ -182,7 +199,7 @@ export function LeadsClient({ organizationId }: { organizationId: string }) {
                             patchMutation.mutate({ leadId: l.id, score: n });
                           }}
                         >
-                          Set
+                          Save
                         </Button>
                       </div>
                     </TableCell>
@@ -237,6 +254,19 @@ export function LeadsClient({ organizationId }: { organizationId: string }) {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(l.created_at).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={deleteLeadMutation.isPending}
+                        onClick={() => {
+                          if (!window.confirm(`Delete lead ${l.email}?`)) return;
+                          deleteLeadMutation.mutate(l.id);
+                        }}
+                      >
+                        Delete
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
