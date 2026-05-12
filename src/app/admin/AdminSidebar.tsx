@@ -67,15 +67,16 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "SYSTEM",
     items: [
-      { href: "/admin/settings", label: "Settings", icon: Settings, description: "Org + preferences" },
+      { href: "/admin/settings#zernio-mcp", label: "Settings", icon: Settings, description: "Zernio MCP + org prefs" },
       { href: "/admin/logs", label: "Logs", icon: Inbox, description: "Audit trail" },
     ],
   },
 ];
 
 function isActive(pathname: string, href: string) {
-  if (href === "/admin") return pathname === "/admin";
-  return pathname === href || pathname.startsWith(`${href}/`);
+  const base = href.split("#")[0] ?? href;
+  if (base === "/admin") return pathname === "/admin";
+  return pathname === base || pathname.startsWith(`${base}/`);
 }
 
 export function AdminSidebar(props: {

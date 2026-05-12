@@ -115,7 +115,7 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
   });
 
-  const [draft, setDraft] = React.useState<FeatureFlags | null>(null);
+  const [draft, setDraft] = React.useState<FeatureFlags>(() => getDefaultFeatureFlags());
   const [tokenName, setTokenName] = React.useState("OpenClaw");
   const [plainTokenDialogOpen, setPlainTokenDialogOpen] = React.useState(false);
   const [lastCreatedPlainToken, setLastCreatedPlainToken] = React.useState<string | null>(null);
@@ -404,17 +404,13 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
   };
 
   React.useEffect(() => {
-    if (settingsQuery.data) setDraft(readFeatureFlags(settingsQuery.data));
-  }, [settingsQuery.data]);
-
-  if (settingsQuery.isLoading || !draft) {
-    return <p className="text-sm text-muted-foreground">Loading settings…</p>;
-  }
-
-  const dirty = JSON.stringify(draft) !== JSON.stringify(serverMerged);
+    if (settingsQuery.isSuccess && settingsQuery.data !== undefined) {
+      setDraft(readFeatureFlags(settingsQuery.data));
+    }
+  }, [settingsQuery.isSuccess, settingsQuery.data]);
 
   const toggle = (k: FeatureFlagKey, v: boolean) => {
-    setDraft((prev) => (prev ? { ...prev, [k]: v } : prev));
+    setDraft((prev) => ({ ...prev, [k]: v }));
   };
 
   const closePlainTokenDialog = (clearSecret: boolean) => {
@@ -438,87 +434,19 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
     }
   };
 
+  const dirty = JSON.stringify(draft) !== JSON.stringify(serverMerged);
+
   return (
     <>
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Public Lead Capture Env Values</CardTitle>
-          <CardDescription>
-            Use these values in Vercel so public pages like <code className="font-mono text-xs">/book</code> know where
-            to store leads.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
-            <div className="text-muted-foreground">Current organization</div>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="font-medium">{currentOrg?.name ?? "Current org"}</span>
-              {currentOrg?.role ? (
-                <span className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
-                  {currentOrg.role}
-                </span>
-              ) : null}
-              <span className="font-mono text-[10px] text-muted-foreground">{organizationId}</span>
-            </div>
-          </div>
+      {settingsQuery.isError ? (
+        <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+          Could not load org feature flags from the server. Other settings below still work; try refreshing or check
+          permissions.
+        </p>
+      ) : null}
 
-          <div className="space-y-2">
-            <Label htmlFor="public-campaign">Campaign for public website leads (optional)</Label>
-            <select
-              id="public-campaign"
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={selectedPublicCampaignId}
-              onChange={(e) => setSelectedPublicCampaignId(e.target.value)}
-            >
-              <option value="">No campaign selected</option>
-              {(campaignsQuery.data ?? []).map((campaign) => (
-                <option key={campaign.id} value={campaign.id}>
-                  {campaign.name}
-                  {campaign.status ? ` (${campaign.status})` : ""}
-                </option>
-              ))}
-            </select>
-            {campaignsQuery.isError ? (
-              <p className="text-xs text-destructive">Could not load campaigns. You can still copy the organization ID.</p>
-            ) : null}
-          </div>
-
-          <Textarea readOnly value={publicLeadEnvSnippet} className="min-h-20 font-mono text-xs" />
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={copyPublicLeadEnv}>
-              Copy env values
-            </Button>
-            <Link href="/admin/campaigns" className="text-sm text-primary underline underline-offset-4">
-              Create or manage campaigns
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Connect OAuth</CardTitle>
-          <CardDescription>
-            Connect Google Analytics + Search Console via OAuth. Tokens are stored encrypted (requires{" "}
-            <code className="font-mono text-xs">PLATFORM_CREDENTIALS_ENCRYPTION_KEY</code>).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={() => connectGoogleOauth.mutate()}
-            disabled={connectGoogleOauth.isPending}
-          >
-            {connectGoogleOauth.isPending ? "Opening Google…" : "Connect Google OAuth"}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            After connecting, mark Data Sources as connected and start ingesting events.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
+      <Card id="zernio-mcp" className="scroll-mt-20">
         <CardHeader>
           <CardTitle className="text-base">Zernio MCP (social)</CardTitle>
           <CardDescription>
@@ -595,8 +523,88 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
           </div>
           <Textarea readOnly className="min-h-[140px] font-mono text-xs" value={zernioCursorSnippet} />
           <p className="text-xs text-muted-foreground">
-            For <strong>Cursor</strong> on your machine, paste under Settings → MCP (merge into <code className="font-mono text-[11px]">mcpServers</code>
+            For <strong>Cursor</strong> on your machine, paste under Settings → MCP (merge into{" "}
+            <code className="font-mono text-[11px]">mcpServers</code>
             ). For <strong>this deployment</strong> (OpenClaw / agents), keys live only in server env — never commit them to git.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Public Lead Capture Env Values</CardTitle>
+          <CardDescription>
+            Use these values in Vercel so public pages like <code className="font-mono text-xs">/book</code> know where
+            to store leads.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+            <div className="text-muted-foreground">Current organization</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="font-medium">{currentOrg?.name ?? "Current org"}</span>
+              {currentOrg?.role ? (
+                <span className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {currentOrg.role}
+                </span>
+              ) : null}
+              <span className="font-mono text-[10px] text-muted-foreground">{organizationId}</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="public-campaign">Campaign for public website leads (optional)</Label>
+            <select
+              id="public-campaign"
+              title="Campaign for public website leads"
+              aria-label="Campaign for public website leads"
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={selectedPublicCampaignId}
+              onChange={(e) => setSelectedPublicCampaignId(e.target.value)}
+            >
+              <option value="">No campaign selected</option>
+              {(campaignsQuery.data ?? []).map((campaign) => (
+                <option key={campaign.id} value={campaign.id}>
+                  {campaign.name}
+                  {campaign.status ? ` (${campaign.status})` : ""}
+                </option>
+              ))}
+            </select>
+            {campaignsQuery.isError ? (
+              <p className="text-xs text-destructive">Could not load campaigns. You can still copy the organization ID.</p>
+            ) : null}
+          </div>
+
+          <Textarea readOnly value={publicLeadEnvSnippet} className="min-h-20 font-mono text-xs" />
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={copyPublicLeadEnv}>
+              Copy env values
+            </Button>
+            <Link href="/admin/campaigns" className="text-sm text-primary underline underline-offset-4">
+              Create or manage campaigns
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Connect OAuth</CardTitle>
+          <CardDescription>
+            Connect Google Analytics + Search Console via OAuth. Tokens are stored encrypted (requires{" "}
+            <code className="font-mono text-xs">PLATFORM_CREDENTIALS_ENCRYPTION_KEY</code>).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => connectGoogleOauth.mutate()}
+            disabled={connectGoogleOauth.isPending}
+          >
+            {connectGoogleOauth.isPending ? "Opening Google…" : "Connect Google OAuth"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            After connecting, mark Data Sources as connected and start ingesting events.
           </p>
         </CardContent>
       </Card>
