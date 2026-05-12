@@ -44,7 +44,10 @@ export function AdsClient(props: { organizationId: string }) {
     },
   });
 
-  const rows = Array.isArray(q.data?.campaigns) ? q.data!.campaigns : [];
+  const rows = React.useMemo(
+    () => (Array.isArray(q.data?.campaigns) ? q.data!.campaigns : []),
+    [q.data],
+  );
 
   React.useEffect(() => {
     setStatusById((prev) => {
