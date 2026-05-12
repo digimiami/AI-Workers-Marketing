@@ -25,6 +25,17 @@ const settingsSchema = z.object({
 
 type CampaignAutomationSettings = z.infer<typeof settingsSchema>;
 
+async function readApiErrorMessage(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const j = JSON.parse(text) as { message?: string };
+    if (typeof j?.message === "string" && j.message.length > 0) return j.message;
+  } catch {
+    /* not JSON */
+  }
+  return text.length > 0 ? text : `Request failed (${res.status})`;
+}
+
 type ScheduleRow = {
   id: string;
   name: string;
@@ -50,7 +61,7 @@ export function CampaignAutomationClient({ organizationId }: { organizationId: s
       const res = await fetch(
         `/api/admin/automation/campaign?organizationId=${organizationId}&campaignId=${campaignId}`,
       );
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await readApiErrorMessage(res));
       const json = (await res.json()) as { ok: boolean; settings: CampaignAutomationSettings | null };
       return (
         json.settings ?? {
@@ -73,7 +84,7 @@ export function CampaignAutomationClient({ organizationId }: { organizationId: s
       const res = await fetch(
         `/api/admin/openclaw/schedules?organizationId=${organizationId}&campaignId=${campaignId}`,
       );
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await readApiErrorMessage(res));
       const json = (await res.json()) as { ok: boolean; schedules: ScheduleRow[] };
       return json.schedules ?? [];
     },
@@ -99,7 +110,7 @@ export function CampaignAutomationClient({ organizationId }: { organizationId: s
           ...payload,
         }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await readApiErrorMessage(res));
     },
     onSuccess: async () => {
       toast.success("Automation settings saved");

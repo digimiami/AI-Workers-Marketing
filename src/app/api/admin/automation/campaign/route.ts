@@ -10,6 +10,16 @@ import {
 } from "@/services/automation/automationService";
 import { writeAuditLog } from "@/services/audit/auditService";
 
+function isCampaignAutomationTableMissing(message: string): boolean {
+  const lower = message.toLowerCase();
+  if (!lower.includes("campaign_automation_settings")) return false;
+  return (
+    lower.includes("schema cache") ||
+    lower.includes("does not exist") ||
+    lower.includes("could not find the table")
+  );
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const organizationId = url.searchParams.get("organizationId");
@@ -94,6 +104,17 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (isCampaignAutomationTableMissing(msg)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "AUTOMATION_SCHEMA_MISSING",
+          message:
+            "Automation tables are not on this Supabase project yet. In the Supabase dashboard run pending migrations (see repo supabase/migrations, especially campaign_automation_settings), or run `supabase db push` linked to production. Then wait a few seconds and retry.",
+        },
+        { status: 503 },
+      );
+    }
     const lower = msg.toLowerCase();
     const rls =
       lower.includes("row-level security") ||
