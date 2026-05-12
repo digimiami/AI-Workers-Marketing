@@ -155,11 +155,15 @@ export async function regenerateLandingVariantsForCampaign(params: {
       continue;
     }
     const angle = typeof v.angle === "string" ? v.angle : key;
+    const viRaw = (v as { visualIdentity?: unknown }).visualIdentity;
+    const visualIdentity =
+      viRaw && typeof viRaw === "object" && !Array.isArray(viRaw) ? (viRaw as Record<string, unknown>) : { paletteHint: "", typographyHint: "", mood: "" };
     const content: Record<string, unknown> = {
       headline: typeof v.headline === "string" ? v.headline : "",
       subheadline: typeof v.subheadline === "string" ? v.subheadline : "",
       heroBadge:
         typeof (v as { heroBadge?: unknown }).heroBadge === "string" ? String((v as { heroBadge?: unknown }).heroBadge) : "",
+      visualIdentity,
       sections: Array.isArray((v as { sections?: unknown }).sections) ? (v as { sections: unknown[] }).sections : [],
       ctaText:
         typeof (v as { ctaText?: unknown }).ctaText === "string"
@@ -170,6 +174,12 @@ export async function regenerateLandingVariantsForCampaign(params: {
       benefits: Array.isArray(v.benefits) ? v.benefits : [],
       steps: Array.isArray(v.steps) ? v.steps : [],
       trustLine: typeof v.trustLine === "string" ? v.trustLine : "",
+      offer: (v as { offer?: unknown }).offer ?? {},
+      socialProof: (v as { socialProof?: unknown }).socialProof ?? {},
+      objections: Array.isArray((v as { objections?: unknown }).objections) ? (v as { objections: unknown[] }).objections : [],
+      faq: Array.isArray((v as { faq?: unknown }).faq) ? (v as { faq: unknown[] }).faq : [],
+      guarantee: (v as { guarantee?: unknown }).guarantee ?? {},
+      formFields: Array.isArray((v as { formFields?: unknown }).formFields) ? (v as { formFields: unknown[] }).formFields : [],
       finalCTA: (v as { finalCTA?: unknown }).finalCTA ?? {},
       psychologicalTrigger:
         typeof (v as { psychologicalTrigger?: unknown }).psychologicalTrigger === "string"
@@ -211,7 +221,11 @@ export async function regenerateLandingVariantsForCampaign(params: {
           ? "placeholder"
           : first?.reason === "not_anchored"
             ? "not_anchored"
-            : "invalid_shape";
+            : first?.reason === "generic_cta"
+              ? "generic_cta"
+              : first?.reason === "low_conversion_score"
+                ? "low_conversion_score"
+                : "invalid_shape";
     await markCampaignNeedsLandingFix({
       admin,
       organizationId,
@@ -231,7 +245,11 @@ export async function regenerateLandingVariantsForCampaign(params: {
             ? `Placeholder text "${first.detail}" detected — refusing to publish scaffolding copy.`
             : first?.reason === "not_anchored"
               ? `Copy is not anchored to the client URL/page: ${first.detail ?? "fix headline and benefits"}.`
-              : "AI output failed quality gates — landing variants were not updated.",
+              : first?.reason === "generic_cta"
+                ? `Weak or generic CTA labels detected — use outcome-specific, first-person button copy: ${first.detail ?? ""}.`
+                : first?.reason === "low_conversion_score"
+                  ? `Conversion depth below internal threshold — ${first.detail ?? ""}.`
+                  : "AI output failed quality gates — landing variants were not updated.",
     };
   }
 

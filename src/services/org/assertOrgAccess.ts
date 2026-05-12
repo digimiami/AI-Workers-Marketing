@@ -39,3 +39,14 @@ export async function assertOrgOperator(
     throw new Error("FORBIDDEN_OPERATOR");
   }
 }
+
+export async function assertOrgAdmin(
+  supabase: SupabaseClient,
+  userId: string,
+  organizationId: string,
+): Promise<void> {
+  const role = await getOrgRole(supabase, userId, organizationId);
+  if (role !== "admin") {
+    throw new Error("FORBIDDEN_ADMIN");
+  }
+}

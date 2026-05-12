@@ -19,6 +19,7 @@ import {
   mentionsAiWorkersPlatform,
   specificPageKeywords,
   strongTitleAnchors,
+  validateLandingVariantQuality,
   type LandingFixReason,
 } from "@/services/marketing-pipeline/landingCopyGuards";
 import { buildLandingVariantBlocks, DEFAULT_LANDING_VISUAL_PRESET } from "@/services/marketing-pipeline/landingVariantBlocks";
@@ -1367,6 +1368,19 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
           bodyAnchorKeywords.length === 0 ||
           bodyAnchorKeywords.some((k) => bodyOnly.includes(k.toLowerCase()));
         if (!bodyAnchored) return { ok: false as const, reason: "body_not_anchored", variantKey: String(v.variantKey ?? "") };
+        const quality = validateLandingVariantQuality(v as Record<string, unknown>, {
+          campaignUrl: input.url,
+          scrapedTitle: scraped.title ?? null,
+          scrapedContentPrefix: scraped.contentText.slice(0, 6000),
+        });
+        if (!quality.ok) {
+          return {
+            ok: false as const,
+            reason: "variant_quality" as const,
+            variantKey: String(v.variantKey ?? ""),
+            verdict: quality,
+          };
+        }
       }
       return { ok: true as const };
     };
@@ -1400,7 +1414,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
           rewrite_rule: extra,
         },
         schemaHint:
-          "Return STRICT JSON: {variants:[{variantKey,angle,headline,subheadline,ctaText,benefits[{title,description}],steps[{title,description}],trustLine,finalCTA{headline,subheadline,ctaText}}]}",
+          "Return STRICT JSON: {variants:[{variantKey,angle,visualIdentity{paletteHint,typographyHint,mood},headline,subheadline,heroBadge?,ctaText,benefits[{title,description}],steps[{title,description}],trustLine,offer?,socialProof?,objections?,faq?,guarantee?,sections[],formFields?,psychologicalTrigger,finalCTA{headline,subheadline,ctaText}}]}",
         prompt,
         fallback: {},
       });
@@ -1420,7 +1434,11 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
               ? "Generic output detected — variant body copy not anchored to scraped content"
               : reason === "model_unused"
                 ? "Landing variants failed — model output not used"
-                : "Landing variants failed — invalid shape";
+                : reason === "generic_cta"
+                  ? `Weak or generic CTA in variants — ${detail}`
+                  : reason === "low_conversion_score"
+                    ? `Landing variants below conversion depth threshold — ${detail}`
+                    : "Landing variants failed — invalid shape";
       throw new Error(message);
     };
 
@@ -1431,14 +1449,38 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
 
     for (let vAttempt = 2; vAttempt <= 4; vAttempt++) {
       if (variantsVerdict.ok) break;
-      const rule =
-        variantsVerdict.reason === "banned"
-          ? variantsVerdict.bannedMatch === "ai_workers_platform_on_client_campaign"
+      let rule: string;
+      if (variantsVerdict.reason === "banned") {
+        rule =
+          variantsVerdict.bannedMatch === "ai_workers_platform_on_client_campaign"
             ? `CLIENT URL — remove ALL "AiWorkers" references from every variant. Headlines/subheadlines MUST name "${hostBrand ?? "the client brand"}" or a person/product from content_excerpt. Bodies must use concrete terms from content_excerpt.`
-            : `Remove generic phrase "${variantsVerdict.bannedMatch}" from ALL variants. Use wording grounded in content_excerpt only. Every headline/subheadline must include "${hostBrand}" or a distinctive product term from the page.`
-          : variantsVerdict.reason === "not_anchored"
-            ? `Each variant headline+subheadline must include the brand "${hostBrand}" or a distinctive term from the page title. No generic "local business + AI" copy.`
-            : `Each variant body (benefits/steps/trust) must reference at least one concrete term from content_excerpt (product, place, program, service line). Variant: ${variantsVerdict.variantKey}.`;
+            : `Remove generic phrase "${variantsVerdict.bannedMatch}" from ALL variants. Use wording grounded in content_excerpt only. Every headline/subheadline must include "${hostBrand}" or a distinctive product term from the page.`;
+      } else if (variantsVerdict.reason === "not_anchored") {
+        rule = `Each variant headline+subheadline must include the brand "${hostBrand}" or a distinctive term from the page title. No generic "local business + AI" copy.`;
+      } else if (variantsVerdict.reason === "body_not_anchored") {
+        rule = `Each variant body (benefits/steps/trust) must reference at least one concrete term from content_excerpt (product, place, program, service line). Variant: ${variantsVerdict.variantKey}.`;
+      } else if (variantsVerdict.reason === "variant_quality") {
+        const rawQ = variantsVerdict.verdict;
+        if (!rawQ || rawQ.ok) {
+          rule = `Rewrite ALL variants (internal quality check inconsistency).`;
+        } else {
+          const q = rawQ;
+          rule =
+            q.reason === "generic_cta"
+              ? `VARIANT ${variantsVerdict.variantKey}: Hero ctaText and finalCTA.ctaText must be outcome-specific (often first-person + concrete deliverable). Forbidden as entire label: Learn more, Get started, Submit, Continue, Click here, Read more, Sign up, Contact us. Detail: ${q.detail ?? ""}`
+              : q.reason === "low_conversion_score"
+                ? `VARIANT ${variantsVerdict.variantKey}: Raise conversion depth. ${q.detail ?? ""} Expand benefit/step descriptions, add 2–4 sections with substantive body text (50+ chars) or paired bullets, enrich socialProof from excerpt only, fill objections+faq+guarantee, strengthen finalCTA trio. Each variant MUST include visualIdentity: { paletteHint, typographyHint, mood } (each string 6+ chars, niche-specific).`
+                : q.reason === "missing_fields" || q.reason === "too_short"
+                  ? `VARIANT ${variantsVerdict.variantKey}: Fix missing/short fields — ${q.detail ?? ""} Use benefits=4, steps=3, full visualIdentity, hero+final CTAs, trustLine, psychologicalTrigger.`
+                  : q.reason === "banned_phrase" || q.reason === "placeholder"
+                    ? `VARIANT ${variantsVerdict.variantKey}: Remove banned or placeholder wording — ${q.detail ?? ""}`
+                    : q.reason === "not_anchored"
+                      ? `VARIANT ${variantsVerdict.variantKey}: Anchor hero and body to brand/excerpt — ${q.detail ?? ""}`
+                      : `VARIANT ${variantsVerdict.variantKey}: Re-output all three variants with full required_json_shape from the landing variants task.`;
+        }
+      } else {
+        rule = `Rewrite ALL variants: require variants.length===3, variantKeys direct_response/premium_trust/speed_convenience, and complete structured fields per task JSON.`;
+      }
       await log("creation", "warn", "Landing variants need rewrite", { attempt: vAttempt, ...variantsVerdict });
       variantsOut = await runVariants(rule);
       if (!(variantsOut.meta as any)?.used) await failVariants("model_unused", `retry attempt ${vAttempt}`);
@@ -1453,6 +1495,24 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         await failVariants("not_anchored", `variant=${variantsVerdict.variantKey ?? "?"}`);
       } else if (variantsVerdict.reason === "body_not_anchored") {
         await failVariants("body_not_anchored", `variant=${variantsVerdict.variantKey ?? "?"}`);
+      } else if (variantsVerdict.reason === "variant_quality") {
+        const rawQ = variantsVerdict.verdict;
+        if (!rawQ || rawQ.ok) {
+          await failVariants("invalid_shape", "variant_quality_missing_verdict");
+        } else {
+          const q = rawQ;
+          if (q.reason === "generic_cta") {
+            await failVariants("generic_cta", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
+          } else if (q.reason === "low_conversion_score") {
+            await failVariants("low_conversion_score", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
+          } else if (q.reason === "not_anchored") {
+            await failVariants("not_anchored", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
+          } else if (q.reason === "banned_phrase" || q.reason === "placeholder") {
+            await failVariants("banned_phrase", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
+          } else {
+            await failVariants("invalid_shape", `variant=${variantsVerdict.variantKey}: ${q.detail ?? q.reason}`);
+          }
+        }
       } else {
         await failVariants("invalid_shape", "verdict=invalid_shape");
       }
@@ -1762,6 +1822,16 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
                 steps: Array.isArray((v as any).steps) ? (v as any).steps : [],
                 trustLine: typeof (v as any).trustLine === "string" ? String((v as any).trustLine) : "",
                 finalCTA: (v as any).finalCTA ?? {},
+                visualIdentity: (v as any).visualIdentity ?? {},
+                heroBadge: typeof (v as any).heroBadge === "string" ? String((v as any).heroBadge) : "",
+                offer: (v as any).offer ?? {},
+                socialProof: (v as any).socialProof ?? {},
+                objections: Array.isArray((v as any).objections) ? (v as any).objections : [],
+                faq: Array.isArray((v as any).faq) ? (v as any).faq : [],
+                guarantee: (v as any).guarantee ?? {},
+                formFields: Array.isArray((v as any).formFields) ? (v as any).formFields : [],
+                psychologicalTrigger:
+                  typeof (v as any).psychologicalTrigger === "string" ? String((v as any).psychologicalTrigger) : "",
                 visual_preset: DEFAULT_LANDING_VISUAL_PRESET,
                 blocks,
                 landing_page_id: id,

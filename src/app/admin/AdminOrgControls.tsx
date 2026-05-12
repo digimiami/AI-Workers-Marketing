@@ -204,7 +204,10 @@ export function AdminOrgControls({ currentOrgId }: { currentOrgId: string }) {
           </Button>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Operators/admins can invite users. The member is added to <code className="font-mono">organization_members</code>.
+          Operators/admins can invite users. The member is added to <code className="font-mono">organization_members</code>.{" "}
+          <a href="/admin/organizations" className="underline underline-offset-2">
+            Manage workspaces (save / open / delete)
+          </a>
         </p>
       </div>
       </div>

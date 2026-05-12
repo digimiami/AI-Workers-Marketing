@@ -131,38 +131,36 @@ export async function DELETE(
   const op = await withOrgOperator(parsed.data.organizationId);
   if (op.error) return op.error;
 
-  // Dependency checks: prevent deleting a campaign that still has linked records.
-  const [funnels, leads, assets] = await Promise.all([
-    op.supabase
-      .from("funnels" as never)
-      .select("id")
-      .eq("organization_id", parsed.data.organizationId)
-      .eq("campaign_id", campaignId)
-      .limit(1),
-    op.supabase
-      .from("leads" as never)
-      .select("id")
-      .eq("organization_id", parsed.data.organizationId)
-      .eq("campaign_id", campaignId)
-      .limit(1),
-    op.supabase
-      .from("content_assets" as never)
-      .select("id")
-      .eq("organization_id", parsed.data.organizationId)
-      .eq("campaign_id", campaignId)
-      .limit(1),
-  ]);
+  const { data: campRow, error: campErr } = await op.supabase
+    .from("campaigns" as never)
+    .select("funnel_id")
+    .eq("id", campaignId)
+    .eq("organization_id", parsed.data.organizationId)
+    .maybeSingle();
+  if (campErr) return NextResponse.json({ ok: false, message: campErr.message }, { status: 500 });
+  if (!campRow) return NextResponse.json({ ok: false, message: "Campaign not found" }, { status: 404 });
 
-  if ((funnels.data?.length ?? 0) > 0 || (leads.data?.length ?? 0) > 0 || (assets.data?.length ?? 0) > 0) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message:
-          "Campaign has linked funnels/leads/content. Unlink or delete dependencies before deleting the campaign.",
-      },
-      { status: 409 },
-    );
+  const funnelIdOnCampaign = (campRow as { funnel_id?: string | null }).funnel_id ?? null;
+
+  await op.supabase
+    .from("campaigns" as never)
+    .update({ funnel_id: null, updated_at: new Date().toISOString() } as never)
+    .eq("id", campaignId)
+    .eq("organization_id", parsed.data.organizationId);
+
+  if (funnelIdOnCampaign) {
+    await op.supabase
+      .from("funnels" as never)
+      .delete()
+      .eq("id", funnelIdOnCampaign)
+      .eq("organization_id", parsed.data.organizationId);
   }
+
+  await op.supabase
+    .from("funnels" as never)
+    .delete()
+    .eq("campaign_id", campaignId)
+    .eq("organization_id", parsed.data.organizationId);
 
   const { error } = await op.supabase
     .from("campaigns" as never)

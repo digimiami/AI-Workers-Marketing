@@ -25,6 +25,8 @@ export type AuditAction =
   | "appointment.created"
   | "appointment.invite_queued"
   | "org.created"
+  | "org.updated"
+  | "org.deleted"
   | "org.member_invited"
   | "workspace.provisioned"
   | "workspace.provision_failed"

@@ -64,6 +64,10 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
   const [edit, setEdit] = React.useState<CampaignFormState>(emptyForm);
   const [orgId, setOrgId] = React.useState(organizationId);
 
+  React.useEffect(() => {
+    setOrgId(organizationId);
+  }, [organizationId]);
+
   const orgsQuery = useQuery({
     queryKey: ["my-organizations"],
     queryFn: async () => {
@@ -108,7 +112,7 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
   const createMutation = useMutation({
     mutationFn: async () => {
       const parsed = createSchema.parse({
-        organizationId,
+        organizationId: orgId,
         ...form,
       });
       const res = await fetch("/api/admin/campaigns", {
@@ -146,7 +150,7 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          organizationId,
+          organizationId: orgId,
           name: parsed.name,
           type: parsed.type,
           status: parsed.status,
@@ -168,9 +172,17 @@ export function CampaignsClient({ organizationId }: { organizationId: string }) 
       const res = await fetch(`/api/admin/campaigns/${target.id}`, {
         method: "DELETE",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ organizationId }),
+        body: JSON.stringify({ organizationId: orgId }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      const raw = await res.text();
+      let message = raw;
+      try {
+        const j = JSON.parse(raw) as { message?: string };
+        if (typeof j.message === "string") message = j.message;
+      } catch {
+        /* keep body text */
+      }
+      if (!res.ok) throw new Error(message);
     },
     onSuccess: async (_, target) => {
       toast.success("Campaign deleted");

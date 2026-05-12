@@ -23,3 +23,17 @@ export async function setCurrentOrgIdCookie(orgId: string) {
   });
 }
 
+export async function clearCurrentOrgIdCookie() {
+  const c = await cookies();
+  const isProd =
+    process.env.NODE_ENV === "production" ||
+    process.env.VERCEL_ENV === "production";
+  c.set(ORG_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isProd,
+    path: "/",
+    maxAge: 0,
+  });
+}
+

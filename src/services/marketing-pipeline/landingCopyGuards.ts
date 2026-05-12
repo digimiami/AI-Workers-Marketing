@@ -10,7 +10,9 @@ export type LandingFixReason =
   | "placeholder"
   | "not_anchored"
   | "body_not_anchored"
-  | "missing_variants";
+  | "missing_variants"
+  | "generic_cta"
+  | "low_conversion_score";
 
 /**
  * Mark a campaign as `landing_status: needs_generation_fix` so the workspace UI can
@@ -127,6 +129,8 @@ export const LANDING_BANNED_SUBSTRINGS = [
   "without the hassle",
   "transform your marketing",
   "transform your marketing with",
+  "transform your business",
+  "boost your growth",
   "ai-driven workforce",
   "ai driven workforce",
   "rapid growth and efficiency",
@@ -307,9 +311,170 @@ export function findBannedSubstring(text: string): string | null {
   return findPlaceholderText(lower);
 }
 
+/** Minimum heuristic conversion score (0–100) required before a variant may be published. */
+export const LANDING_CONVERSION_SCORE_MIN = 85;
+
+const WEAK_CTA_EXACT = new Set([
+  "learn more",
+  "get started",
+  "submit",
+  "continue",
+  "click here",
+  "read more",
+  "sign up",
+  "apply now",
+  "subscribe",
+  "download",
+  "send",
+  "next",
+  "see more",
+  "find out more",
+  "discover more",
+  "contact us",
+  "request info",
+  "get info",
+  "try now",
+  "more details",
+  "enter",
+  "go",
+]);
+
+/**
+ * True when a primary button label is too generic or too thin for conversion pages.
+ * Prefer first-person, outcome-specific labels (e.g. "Get my roof inspection", "Book my consult").
+ */
+export function isWeakLandingCtaLabel(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (!t) return true;
+  if (WEAK_CTA_EXACT.has(t)) return true;
+  if (t.length < 10) return true;
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length <= 2 && t.length < 22) return true;
+  if (/^(click|tap|tap here|press here)\b/.test(t)) return true;
+  return false;
+}
+
+function avgNonEmptyLengths(rows: unknown[], descKeys: string[]): number {
+  let sum = 0;
+  let n = 0;
+  for (const row of rows) {
+    const r = (row ?? {}) as Record<string, unknown>;
+    let chunk = "";
+    for (const k of descKeys) {
+      const v = r[k];
+      if (typeof v === "string" && v.trim()) chunk += v.trim();
+    }
+    if (chunk) {
+      sum += chunk.length;
+      n += 1;
+    }
+  }
+  return n ? sum / n : 0;
+}
+
+function countRichSections(sectionsArr: unknown[]): number {
+  let n = 0;
+  for (const s of sectionsArr) {
+    const r = (s ?? {}) as Record<string, unknown>;
+    const title = typeof r.title === "string" ? r.title.trim() : "";
+    if (!title) continue;
+    const body = typeof r.body === "string" ? r.body.trim() : "";
+    const bullets = Array.isArray(r.bullets) ? (r.bullets as unknown[]).filter((b) => typeof b === "string" && String(b).trim().length >= 8) : [];
+    if (body.length >= 50 || bullets.length >= 2) n += 1;
+  }
+  return n;
+}
+
+/**
+ * Heuristic 0–100 conversion strength score (clarity, depth, proof, CTA, closing).
+ * Used to enforce an internal quality bar before publishing variants.
+ */
+export function computeLandingConversionScore(content: Record<string, unknown>): number {
+  const headline = String(content?.headline ?? "").trim();
+  const subheadline = String(content?.subheadline ?? "").trim();
+  const cta = String(
+    (content as { ctaText?: unknown }).ctaText ?? (content as { cta?: unknown }).cta ?? "",
+  ).trim();
+  const trustLine = String((content as { trustLine?: unknown }).trustLine ?? "").trim();
+  const benefits = Array.isArray(content?.benefits) ? (content.benefits as unknown[]) : [];
+  const steps = Array.isArray(content?.steps) ? (content.steps as unknown[]) : [];
+  const sectionsArr = Array.isArray((content as { sections?: unknown }).sections)
+    ? ((content as { sections: unknown[] }).sections as unknown[])
+    : [];
+  const objections = Array.isArray((content as { objections?: unknown }).objections)
+    ? ((content as { objections: unknown[] }).objections as unknown[])
+    : [];
+  const faq = Array.isArray((content as { faq?: unknown }).faq) ? ((content as { faq: unknown[] }).faq as unknown[]) : [];
+  const guarantee = (content as { guarantee?: unknown }).guarantee;
+  const g = guarantee && typeof guarantee === "object" && !Array.isArray(guarantee) ? (guarantee as Record<string, unknown>) : {};
+  const gHead = typeof g.headline === "string" ? g.headline.trim() : "";
+  const gBody = typeof g.body === "string" ? g.body.trim() : "";
+  const social = (content as { socialProof?: unknown }).socialProof;
+  const sp = social && typeof social === "object" && !Array.isArray(social) ? (social as Record<string, unknown>) : {};
+  const testimonials = Array.isArray(sp.testimonials) ? (sp.testimonials as unknown[]) : [];
+  const proofPoints = Array.isArray(sp.proofPoints) ? (sp.proofPoints as unknown[]).filter((p) => typeof p === "string") : [];
+  let bestQuote = 0;
+  for (const t of testimonials) {
+    const r = (t ?? {}) as Record<string, unknown>;
+    const q = typeof r.quote === "string" ? r.quote.trim().length : 0;
+    if (q > bestQuote) bestQuote = q;
+  }
+  const proofLens = proofPoints.map((p) => String(p).trim().length).filter((n) => n >= 10);
+  const finalCtaRaw = (content as { finalCTA?: unknown }).finalCTA;
+  const finalCta =
+    finalCtaRaw && typeof finalCtaRaw === "object" && !Array.isArray(finalCtaRaw)
+      ? (finalCtaRaw as Record<string, unknown>)
+      : {};
+  const finalHead = typeof finalCta.headline === "string" ? finalCta.headline.trim() : "";
+  const finalSub = typeof finalCta.subheadline === "string" ? finalCta.subheadline.trim() : "";
+  const finalCtaText = typeof finalCta.ctaText === "string" ? finalCta.ctaText.trim() : "";
+  const psych = String((content as { psychologicalTrigger?: unknown }).psychologicalTrigger ?? "").trim();
+
+  let raw = 0;
+  raw += headline.length >= 34 ? 8 : headline.length >= 20 ? 6 : headline.length >= 12 ? 3 : 0;
+  raw += subheadline.length >= 52 ? 10 : subheadline.length >= 32 ? 7 : subheadline.length >= 16 ? 4 : 0;
+  if (!isWeakLandingCtaLabel(cta)) {
+    const wc = cta.split(/\s+/).filter(Boolean).length;
+    raw += wc >= 5 && cta.length >= 22 ? 15 : wc >= 4 && cta.length >= 16 ? 12 : cta.length >= 12 ? 9 : 5;
+  }
+  const avgBen = avgNonEmptyLengths(benefits, ["description", "desc"]);
+  raw += benefits.length >= 4 && avgBen >= 40 ? 15 : benefits.length >= 4 && avgBen >= 26 ? 11 : benefits.length >= 3 && avgBen >= 20 ? 7 : 0;
+  const avgStep = avgNonEmptyLengths(steps, ["description", "desc"]);
+  raw += steps.length >= 3 && avgStep >= 30 ? 12 : steps.length >= 3 && avgStep >= 20 ? 9 : steps.length >= 2 && avgStep >= 16 ? 5 : 0;
+  raw += trustLine.length >= 26 ? 8 : trustLine.length >= 18 ? 5 : trustLine.length >= 12 ? 3 : 0;
+  const richSec = countRichSections(sectionsArr);
+  raw += richSec >= 3 ? 10 : richSec >= 2 ? 7 : richSec >= 1 ? 4 : 0;
+  if (bestQuote >= 45 || proofLens.length >= 3) raw += 9;
+  else if (bestQuote >= 26 || proofLens.length >= 2) raw += 6;
+  else if (bestQuote > 0 || proofLens.length >= 1) raw += 3;
+  raw += objections.length >= 2 ? 2 : objections.length >= 1 ? 1 : 0;
+  raw += faq.length >= 2 ? 2 : faq.length >= 1 ? 1 : 0;
+  raw += gHead.length >= 10 && gBody.length >= 38 ? 4 : gBody.length >= 24 ? 2 : 0;
+  if (finalHead.length >= 14 && finalSub.length >= 14 && finalCtaText.length >= 10 && !isWeakLandingCtaLabel(finalCtaText)) {
+    raw += 6;
+  } else if (finalHead.length >= 10 && finalSub.length >= 10 && finalCtaText.length >= 8) {
+    raw += 3;
+  }
+  raw += psych.length >= 26 ? 4 : psych.length >= 14 ? 2 : 0;
+
+  const RAW_MAX = 95;
+  return Math.min(100, Math.round((Math.min(raw, RAW_MAX) / RAW_MAX) * 100));
+}
+
 export type LandingVariantQuality =
   | { ok: true }
-  | { ok: false; reason: "missing_fields" | "too_short" | "banned_phrase" | "placeholder" | "not_anchored"; detail?: string };
+  | {
+      ok: false;
+      reason:
+        | "missing_fields"
+        | "too_short"
+        | "banned_phrase"
+        | "placeholder"
+        | "not_anchored"
+        | "generic_cta"
+        | "low_conversion_score";
+      detail?: string;
+    };
 
 export type LandingVariantQualityCtx = {
   campaignUrl: string;
@@ -346,6 +511,18 @@ export function validateLandingVariantQuality(
     return { ok: false, reason: "missing_fields", detail: `benefits=${benefits.length} steps=${steps.length}` };
   }
 
+  const viRaw = (content as { visualIdentity?: unknown }).visualIdentity;
+  const vi = viRaw && typeof viRaw === "object" && !Array.isArray(viRaw) ? (viRaw as Record<string, unknown>) : null;
+  if (!vi) {
+    return { ok: false, reason: "missing_fields", detail: "visualIdentity required (paletteHint, typographyHint, mood)" };
+  }
+  for (const k of ["paletteHint", "typographyHint", "mood"] as const) {
+    const s = typeof vi[k] === "string" ? vi[k].trim() : "";
+    if (s.length < 6) {
+      return { ok: false, reason: "missing_fields", detail: `visualIdentity.${k} too short or missing` };
+    }
+  }
+
   const benefitText = benefits
     .map((b) => {
       const r = (b ?? {}) as Record<string, unknown>;
@@ -373,8 +550,9 @@ export function validateLandingVariantQuality(
     ? ((content as { sections: unknown[] }).sections as unknown[])
     : [];
   const sectionsText = sectionsArr.map((s) => (typeof s === "object" && s ? JSON.stringify(s) : "")).join(" ");
+  const visualHay = `${String(vi.paletteHint ?? "")} ${String(vi.typographyHint ?? "")} ${String(vi.mood ?? "")}`;
 
-  const haystack = [headline, subheadline, cta, benefitText, stepText, trustLine, finalHead, finalSub, finalCtaText, heroBadge, sectionsText].join(" ");
+  const haystack = [headline, subheadline, cta, benefitText, stepText, trustLine, finalHead, finalSub, finalCtaText, heroBadge, sectionsText, visualHay].join(" ");
 
   const placeholder = findPlaceholderText(haystack);
   if (placeholder) return { ok: false, reason: "placeholder", detail: placeholder };
@@ -411,6 +589,22 @@ export function validateLandingVariantQuality(
         };
       }
     }
+  }
+
+  if (isWeakLandingCtaLabel(cta)) {
+    return { ok: false, reason: "generic_cta", detail: `Hero CTA is too generic or thin: "${cta.slice(0, 80)}"` };
+  }
+  if (finalCtaText.trim() && isWeakLandingCtaLabel(finalCtaText)) {
+    return { ok: false, reason: "generic_cta", detail: `Closing CTA is too generic or thin: "${finalCtaText.slice(0, 80)}"` };
+  }
+
+  const conversionScore = computeLandingConversionScore(content);
+  if (conversionScore < LANDING_CONVERSION_SCORE_MIN) {
+    return {
+      ok: false,
+      reason: "low_conversion_score",
+      detail: `conversion_score=${conversionScore} (min ${LANDING_CONVERSION_SCORE_MIN})`,
+    };
   }
 
   return { ok: true };
