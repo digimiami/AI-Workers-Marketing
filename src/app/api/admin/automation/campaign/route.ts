@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { withOrgMember, withOrgOperator } from "@/app/api/admin/openclaw/_shared";
+import { createSupabaseAdminClient, getSupabaseAdminConfigError } from "@/lib/supabase/admin";
 import {
   getCampaignAutomationSettings,
   upsertCampaignAutomationSettings,
@@ -58,9 +59,30 @@ export async function POST(request: Request) {
   const ctx = await withOrgOperator(parsed.data.organizationId);
   if (ctx.error) return ctx.error;
 
+  const { data: campaignRow, error: campaignErr } = await ctx.supabase
+    .from("campaigns" as never)
+    .select("id")
+    .eq("id", parsed.data.campaignId)
+    .eq("organization_id", parsed.data.organizationId)
+    .maybeSingle();
+
+  if (campaignErr) {
+    return NextResponse.json({ ok: false, message: campaignErr.message }, { status: 500 });
+  }
+  if (!campaignRow) {
+    return NextResponse.json(
+      { ok: false, message: "Campaign not found in this workspace." },
+      { status: 404 },
+    );
+  }
+
+  // Prefer service-role writes after explicit auth + campaign scoping so RLS/grant drift
+  // on `campaign_automation_settings` cannot block operators (still tenant-safe).
+  const writeDb = getSupabaseAdminConfigError() === null ? createSupabaseAdminClient() : ctx.supabase;
+
   let row: unknown = null;
   try {
-    row = await upsertCampaignAutomationSettings(ctx.supabase, parsed.data.organizationId, {
+    row = await upsertCampaignAutomationSettings(writeDb, parsed.data.organizationId, {
       campaign_id: parsed.data.campaignId,
       automation_enabled: parsed.data.automation_enabled,
       auto_generate_content_drafts: parsed.data.auto_generate_content_drafts,
@@ -72,7 +94,12 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ ok: false, message: msg }, { status: 500 });
+    const lower = msg.toLowerCase();
+    const rls =
+      lower.includes("row-level security") ||
+      lower.includes("violates row-level security") ||
+      lower.includes("permission denied");
+    return NextResponse.json({ ok: false, message: msg }, { status: rls ? 403 : 500 });
   }
 
   await writeAuditLog({
