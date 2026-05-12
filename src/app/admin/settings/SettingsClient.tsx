@@ -347,6 +347,62 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "OAuth connect failed"),
   });
 
+  const mcpStatusQuery = useQuery({
+    queryKey: ["mcp-integrations-status", organizationId],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/integrations/mcp-status?organizationId=${encodeURIComponent(organizationId)}`);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as {
+        ok: boolean;
+        zernio: { configured: boolean; serverUrl: string };
+        zapier: { configured: boolean };
+      };
+    },
+  });
+
+  const testZernioMcp = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/integrations/zernio-mcp/test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      const raw = await res.text();
+      let j: { ok?: boolean; message?: string; toolCount?: number } = {};
+      try {
+        j = JSON.parse(raw) as typeof j;
+      } catch {
+        throw new Error(raw || "Test failed");
+      }
+      if (!res.ok) throw new Error(j.message ?? raw);
+      return j;
+    },
+    onSuccess: (j) => {
+      toast.success(j.message ?? `Zernio MCP OK (${j.toolCount ?? 0} tools)`);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Zernio test failed"),
+  });
+
+  const zernioCursorSnippet = `{
+  "mcpServers": {
+    "zernio": {
+      "url": "https://mcp.zernio.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_ZERNIO_API_KEY"
+      }
+    }
+  }
+}`;
+
+  const copyZernioSnippet = async () => {
+    try {
+      await navigator.clipboard.writeText(zernioCursorSnippet);
+      toast.success("Cursor MCP snippet copied — replace YOUR_ZERNIO_API_KEY");
+    } catch {
+      toast.error("Copy failed — select the JSON and copy manually");
+    }
+  };
+
   React.useEffect(() => {
     if (settingsQuery.data) setDraft(readFeatureFlags(settingsQuery.data));
   }, [settingsQuery.data]);
@@ -458,6 +514,89 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
           </Button>
           <p className="text-xs text-muted-foreground">
             After connecting, mark Data Sources as connected and start ingesting events.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Zernio MCP (social)</CardTitle>
+          <CardDescription>
+            Connect AI assistants and OpenClaw to{" "}
+            <a
+              href="https://zernio.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline underline-offset-2"
+            >
+              Zernio
+            </a>{" "}
+            for posting and account actions across supported networks. Official MCP docs:{" "}
+            <a
+              href="https://docs.zernio.com/mcp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline underline-offset-2"
+            >
+              docs.zernio.com/mcp
+            </a>
+            . API keys:{" "}
+            <a
+              href="https://zernio.com/dashboard/api-keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline underline-offset-2"
+            >
+              dashboard → API keys
+            </a>
+            .
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="text-muted-foreground">Server-side (OpenClaw tools):</span>
+            {mcpStatusQuery.isLoading ? (
+              <span className="text-muted-foreground">Checking…</span>
+            ) : mcpStatusQuery.data?.zernio?.configured ? (
+              <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-200">
+                ZERNIO_MCP_API_KEY configured
+              </span>
+            ) : (
+              <span className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-950 dark:text-amber-100">
+                Not configured on server
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Set <code className="font-mono text-[11px]">ZERNIO_MCP_API_KEY</code> in Vercel (production) so supervisor tools{" "}
+            <code className="font-mono text-[11px]">zernio_mcp_list_tools</code> and{" "}
+            <code className="font-mono text-[11px]">zernio_mcp_call_tool</code> work. Optional:{" "}
+            <code className="font-mono text-[11px]">ZERNIO_MCP_SERVER_URL</code> (defaults to{" "}
+            <code className="font-mono text-[11px]">https://mcp.zernio.com/mcp</code>).
+          </p>
+          {mcpStatusQuery.data?.zernio?.serverUrl ? (
+            <p className="text-xs text-muted-foreground">
+              Effective MCP URL: <code className="font-mono text-[11px]">{mcpStatusQuery.data.zernio.serverUrl}</code>
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => testZernioMcp.mutate()}
+              disabled={testZernioMcp.isPending || !mcpStatusQuery.data?.zernio?.configured}
+              title={!mcpStatusQuery.data?.zernio?.configured ? "Configure ZERNIO_MCP_API_KEY on the server first" : undefined}
+            >
+              {testZernioMcp.isPending ? "Testing…" : "Test Zernio connection"}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void copyZernioSnippet()}>
+              Copy Cursor MCP JSON
+            </Button>
+          </div>
+          <Textarea readOnly className="min-h-[140px] font-mono text-xs" value={zernioCursorSnippet} />
+          <p className="text-xs text-muted-foreground">
+            For <strong>Cursor</strong> on your machine, paste under Settings → MCP (merge into <code className="font-mono text-[11px]">mcpServers</code>
+            ). For <strong>this deployment</strong> (OpenClaw / agents), keys live only in server env — never commit them to git.
           </p>
         </CardContent>
       </Card>

@@ -12,8 +12,8 @@ export default async function AdminSettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Organization configuration, feature flags, cloud API tokens for OpenClaw, and operational controls. Public
-          API overview: /docs/cloud-api
+          Organization configuration, feature flags, cloud API tokens for OpenClaw, Zernio MCP (social), and operational
+          controls. Public API overview: /docs/cloud-api
         </p>
       </div>
       <SettingsClient organizationId={orgId} />

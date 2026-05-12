@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { assertCampaignLimit } from "@/services/billing/entitlements";
 import { TOOL_SCHEMAS } from "@/lib/openclaw/tools/registry";
 import { zapierCallTool, zapierListTools } from "@/services/zapier/zapierMcp";
+import { zernioCallTool, zernioListTools } from "@/services/zernio/zernioMcp";
 import type { AnyToolDef } from "@/lib/openclaw/tools/registry";
 import type { OpenClawToolContext } from "@/lib/openclaw/tools/types";
 
@@ -68,6 +69,34 @@ export const TOOLS: AnyToolDef[] = [
     highRisk: true,
     async handler(_ctx: OpenClawToolContext, input) {
       const result = await zapierCallTool(input.tool_name, input.arguments);
+      return { result };
+    },
+  },
+  {
+    name: "zernio_mcp_list_tools",
+    description:
+      "List available Zernio MCP tools (social APIs). Requires ZERNIO_MCP_API_KEY on the server; optional ZERNIO_MCP_SERVER_URL (default https://mcp.zernio.com/mcp). See https://docs.zernio.com/mcp",
+    input: z.object({}),
+    output: z.object({ tools: z.array(z.any()) }),
+    allowedRoles: ["supervisor"],
+    async handler() {
+      const res = await zernioListTools();
+      return { tools: (res as any)?.tools ?? (res as any) };
+    },
+  },
+  {
+    name: "zernio_mcp_call_tool",
+    description:
+      "Call a Zernio MCP tool by name with arguments. Requires ZERNIO_MCP_API_KEY. High-risk: can post or modify social content.",
+    input: z.object({
+      tool_name: z.string().min(1),
+      arguments: z.record(z.string(), z.unknown()).default({}),
+    }),
+    output: z.object({ result: z.any() }),
+    allowedRoles: ["supervisor"],
+    highRisk: true,
+    async handler(_ctx: OpenClawToolContext, input) {
+      const result = await zernioCallTool(input.tool_name, input.arguments);
       return { result };
     },
   },

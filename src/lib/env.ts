@@ -79,6 +79,10 @@ const serverSchema = z.object({
   ZAPIER_MCP_SERVER_URL: z.string().url().optional(),
   ZAPIER_MCP_SECRET: z.string().min(10).optional(),
 
+  // Zernio MCP (hosted social API — https://docs.zernio.com/mcp)
+  ZERNIO_MCP_SERVER_URL: z.string().url().optional(),
+  ZERNIO_MCP_API_KEY: z.string().min(10).optional(),
+
   /** When "1", workspace provisioning may seed demo lead/analytics in development only. */
   WORKSPACE_DEV_SEED: z.string().optional(),
 });
