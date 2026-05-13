@@ -5,6 +5,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   BarChart3,
   Bot,
   CheckCircle2,
@@ -42,6 +43,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "CORE",
     items: [
       { href: "/admin/workspace", label: "Workspace", icon: Bot, description: "Live AI build + results" },
+      { href: "/admin/growth-engine", label: "Growth Engine", icon: Activity, description: "System map + scoring + loop" },
       { href: "/admin/campaigns", label: "Campaigns", icon: Megaphone, description: "Workspaces + pipeline" },
       { href: "/admin/approvals", label: "Approvals", icon: CheckCircle2, description: "Publish / send gates" },
     ],

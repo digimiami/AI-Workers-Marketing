@@ -34,6 +34,7 @@ Use the left nav (names may vary slightly by build):
 
 | Area | Path | Purpose |
 |------|------|---------|
+| **Growth Engine** | `/admin/growth-engine` | Architecture map, subsystem health, variant scoring, optimization loop. |
 | **AI Workers** | `/admin/ai-workers` | List agents, **sync** catalog from backend, **run** an agent, manage **schedules**, link **campaign agents**. |
 | **OpenClaw tools** | `/admin/openclaw/tools` | Try **tool** calls against the Cloud tools API from the UI (debugging). |
 | **Approvals** | `/admin/approvals` | Queue for human decisions on runs that require approval. |
@@ -78,6 +79,13 @@ Scripts named like **`page_all.js`**, **`feature_collector.js`**, or commands su
 
 ---
 
-## 7. Related doc
+## 7. Growth Engine (architecture + health)
+
+- **Dashboard**: `/admin/growth-engine` — shows the architecture diagram, per-layer health for a selected campaign, **Score variants** (heuristic AI scoring stored on the campaign), and **Run optimization loop** (collect analytics → run optimization JSON → append cycle to campaign metadata).
+- **Full audit (diagram vs code)**: see **`docs/GROWTH_ENGINE_ARCHITECTURE.md`** in this repository (includes the same diagram under `docs/assets/`).
+
+---
+
+## 8. Related doc
 
 - **External OpenClaw server** (AiWorkers calls *out* to your provider): see **`openclaw-bridge-deployment.md`** in this folder.

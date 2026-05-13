@@ -57,6 +57,8 @@ export async function runGrowthOptimizationFromDb(params: {
   organizationId: string;
   campaignId: string;
   autopilotEnabled: boolean;
+  /** Merged into the `metrics` object sent to the optimization LLM (e.g. analytics rollup, variant scores). */
+  additionalMetrics?: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
   const admin = createSupabaseAdminClient();
   const { data: camp, error: cErr } = await admin
@@ -82,10 +84,15 @@ export async function runGrowthOptimizationFromDb(params: {
 
   const name = typeof (camp as { name?: unknown } | null)?.name === "string" ? String((camp as { name?: string }).name) : params.campaignId;
 
+  const metrics: Record<string, unknown> = {
+    ad_performance_events: events ?? [],
+    ...(params.additionalMetrics && typeof params.additionalMetrics === "object" ? params.additionalMetrics : {}),
+  };
+
   return runOptimizationEngine({
     campaignName: name,
     autopilotEnabled: params.autopilotEnabled,
-    metrics: { ad_performance_events: events ?? [] },
+    metrics,
     funnelSummary,
   });
 }
