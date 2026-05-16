@@ -64,6 +64,19 @@ Use the left nav (names may vary slightly by build):
 ### Approvals
 
 1. **`/admin/approvals`** → open an item → approve or reject according to your process.
+2. **OpenClaw agents** can also approve via Cloud API tool `decide_approval` when the operator asks (e.g. “approve and publish”).
+
+### Publish / activate (agents)
+
+Agents use **`POST /api/v1/cloud/tools/run`** (see `/docs/cloud-api`). High-risk actions (`publish_funnel`, `activate_email_sequence`, `change_content_status`) respect **`approval_mode`**:
+
+| User says | `approval_mode` | What happens |
+|-----------|-----------------|--------------|
+| “Publish now”, “go live”, “activate” | `disabled` | Runs immediately (funnel public, campaign active, etc.) |
+| “Submit for approval”, “queue for review” | `auto` (default) | Creates approval; returns `approval_required` + `approval_id` |
+| “Approve it”, “yes publish” (after queue) | — | Call `decide_approval` with `decision: "approved"` → deferred publish runs |
+
+Typical agent flow: `upsert_landing_variant` → `publish_funnel` (with mode per table above) → if queued, `decide_approval` when confirmed. Public URLs: `/f/{campaignId}/{stepSlug}`.
 
 ---
 

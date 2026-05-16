@@ -229,9 +229,9 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
   let approvalId: string | null = null;
   if (tool.highRisk && env.approval_mode !== "disabled") {
     const approvalType =
-      env.tool_name === "change_content_status"
+      env.tool_name === "change_content_status" || env.tool_name === "publish_funnel"
         ? "content_publishing"
-        : env.tool_name === "queue_test_email"
+        : env.tool_name === "queue_test_email" || env.tool_name === "activate_email_sequence"
           ? "email_sending"
           : env.tool_name === "create_tracking_link"
             ? "affiliate_cta_activation"
@@ -244,13 +244,24 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
       toolName: env.tool_name,
       approvalType,
       payload: {
+        tool: env.tool_name,
         input: env.input,
         ...(env.tool_name === "change_content_status"
           ? {
               target_entity_type: "content_asset",
               target_entity_id: String((env.input as any)?.content_asset_id ?? ""),
             }
-          : {}),
+          : env.tool_name === "publish_funnel"
+            ? {
+                target_entity_type: "funnel_step",
+                target_entity_id: String((env.input as any)?.campaign_id ?? ""),
+              }
+            : env.tool_name === "activate_email_sequence"
+              ? {
+                  target_entity_type: "email_sequence",
+                  target_entity_id: String((env.input as any)?.sequence_id ?? ""),
+                }
+              : {}),
       },
     });
     if (gated.gated) {
@@ -278,7 +289,12 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
         // best-effort logging only
       }
 
-      return err(traceId, "APPROVAL_REQUIRED", "Approval required before executing this tool");
+      return ok(traceId, {
+        approval_required: true,
+        approval_id: approvalId,
+        message:
+          "Queued for operator approval. When the user confirms, call decide_approval with decision approved. To skip the queue, retry with approval_mode disabled.",
+      });
     }
   }
 

@@ -8,6 +8,7 @@ import { writeAuditLog } from "@/services/audit/auditService";
 import { dispatchWorkflow } from "@/services/github/githubActionsService";
 import { env } from "@/lib/env";
 import { launchPaidAdsAfterApprovals } from "@/services/ads/adsEngine";
+import { applyDeferredToolAfterApproval } from "@/services/openclaw/deferredToolApproval";
 
 type Db = SupabaseClient;
 
@@ -744,7 +745,7 @@ export async function decideApproval(
   userId: string,
   decision: "approved" | "rejected",
   reason?: string,
-) {
+): Promise<{ deferred_result: Record<string, unknown> | null }> {
   const { data: row, error } = await db
     .from("approvals" as never)
     .select("*")
@@ -927,6 +928,13 @@ export async function decideApproval(
       target_entity_id: targetEntityId,
     },
   } as never);
+
+  let deferredResult: Record<string, unknown> | null = null;
+  if (decision === "approved") {
+    deferredResult = await applyDeferredToolAfterApproval(db, organizationId, payload);
+  }
+
+  return { deferred_result: deferredResult };
 }
 
 export async function listCampaignAgents(db: Db, organizationId: string, campaignId: string) {

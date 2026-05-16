@@ -47,6 +47,7 @@ const addFunnelStepIn = z.object({
   name: z.string().min(1),
   step_type: z.string().min(1),
   slug: z.string().min(1),
+  is_public: z.boolean().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 const funnelStepOut = z.object({
@@ -56,6 +57,45 @@ const funnelStepOut = z.object({
   name: z.string(),
   step_type: z.string(),
   slug: z.string(),
+  is_public: z.boolean().optional(),
+});
+
+const publishFunnelIn = z.object({
+  organizationId: id,
+  campaign_id: id,
+  funnel_id: id.optional(),
+  variant_id: id.optional(),
+  activate_campaign: z.boolean().optional(),
+});
+
+const selectLandingVariantIn = z.object({
+  organizationId: id,
+  campaign_id: id,
+  variant_id: id,
+});
+
+const upsertLandingVariantIn = z.object({
+  organizationId: id,
+  campaign_id: id,
+  variant_key: z.string().min(1).max(80),
+  funnel_step_id: id.optional(),
+  angle: z.string().optional().nullable(),
+  content: z.record(z.string(), z.unknown()),
+  selected: z.boolean().optional(),
+  status: z.string().optional(),
+});
+
+const activateEmailSequenceIn = z.object({
+  organizationId: id,
+  sequence_id: id,
+  is_active: z.boolean().optional(),
+});
+
+const decideApprovalIn = z.object({
+  organizationId: id,
+  approval_id: id,
+  decision: z.enum(["approved", "rejected"]),
+  reason: z.string().optional(),
 });
 
 // Content assets
@@ -170,6 +210,11 @@ export const TOOL_SCHEMAS = {
   funnelOut,
   addFunnelStepIn,
   funnelStepOut,
+  publishFunnelIn,
+  selectLandingVariantIn,
+  upsertLandingVariantIn,
+  activateEmailSequenceIn,
+  decideApprovalIn,
   createContentIn,
   contentOut,
   createEmailTemplateIn,

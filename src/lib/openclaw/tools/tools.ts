@@ -3,6 +3,9 @@ import { z } from "zod";
 import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { assertCampaignLimit } from "@/services/billing/entitlements";
+import { buildLandingVariantBlocks } from "@/services/marketing-pipeline/landingVariantBlocks";
+import { decideApproval } from "@/services/openclaw/orchestrationService";
+import { executePublishFunnel } from "@/services/openclaw/publishFunnelService";
 import { TOOL_SCHEMAS } from "@/lib/openclaw/tools/registry";
 import { zapierCallTool, zapierListTools } from "@/services/zapier/zapierMcp";
 import { zernioCallTool, zernioListTools } from "@/services/zernio/zernioMcp";
@@ -10,6 +13,12 @@ import type { AnyToolDef } from "@/lib/openclaw/tools/registry";
 import type { OpenClawToolContext } from "@/lib/openclaw/tools/types";
 
 const id = z.string().uuid();
+
+const PUBLIC_FUNNEL_STEP_TYPES = new Set(["landing", "bridge", "thank_you", "form", "lead_capture"]);
+
+function defaultFunnelStepIsPublic(stepType: string): boolean {
+  return PUBLIC_FUNNEL_STEP_TYPES.has(stepType);
+}
 
 async function requireOrgRow(orgId: string) {
   const admin = createSupabaseAdminClient();
@@ -370,6 +379,7 @@ export const TOOLS: AnyToolDef[] = [
         .limit(1)
         .maybeSingle();
       const nextIndex = ((last as any)?.step_index ?? -1) + 1;
+      const isPublic = input.is_public ?? defaultFunnelStepIsPublic(input.step_type);
       const { data, error } = await admin
         .from("funnel_steps" as never)
         .insert({
@@ -379,9 +389,10 @@ export const TOOLS: AnyToolDef[] = [
           name: input.name,
           step_type: input.step_type,
           slug: input.slug,
+          is_public: isPublic,
           metadata: input.metadata ?? {},
         } as never)
-        .select("id,funnel_id,step_index,name,step_type,slug")
+        .select("id,funnel_id,step_index,name,step_type,slug,is_public")
         .single();
       if (error || !data) throw new Error(error?.message ?? "Failed to create step");
       return data as any;
@@ -396,6 +407,7 @@ export const TOOLS: AnyToolDef[] = [
       name: z.string().min(1).optional(),
       step_type: z.string().min(1).optional(),
       slug: z.string().min(1).optional(),
+      is_public: z.boolean().optional(),
       metadata: z.record(z.string(), z.unknown()).optional(),
     }),
     output: TOOL_SCHEMAS.funnelStepOut,
@@ -406,13 +418,14 @@ export const TOOLS: AnyToolDef[] = [
       if (input.name !== undefined) patch.name = input.name;
       if (input.step_type !== undefined) patch.step_type = input.step_type;
       if (input.slug !== undefined) patch.slug = input.slug;
+      if (input.is_public !== undefined) patch.is_public = input.is_public;
       if (input.metadata !== undefined) patch.metadata = input.metadata;
       const { data, error } = await admin
         .from("funnel_steps" as never)
         .update(patch as never)
         .eq("organization_id", input.organizationId)
         .eq("id", input.step_id)
-        .select("id,funnel_id,step_index,name,step_type,slug")
+        .select("id,funnel_id,step_index,name,step_type,slug,is_public")
         .single();
       if (error || !data) throw new Error(error?.message ?? "Failed to update step");
       return data as any;
@@ -452,6 +465,203 @@ export const TOOLS: AnyToolDef[] = [
         if (error) throw new Error(error.message);
       }
       return { ok: true, funnel_id: input.funnel_id };
+    },
+  },
+  {
+    name: "upsert_landing_variant",
+    description:
+      "Create or update a structured landing page variant (content.blocks) for public /f/{campaignId}/{slug} rendering.",
+    input: TOOL_SCHEMAS.upsertLandingVariantIn,
+    output: z.object({
+      id,
+      variant_key: z.string(),
+      selected: z.boolean(),
+      status: z.string(),
+      public_url_hint: z.string().optional(),
+    }),
+    allowedRoles: ["campaign_launcher", "funnel_architect", "supervisor"],
+    async handler(_ctx, input) {
+      await requireCampaignOrgMatch(input.organizationId, input.campaign_id);
+      const admin = createSupabaseAdminClient();
+      const rawContent = input.content ?? {};
+      const blocks =
+        Array.isArray((rawContent as { blocks?: unknown }).blocks) &&
+        ((rawContent as { blocks: unknown[] }).blocks?.length ?? 0) > 0
+          ? (rawContent as { blocks: unknown[] }).blocks
+          : buildLandingVariantBlocks(rawContent as Record<string, unknown>);
+      const content = {
+        ...rawContent,
+        blocks,
+        visual_preset:
+          typeof (rawContent as { visual_preset?: unknown }).visual_preset === "string"
+            ? String((rawContent as { visual_preset?: unknown }).visual_preset)
+            : "growth_dark",
+      };
+      const now = new Date().toISOString();
+      const row = {
+        organization_id: input.organizationId,
+        campaign_id: input.campaign_id,
+        funnel_step_id: input.funnel_step_id ?? null,
+        variant_key: input.variant_key,
+        angle: input.angle ?? null,
+        content,
+        status: input.status ?? "draft",
+        selected: input.selected ?? false,
+        updated_at: now,
+      };
+      const { data, error } = await admin
+        .from("landing_page_variants" as never)
+        .upsert(row as never, { onConflict: "organization_id,campaign_id,variant_key" })
+        .select("id,variant_key,selected,status,funnel_step_id")
+        .single();
+      if (error || !data) throw new Error(error?.message ?? "Failed to upsert landing variant");
+      let slug: string | null = null;
+      if ((data as { funnel_step_id?: string | null }).funnel_step_id) {
+        const { data: step } = await admin
+          .from("funnel_steps" as never)
+          .select("slug")
+          .eq("organization_id", input.organizationId)
+          .eq("id", String((data as { funnel_step_id: string }).funnel_step_id))
+          .maybeSingle();
+        slug = step ? String((step as { slug?: string }).slug ?? "") : null;
+      }
+      return {
+        id: String((data as { id: string }).id),
+        variant_key: String((data as { variant_key: string }).variant_key),
+        selected: Boolean((data as { selected?: boolean }).selected),
+        status: String((data as { status?: string }).status ?? "draft"),
+        public_url_hint: slug ? `/f/${input.campaign_id}/${slug}` : `/f/${input.campaign_id}`,
+      };
+    },
+  },
+  {
+    name: "select_landing_variant",
+    description: "Mark a landing variant as selected and wire it to its funnel step metadata.",
+    input: TOOL_SCHEMAS.selectLandingVariantIn,
+    output: z.object({ ok: z.boolean(), variant_id: id, variant_key: z.string().optional() }),
+    allowedRoles: ["campaign_launcher", "funnel_architect", "supervisor"],
+    async handler(_ctx, input) {
+      await requireCampaignOrgMatch(input.organizationId, input.campaign_id);
+      const admin = createSupabaseAdminClient();
+      const now = new Date().toISOString();
+      await admin
+        .from("landing_page_variants" as never)
+        .update({ selected: false, updated_at: now } as never)
+        .eq("organization_id", input.organizationId)
+        .eq("campaign_id", input.campaign_id);
+      const { data: updated, error } = await admin
+        .from("landing_page_variants" as never)
+        .update({ selected: true, status: "published", updated_at: now } as never)
+        .eq("organization_id", input.organizationId)
+        .eq("campaign_id", input.campaign_id)
+        .eq("id", input.variant_id)
+        .select("id,variant_key,funnel_step_id,content")
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!updated) throw new Error("VARIANT_NOT_FOUND");
+      const funnelStepId = (updated as { funnel_step_id?: string | null }).funnel_step_id
+        ? String((updated as { funnel_step_id: string }).funnel_step_id)
+        : null;
+      const variantKey = String((updated as { variant_key?: string }).variant_key ?? "");
+      if (funnelStepId && variantKey) {
+        const { data: step } = await admin
+          .from("funnel_steps" as never)
+          .select("metadata")
+          .eq("organization_id", input.organizationId)
+          .eq("id", funnelStepId)
+          .maybeSingle();
+        const prev = asMetadataRecord((step as { metadata?: unknown } | null)?.metadata);
+        const next = mergeJsonbRecords(prev, { page: { kind: "structured", variant_key: variantKey } });
+        await admin
+          .from("funnel_steps" as never)
+          .update({ metadata: next, is_public: true, updated_at: now } as never)
+          .eq("organization_id", input.organizationId)
+          .eq("id", funnelStepId);
+      }
+      return { ok: true, variant_id: input.variant_id, variant_key: variantKey || undefined };
+    },
+  },
+  {
+    name: "publish_funnel",
+    description:
+      "Make funnel steps public, activate campaign/funnel, and optionally select a landing variant so /f/{campaignId}/{slug} is live.",
+    input: TOOL_SCHEMAS.publishFunnelIn,
+    output: z.object({
+      ok: z.boolean(),
+      funnel_id: id,
+      campaign_id: id,
+      steps_made_public: z.number().int(),
+      public_urls: z.array(z.string()),
+      variant_id: id.nullable().optional(),
+    }),
+    highRisk: true,
+    allowedRoles: ["campaign_launcher", "funnel_architect", "supervisor"],
+    async handler(_ctx, input) {
+      await requireCampaignOrgMatch(input.organizationId, input.campaign_id);
+      const admin = createSupabaseAdminClient();
+      return executePublishFunnel(admin, {
+        organizationId: input.organizationId,
+        campaign_id: input.campaign_id,
+        funnel_id: input.funnel_id ?? null,
+        variant_id: input.variant_id ?? null,
+        activate_campaign: input.activate_campaign,
+      });
+    },
+  },
+  {
+    name: "decide_approval",
+    description:
+      "Approve or reject a pending approval (runs publish/activate side-effects when approved). Use when the operator asks to approve.",
+    input: z.object({
+      organizationId: id,
+      approval_id: id,
+      decision: z.enum(["approved", "rejected"]),
+      reason: z.string().optional(),
+    }),
+    output: z.object({
+      ok: z.boolean(),
+      approval_id: id,
+      decision: z.string(),
+      deferred_result: z.record(z.string(), z.unknown()).nullable().optional(),
+    }),
+    allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "supervisor"],
+    async handler(ctx, input) {
+      const admin = createSupabaseAdminClient();
+      const actorUserId = ctx.actor.type === "user" ? ctx.actor.userId : ctx.actor.userId;
+      if (!actorUserId) throw new Error("Missing actor user context");
+      const { deferred_result } = await decideApproval(
+        admin,
+        input.organizationId,
+        input.approval_id,
+        actorUserId,
+        input.decision,
+        input.reason,
+      );
+      return {
+        ok: true,
+        approval_id: input.approval_id,
+        decision: input.decision,
+        deferred_result: deferred_result ?? null,
+      };
+    },
+  },
+  {
+    name: "activate_email_sequence",
+    description: "Enable or disable an email sequence (may require approval when activating).",
+    input: TOOL_SCHEMAS.activateEmailSequenceIn,
+    output: z.object({ ok: z.boolean(), sequence_id: id, is_active: z.boolean() }),
+    allowedRoles: ["campaign_launcher", "lead_nurture_worker", "supervisor"],
+    highRisk: true,
+    async handler(_ctx, input) {
+      const admin = createSupabaseAdminClient();
+      const isActive = input.is_active ?? true;
+      const { error } = await admin
+        .from("email_sequences" as never)
+        .update({ is_active: isActive, updated_at: new Date().toISOString() } as never)
+        .eq("organization_id", input.organizationId)
+        .eq("id", input.sequence_id);
+      if (error) throw new Error(error.message);
+      return { ok: true, sequence_id: input.sequence_id, is_active: isActive };
     },
   },
   {
