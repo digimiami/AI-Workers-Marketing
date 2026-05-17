@@ -157,6 +157,7 @@ const createLeadIn = z.object({
   organizationId: id,
   email: z.string().email().optional().nullable(),
   name: z.string().optional().nullable(),
+  fullName: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
   status: z.string().optional(),
   score: z.number().int().min(0).max(100).optional(),

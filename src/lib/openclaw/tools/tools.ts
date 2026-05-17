@@ -687,7 +687,7 @@ export const TOOLS: AnyToolDef[] = [
           title: input.title,
           status: input.status ?? "draft",
           campaign_id: input.campaign_id ?? null,
-          funnel_id: input.funnel_id ?? null,
+          metadata: { ...(input.metadata ?? {}), funnel_id: input.funnel_id ?? null },
           script_markdown: input.body ?? null,
           metadata,
         } as never)
@@ -987,13 +987,12 @@ export const TOOLS: AnyToolDef[] = [
         .insert({
           organization_id: input.organizationId,
           email: input.email ?? null,
-          name: input.name ?? null,
+          full_name: input.fullName ?? input.name ?? null,
           phone: input.phone ?? null,
           status: input.status ?? "new",
           score: input.score ?? 0,
           campaign_id: input.campaign_id ?? null,
-          funnel_id: input.funnel_id ?? null,
-          metadata: input.metadata ?? {},
+          metadata: { ...(input.metadata ?? {}), funnel_id: input.funnel_id ?? null },
         } as never)
         .select("id,email,status")
         .single();
