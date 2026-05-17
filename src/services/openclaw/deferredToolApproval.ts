@@ -43,7 +43,7 @@ export async function applyDeferredToolAfterApproval(
     const isActive = toolInput.is_active !== false;
     await admin
       .from("email_sequences" as never)
-      .update({ is_active: isActive, updated_at: new Date().toISOString() } as never)
+      .update({ is_active: isActive, review_status: 'deployed', updated_at: new Date().toISOString() } as never)
       .eq("organization_id", organizationId)
       .eq("id", sequenceId);
     return { deferred_tool_applied: toolName, ok: true, sequence_id: sequenceId, is_active: isActive };
