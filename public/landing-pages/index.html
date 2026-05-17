@@ -338,7 +338,7 @@ window.addEventListener('scroll',()=>navbar.classList.toggle('scrolled',window.s
 const form=document.getElementById('leadForm'),st=document.getElementById('formStatus'),btn=document.getElementById('submitBtn')
 form.addEventListener('submit',async e=>{e.preventDefault();st.className='form-status loading';st.textContent='Sending...';btn.disabled=true
 try{await fetch('/api/leads/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({organizationId:'033c8cdb-ba72-4943-b44a-f5fc0d622448',email:form.email.value,fullName:form.name.value,phone:form.phone.value,campaignId:'44c57504-3ba8-442b-87a0-93fb3a52b7c4'})})}catch(e){}
-window.location.href='thanks.html'})
+window.location.href='/landing-pages/thanks.html'})
 </script>
 </body>
 </html>
