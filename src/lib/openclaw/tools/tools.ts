@@ -687,9 +687,9 @@ export const TOOLS: AnyToolDef[] = [
           title: input.title,
           status: input.status ?? "draft",
           campaign_id: input.campaign_id ?? null,
-          metadata: { ...(input.metadata ?? {}), funnel_id: input.funnel_id ?? null },
+          funnel_id: input.funnel_id ?? null,
           script_markdown: input.body ?? null,
-          metadata,
+          metadata: input.metadata ?? {},
         } as never)
         .select("id,title,status,campaign_id,funnel_id,organization_id")
         .single();
