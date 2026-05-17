@@ -657,7 +657,7 @@ export const TOOLS: AnyToolDef[] = [
       const isActive = input.is_active ?? true;
       const { error } = await admin
         .from("email_sequences" as never)
-        .update({ is_active: isActive, updated_at: new Date().toISOString() } as never)
+        .update({ is_active: isActive, review_status: isActive ? 'deployed' : 'draft', updated_at: new Date().toISOString() } as never)
         .eq("organization_id", input.organizationId)
         .eq("id", input.sequence_id);
       if (error) throw new Error(error.message);
