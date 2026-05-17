@@ -337,7 +337,7 @@ const navbar=document.getElementById('navbar')
 window.addEventListener('scroll',()=>navbar.classList.toggle('scrolled',window.scrollY>50))
 const form=document.getElementById('leadForm'),st=document.getElementById('formStatus'),btn=document.getElementById('submitBtn')
 form.addEventListener('submit',async e=>{e.preventDefault();st.className='form-status loading';st.textContent='Sending...';btn.disabled=true
-try{await fetch('/api/leads/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({organizationId:'033c8cdb-ba72-4943-b44a-f5fc0d622448',email:form.email.value,fullName:form.name.value,phone:form.phone.value,campaignId:'44c57504-3ba8-442b-87a0-93fb3a52b7c4'})})}catch(e){}
+const payload={organizationId:'033c8cdb-ba72-4943-b44a-f5fc0d622448',email:form.email.value,fullName:form.name.value,campaignId:'44c57504-3ba8-442b-87a0-93fb3a52b7c4'};if(form.phone.value.length>=6)payload.phone=form.phone.value;try{await fetch('/api/leads/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})}catch(e){}
 window.location.href='/landing-pages/thanks.html'})
 </script>
 </body>
