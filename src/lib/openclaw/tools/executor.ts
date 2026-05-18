@@ -231,13 +231,15 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
     const approvalType =
       env.tool_name === "change_content_status" || env.tool_name === "publish_funnel"
         ? "content_publishing"
-        : env.tool_name === "queue_test_email" || env.tool_name === "activate_email_sequence"
-          ? "email_sending"
-          : env.tool_name === "create_tracking_link"
-            ? "affiliate_cta_activation"
-            : env.tool_name === "apply_supabase_migrations"
-              ? "db_migrations_apply"
-            : "high_risk_copy";
+        : env.tool_name === "zernio_mcp_call_tool"
+          ? "social_posting"
+          : env.tool_name === "queue_test_email" || env.tool_name === "activate_email_sequence"
+            ? "email_sending"
+            : env.tool_name === "create_tracking_link"
+              ? "affiliate_cta_activation"
+              : env.tool_name === "apply_supabase_migrations"
+                ? "db_migrations_apply"
+              : "high_risk_copy";
 
     const gated = await maybeGateWithApproval({
       ctx,
@@ -261,7 +263,12 @@ export async function executeOpenClawTool(rawBody: unknown): Promise<OpenClawToo
                   target_entity_type: "email_sequence",
                   target_entity_id: String((env.input as any)?.sequence_id ?? ""),
                 }
-              : {}),
+              : env.tool_name === "zernio_mcp_call_tool"
+                ? {
+                    target_entity_type: "content_asset",
+                    target_entity_id: String((env.input as any)?.tool_name ?? "zernio"),
+                  }
+                : {}),
       },
     });
     if (gated.gated) {

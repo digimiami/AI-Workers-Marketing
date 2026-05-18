@@ -36,6 +36,8 @@ export const ROLE_ALLOWED_TOOLS: Record<OpenClawRoleMode, string[]> = {
     "get_pending_approvals",
     "create_approval_item",
     "decide_approval",
+    "zernio_mcp_list_tools",
+    "zernio_mcp_call_tool",
     "get_org_settings",
   ],
   offer_analyst: [
@@ -56,6 +58,8 @@ export const ROLE_ALLOWED_TOOLS: Record<OpenClawRoleMode, string[]> = {
     "get_pending_approvals",
     "create_approval_item",
     "decide_approval",
+    "zernio_mcp_list_tools",
+    "zernio_mcp_call_tool",
   ],
   funnel_architect: [
     "create_funnel",
@@ -86,6 +90,8 @@ export const ROLE_ALLOWED_TOOLS: Record<OpenClawRoleMode, string[]> = {
     "get_pending_approvals",
     "create_approval_item",
     "decide_approval",
+    "zernio_mcp_list_tools",
+    "zernio_mcp_call_tool",
   ],
   analyst: [
     "list_campaigns",

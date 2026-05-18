@@ -8,7 +8,12 @@ import { decideApproval } from "@/services/openclaw/orchestrationService";
 import { executePublishFunnel } from "@/services/openclaw/publishFunnelService";
 import { TOOL_SCHEMAS } from "@/lib/openclaw/tools/registry";
 import { zapierCallTool, zapierListTools } from "@/services/zapier/zapierMcp";
-import { zernioCallTool, zernioListTools } from "@/services/zernio/zernioMcp";
+import {
+  formatZernioMcpError,
+  isZernioMcpConfigured,
+  zernioCallTool,
+  zernioListTools,
+} from "@/services/zernio/zernioMcp";
 import type { AnyToolDef } from "@/lib/openclaw/tools/registry";
 import type { OpenClawToolContext } from "@/lib/openclaw/tools/types";
 
@@ -84,29 +89,59 @@ export const TOOLS: AnyToolDef[] = [
   {
     name: "zernio_mcp_list_tools",
     description:
-      "List available Zernio MCP tools (social APIs). Requires ZERNIO_MCP_API_KEY on the server; optional ZERNIO_MCP_SERVER_URL (default https://mcp.zernio.com/mcp). See https://docs.zernio.com/mcp",
-    input: z.object({}),
-    output: z.object({ tools: z.array(z.any()) }),
-    allowedRoles: ["supervisor"],
-    async handler() {
-      const res = await zernioListTools();
-      return { tools: (res as any)?.tools ?? (res as any) };
+      "List Zernio MCP tools (280+ social/scheduling endpoints). Server must have ZERNIO_MCP_API_KEY; endpoint defaults to https://mcp.zernio.com/mcp. Call this before zernio_mcp_call_tool to discover names (e.g. accounts_list, posts_create, posts_publish_now). Docs: https://docs.zernio.com/mcp",
+    input: z.object({ organizationId: id }),
+    output: z.object({
+      configured: z.boolean(),
+      toolCount: z.number().int(),
+      tools: z.array(z.any()),
+    }),
+    allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "supervisor"],
+    async handler(_ctx, input) {
+      await requireOrgRow(input.organizationId);
+      if (!isZernioMcpConfigured()) {
+        throw new Error(
+          "ZERNIO_MCP_NOT_CONFIGURED — set ZERNIO_MCP_API_KEY on AiWorkers (Vercel). Keys: https://zernio.com/dashboard/api-keys",
+        );
+      }
+      try {
+        const res = await zernioListTools();
+        const tools = Array.isArray((res as { tools?: unknown }).tools)
+          ? ((res as { tools: unknown[] }).tools as unknown[])
+          : Array.isArray(res)
+            ? (res as unknown[])
+            : [];
+        return { configured: true, toolCount: tools.length, tools };
+      } catch (e) {
+        throw new Error(formatZernioMcpError(e));
+      }
     },
   },
   {
     name: "zernio_mcp_call_tool",
     description:
-      "Call a Zernio MCP tool by name with arguments. Requires ZERNIO_MCP_API_KEY. High-risk: can post or modify social content.",
+      "Invoke a Zernio MCP tool by name (social post, schedule, accounts, ads, inbox, etc.). Requires ZERNIO_MCP_API_KEY on AiWorkers. High-risk when publishing/sending — use approval_mode auto unless operator says publish now (disabled). Example: tool_name posts_publish_now with arguments { content, platform, publish_now: true }.",
     input: z.object({
+      organizationId: id,
       tool_name: z.string().min(1),
       arguments: z.record(z.string(), z.unknown()).default({}),
     }),
     output: z.object({ result: z.any() }),
-    allowedRoles: ["supervisor"],
+    allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "supervisor"],
     highRisk: true,
-    async handler(_ctx: OpenClawToolContext, input) {
-      const result = await zernioCallTool(input.tool_name, input.arguments);
-      return { result };
+    async handler(_ctx, input) {
+      await requireOrgRow(input.organizationId);
+      if (!isZernioMcpConfigured()) {
+        throw new Error(
+          "ZERNIO_MCP_NOT_CONFIGURED — set ZERNIO_MCP_API_KEY on AiWorkers (Vercel). Keys: https://zernio.com/dashboard/api-keys",
+        );
+      }
+      try {
+        const result = await zernioCallTool(input.tool_name, input.arguments);
+        return { result };
+      } catch (e) {
+        throw new Error(formatZernioMcpError(e));
+      }
     },
   },
   {

@@ -78,6 +78,32 @@ Agents use **`POST /api/v1/cloud/tools/run`** (see `/docs/cloud-api`). High-risk
 
 Typical agent flow: `upsert_landing_variant` → `publish_funnel` (with mode per table above) → if queued, `decide_approval` when confirmed. Public URLs: `/f/{campaignId}/{stepSlug}`.
 
+### Zernio MCP (social — OpenClaw, Hermes, any Cloud API agent)
+
+Agents do **not** connect to Zernio directly. AiWorkers proxies Zernio on the server using `ZERNIO_MCP_API_KEY` (set in Vercel). Operators test connectivity under **Admin → Settings → Zernio MCP**.
+
+| Cloud tool | Purpose |
+|------------|---------|
+| `zernio_mcp_list_tools` | Discover Zernio tool names (`accounts_list`, `posts_create`, …) |
+| `zernio_mcp_call_tool` | Run a Zernio tool with `tool_name` + `arguments` |
+
+Use `role_mode`: **`campaign_launcher`** or **`content_strategist`** (or `supervisor` for all tools). Example envelope:
+
+```json
+{
+  "organization_id": "<ORG_UUID>",
+  "trace_id": "zernio-list-001",
+  "role_mode": "campaign_launcher",
+  "approval_mode": "auto",
+  "tool_name": "zernio_mcp_list_tools",
+  "input": { "organizationId": "<ORG_UUID>" }
+}
+```
+
+Posting to social networks is **high-risk**: `zernio_mcp_call_tool` queues approval unless `approval_mode` is `disabled` and the operator said publish now; then `decide_approval` when they confirm.
+
+Zernio MCP URL must be **`https://mcp.zernio.com/mcp`** (not `https://zernio.com`). API keys: [zernio.com/dashboard/api-keys](https://zernio.com/dashboard/api-keys).
+
 ---
 
 ## 5. Database prerequisites (production)

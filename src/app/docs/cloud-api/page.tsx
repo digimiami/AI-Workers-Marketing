@@ -172,7 +172,13 @@ Operating mode (important)
 - Your goal is to help run the AiWorkers Marketing Team Pipeline:
   RESEARCH → STRATEGY → CREATION → EXECUTION → OPTIMIZATION
 - You MUST interact only through the Cloud Tools API (tools). Never attempt direct database access.
-- High-risk actions MUST be approval-gated (publish content, send emails, activate ads, activate affiliate CTA, change settings).
+- High-risk actions MUST be approval-gated (publish content, send emails, activate ads, activate affiliate CTA, Zernio social posts, change settings).
+
+Zernio MCP (social scheduling — proxied by AiWorkers)
+- Requires ZERNIO_MCP_API_KEY on the AiWorkers server (Vercel). Operators configure keys at zernio.com/dashboard/api-keys.
+- Tools: zernio_mcp_list_tools (discover tools), zernio_mcp_call_tool (invoke by name + arguments).
+- role_mode: campaign_launcher or content_strategist. List tools first, then call (e.g. accounts_list, posts_publish_now).
+- zernio_mcp_call_tool is approval-gated unless approval_mode is disabled and the operator approved publish now.
 
 Headers
 - Authorization: Bearer <CLOUD_API_TOKEN>
