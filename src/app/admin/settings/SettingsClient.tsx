@@ -354,7 +354,12 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as {
         ok: boolean;
-        zernio: { configured: boolean; serverUrl: string };
+        zernio: {
+          configured: boolean;
+          serverUrl: string;
+          urlWarning?: boolean;
+          urlWarningMessage?: string | null;
+        };
         zapier: { configured: boolean };
       };
     },
@@ -368,16 +373,27 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
         body: JSON.stringify({ organizationId }),
       });
       const raw = await res.text();
-      let j: { ok?: boolean; message?: string; toolCount?: number } = {};
+      let j: { ok?: boolean; message?: string; toolCount?: number; urlWasCorrected?: boolean } = {};
       try {
         j = JSON.parse(raw) as typeof j;
       } catch {
-        throw new Error(raw || "Test failed");
+        const hint =
+          raw.includes("og:site_name") || raw.includes("__next_f")
+            ? "Wrong Zernio URL — use https://mcp.zernio.com/mcp in Vercel (ZERNIO_MCP_SERVER_URL), not https://zernio.com"
+            : raw.length > 280
+              ? `${raw.slice(0, 280)}…`
+              : raw;
+        throw new Error(hint || "Test failed");
       }
       if (!res.ok) throw new Error(j.message ?? raw);
       return j;
     },
     onSuccess: (j) => {
+      if (j.urlWasCorrected) {
+        toast.warning(
+          "Connected, but ZERNIO_MCP_SERVER_URL was the marketing site. Update Vercel to https://mcp.zernio.com/mcp",
+        );
+      }
       toast.success(j.message ?? `Zernio MCP OK (${j.toolCount ?? 0} tools)`);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Zernio test failed"),
@@ -500,11 +516,17 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
             <code className="font-mono text-[11px]">zernio_mcp_list_tools</code> and{" "}
             <code className="font-mono text-[11px]">zernio_mcp_call_tool</code> work. Optional:{" "}
             <code className="font-mono text-[11px]">ZERNIO_MCP_SERVER_URL</code> (defaults to{" "}
-            <code className="font-mono text-[11px]">https://mcp.zernio.com/mcp</code>).
+            <code className="font-mono text-[11px]">https://mcp.zernio.com/mcp</code>). Do not use{" "}
+            <code className="font-mono text-[11px]">https://zernio.com</code> — that is the marketing site, not the MCP API.
           </p>
           {mcpStatusQuery.data?.zernio?.serverUrl ? (
             <p className="text-xs text-muted-foreground">
               Effective MCP URL: <code className="font-mono text-[11px]">{mcpStatusQuery.data.zernio.serverUrl}</code>
+            </p>
+          ) : null}
+          {mcpStatusQuery.data?.zernio?.urlWarning && mcpStatusQuery.data.zernio.urlWarningMessage ? (
+            <p className="text-xs rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-100">
+              {mcpStatusQuery.data.zernio.urlWarningMessage}
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
