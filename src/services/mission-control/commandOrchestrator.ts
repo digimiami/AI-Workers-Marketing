@@ -5,7 +5,9 @@ import { resolveLegacyAgentKey } from "@/domain/mission-control/workerRegistry";
 import type { MissionWorkerKey } from "@/domain/mission-control/types";
 import { buildAiMarketingPlan } from "@/services/ai-agent/agentOrchestrator";
 import type { RunAiMarketingAgentInput } from "@/services/ai-agent/types";
+import { generateMissionControlReply } from "@/services/mission-control/chatAssistant";
 import { upsertBusinessMemory } from "@/services/mission-control/memoryService";
+import { historyFromRows, listSessionMessages } from "@/services/mission-control/sessionService";
 import { syncAgentsAndTemplates } from "@/services/openclaw/orchestrationService";
 
 export async function processMissionCommand(params: {
@@ -19,6 +21,17 @@ export async function processMissionCommand(params: {
   const routed = routeMissionCommand(params.message);
 
   let sessionId = params.sessionId ?? null;
+  let priorHistory: Array<{ role: "user" | "assistant"; content: string }> = [];
+
+  if (sessionId) {
+    try {
+      const prior = await listSessionMessages(params.db, params.organizationId, sessionId, 40);
+      priorHistory = historyFromRows(prior);
+    } catch {
+      priorHistory = [];
+    }
+  }
+
   if (!sessionId) {
     const { data: session, error } = await params.db
       .from("mission_control_sessions" as never)
@@ -102,18 +115,18 @@ export async function processMissionCommand(params: {
     legacyAgentKey: resolveLegacyAgentKey(key as MissionWorkerKey),
   }));
 
-  const assistantReply = [
-    routed.summary,
-    "",
-    `**Workers:** ${assignedWorkers.map((w) => w.key.replace(/_/g, " ")).join(", ")}`,
-    "",
-    "**Playbook:**",
-    ...routed.suggestedPlaybookSteps.map((s, i) => `${i + 1}. ${s}`),
-    "",
-    plan.objective ? `**Objective:** ${plan.objective}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const assignedWorkerKeys = assignedWorkers.map((w) => w.key);
+  const history = [...priorHistory, { role: "user" as const, content: params.message }];
+
+  const { reply: assistantReply, suggestions } = await generateMissionControlReply({
+    userMessage: params.message,
+    history: priorHistory,
+    routed,
+    plan,
+    assignedWorkerKeys,
+    organizationId: params.organizationId,
+    userId: params.userId,
+  });
 
   await params.db.from("mission_control_messages" as never).insert({
     organization_id: params.organizationId,
@@ -123,8 +136,22 @@ export async function processMissionCommand(params: {
     worker_key: routed.primaryWorker,
     intent: routed.intent,
     plan,
-    metadata: { playbook_id: (playbook as { id?: string } | null)?.id ?? null, confidence: routed.confidence },
+    metadata: {
+      playbook_id: (playbook as { id?: string } | null)?.id ?? null,
+      confidence: routed.confidence,
+      suggestions,
+    },
   } as never);
+
+  try {
+    await params.db
+      .from("mission_control_sessions" as never)
+      .update({ updated_at: new Date().toISOString() } as never)
+      .eq("id", sessionId)
+      .eq("organization_id", params.organizationId);
+  } catch {
+    // session bump optional
+  }
 
   await upsertBusinessMemory(params.db, {
     organizationId: params.organizationId,
@@ -141,5 +168,6 @@ export async function processMissionCommand(params: {
     plan,
     assignedWorkers,
     reply: assistantReply,
+    suggestions,
   };
 }

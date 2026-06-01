@@ -2,25 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import {
-  ArrowUpRight,
-  Bot,
-  DollarSign,
-  Loader2,
-  Megaphone,
-  Send,
-  Sparkles,
-  Target,
-  TrendingUp,
-  Users,
-} from "lucide-react";
-import { toast } from "sonner";
+import { ArrowUpRight, Bot, DollarSign, Megaphone, Target, TrendingUp, Users } from "lucide-react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { MissionControlChatbot } from "@/components/mission-control/MissionControlChatbot";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 type OverviewPayload = {
@@ -52,24 +40,11 @@ type OverviewPayload = {
   activitySeries: Array<{ day: string; workerRuns: number }>;
 };
 
-const EXAMPLE_COMMANDS = [
-  "Create a marketing campaign for my roofing business",
-  "Build a landing page for lead capture",
-  "Launch a Facebook campaign with $500 budget",
-  "Generate a 7-day email nurture sequence",
-  "Analyze my campaign performance and suggest optimizations",
-];
-
 function formatUsd(cents: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 }
 
 export function MissionControlClient({ organizationId }: { organizationId: string }) {
-  const queryClient = useQueryClient();
-  const [message, setMessage] = React.useState("");
-  const [sessionId, setSessionId] = React.useState<string | null>(null);
-  const [thread, setThread] = React.useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
-
   const overview = useQuery({
     queryKey: ["mission-control-overview", organizationId],
     queryFn: async () => {
@@ -79,35 +54,6 @@ export function MissionControlClient({ organizationId }: { organizationId: strin
       return json;
     },
     refetchInterval: 60_000,
-  });
-
-  const command = useMutation({
-    mutationFn: async (text: string) => {
-      const res = await fetch("/api/mission-control/command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          organizationId,
-          sessionId: sessionId ?? undefined,
-          message: text,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message ?? "Command failed");
-      return json as { sessionId: string; reply: string; routed: { intent: string; primaryWorker: string } };
-    },
-    onSuccess: (data, text) => {
-      setSessionId(data.sessionId);
-      setThread((t) => [
-        ...t,
-        { role: "user", content: text },
-        { role: "assistant", content: data.reply },
-      ]);
-      setMessage("");
-      void queryClient.invalidateQueries({ queryKey: ["mission-control-overview", organizationId] });
-      toast.success(`Routed to ${data.routed.primaryWorker.replace(/_/g, " ")}`);
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Command failed"),
   });
 
   const exec = overview.data?.executive;
@@ -126,7 +72,7 @@ export function MissionControlClient({ organizationId }: { organizationId: strin
             Mission Control
           </h1>
           <p className="text-sm text-muted-foreground max-w-xl">
-            Your business operating system — executive metrics, worker orchestration, and natural-language commands.
+            Chat with your AI assistant, monitor performance, and launch workers from one place.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -167,78 +113,7 @@ export function MissionControlClient({ organizationId }: { organizationId: strin
           animate={{ opacity: 1 }}
           transition={{ delay: 0.1 }}
         >
-          <Card className="border-border/60 glass-panel overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-accent/20">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <CardTitle>AI Command Center</CardTitle>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Describe what you want. Workers are assigned automatically.
-              </p>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="max-h-[360px] overflow-y-auto p-4 space-y-3">
-                {thread.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border/70 p-6 text-center text-sm text-muted-foreground">
-                    Try a command below or type your own business goal.
-                  </div>
-                ) : (
-                  thread.map((m, idx) => (
-                    <div
-                      key={idx}
-                      className={cn(
-                        "rounded-lg px-3 py-2 text-sm max-w-[92%] whitespace-pre-wrap",
-                        m.role === "user"
-                          ? "ml-auto bg-primary/15 text-foreground"
-                          : "mr-auto bg-muted/50 text-foreground",
-                      )}
-                    >
-                      {m.content}
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className="border-t border-border/50 p-4 space-y-3 bg-background/50">
-                <div className="flex flex-wrap gap-2">
-                  {EXAMPLE_COMMANDS.map((ex) => (
-                    <button
-                      key={ex}
-                      type="button"
-                      className="text-xs rounded-full border border-border/60 px-2.5 py-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-                      onClick={() => setMessage(ex)}
-                    >
-                      {ex}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <Textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="e.g. Generate 100 leads for my roofing business"
-                    rows={2}
-                    className="resize-none"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        if (message.trim() && !command.isPending) command.mutate(message.trim());
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    size="icon"
-                    className="shrink-0 h-auto aspect-square"
-                    disabled={!message.trim() || command.isPending}
-                    onClick={() => command.mutate(message.trim())}
-                  >
-                    {command.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <MissionControlChatbot organizationId={organizationId} />
 
           <Card className="border-border/60">
             <CardHeader>
