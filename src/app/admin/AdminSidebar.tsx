@@ -18,7 +18,9 @@ import {
   Megaphone,
   PanelLeft,
   Radar,
+  Rocket,
   Settings,
+  Sparkles,
   Users,
   Wand2,
 } from "lucide-react";
@@ -42,6 +44,12 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "CORE",
     items: [
+      {
+        href: "/admin/mission-control",
+        label: "Mission Control",
+        icon: Rocket,
+        description: "Executive dashboard + AI commands",
+      },
       { href: "/admin/workspace", label: "Workspace", icon: Bot, description: "Live AI build + results" },
       { href: "/admin/growth-engine", label: "Growth Engine", icon: Activity, description: "System map + scoring + loop" },
       { href: "/admin/campaigns", label: "Campaigns", icon: Megaphone, description: "Workspaces + pipeline" },
@@ -63,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/analytics", label: "Analytics", icon: BarChart3, description: "Events + performance" },
       { href: "/admin/ads", label: "Ads", icon: Radar, description: "Paid campaigns + performance" },
       { href: "/admin/reports", label: "Reports", icon: FileBarChart2, description: "Exports + summaries" },
+      { href: "/admin/agents", label: "Agents", icon: Sparkles, description: "OpenClaw agents, sync, runs" },
       { href: "/admin/ai-workers", label: "AI Workers", icon: Wand2, description: "Agents + skills" },
     ],
   },
