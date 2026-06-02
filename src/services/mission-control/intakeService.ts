@@ -18,6 +18,12 @@ export function extractIntakePatchFromMessage(message: string): Partial<MissionC
   const text = message.trim();
   const patch: Partial<MissionControlIntake> = {};
 
+  const goalLine = text.match(/\b(goal|objective)\s*:\s*([^\n]+)/i);
+  if (goalLine?.[2]) patch.goal = goalLine[2].trim().slice(0, 300);
+
+  const audienceLine = text.match(/\b(audience|target)\s*:\s*([^\n]+)/i);
+  if (audienceLine?.[2]) patch.audience = audienceLine[2].trim().slice(0, 300);
+
   const urlMatch = text.match(/\bhttps?:\/\/[^\s)]+/i);
   if (urlMatch?.[0]) patch.websiteUrl = urlMatch[0].replace(/[),.]+$/, "");
 
@@ -60,6 +66,8 @@ export function computeMissingForFastLaunch(intake: MissionControlIntake): Array
   const missing: Array<keyof MissionControlIntake> = [];
   if (!intake.websiteUrl) missing.push("websiteUrl");
   if (!intake.keywords || intake.keywords.length === 0) missing.push("keywords");
+  if (!intake.goal) missing.push("goal");
+  if (!intake.audience) missing.push("audience");
   if (!intake.trafficSource || intake.trafficSource === "unknown") missing.push("trafficSource");
   if (!intake.budgetText) missing.push("budgetText");
   return missing;
@@ -86,15 +94,30 @@ export function buildIntakeQuestionReply(input: {
     suggestions.push("Keywords: roofing, roof repair, roof replacement, emergency roofer");
     if (intake.websiteUrl) suggestions.push("Use my website copy for keywords");
   }
+  if (missing.includes("goal")) {
+    lines.push("3) What’s the goal? (leads, booked calls, quote requests, sales, etc.)");
+    suggestions.push("Goal: generate leads");
+    suggestions.push("Goal: booked calls");
+  }
+  if (missing.includes("audience")) {
+    lines.push("4) Who’s the audience? (location + customer type)");
+    suggestions.push("Audience: homeowners in Miami");
+    suggestions.push("Audience: commercial property managers");
+  }
   if (missing.includes("trafficSource")) {
-    lines.push("3) Which ad platform should we start with?");
+    lines.push("5) Which traffic source should we start with?");
     suggestions.push("Meta Ads");
     suggestions.push("Google Ads");
   }
   if (missing.includes("budgetText")) {
-    lines.push("4) What budget should I plan for?");
+    lines.push("6) What budget should I plan for?");
     suggestions.push("$500 budget");
     suggestions.push("$50/day");
+  }
+
+  // Always offer Zernio connect as a quick next step when relevant.
+  if (!intake.wantsConnectZernio) {
+    suggestions.push("Connect Zernio");
   }
 
   lines.push("");
