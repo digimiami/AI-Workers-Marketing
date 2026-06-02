@@ -6,9 +6,18 @@ import type { MissionWorkerKey } from "@/domain/mission-control/types";
 import { buildAiMarketingPlan } from "@/services/ai-agent/agentOrchestrator";
 import type { RunAiMarketingAgentInput } from "@/services/ai-agent/types";
 import { generateMissionControlReply } from "@/services/mission-control/chatAssistant";
-import { upsertBusinessMemory } from "@/services/mission-control/memoryService";
+import { getBusinessMemory, upsertBusinessMemory } from "@/services/mission-control/memoryService";
 import { historyFromRows, listSessionMessages } from "@/services/mission-control/sessionService";
+import {
+  buildIntakeQuestionReply,
+  computeMissingForFastLaunch,
+  extractIntakePatchFromMessage,
+  mergeIntake,
+  type MissionControlIntake,
+} from "@/services/mission-control/intakeService";
 import { syncAgentsAndTemplates } from "@/services/openclaw/orchestrationService";
+import { encryptJson } from "@/services/platforms/credentialsCrypto";
+import { writeAuditLog } from "@/services/audit/auditService";
 
 export async function processMissionCommand(params: {
   db: SupabaseClient;
@@ -18,6 +27,7 @@ export async function processMissionCommand(params: {
   sessionId?: string;
   campaignId?: string;
 }) {
+  const rawMessage = params.message.trim();
   const routed = routeMissionCommand(params.message);
 
   let sessionId = params.sessionId ?? null;
@@ -48,6 +58,29 @@ export async function processMissionCommand(params: {
     sessionId = (session as { id: string }).id;
   }
 
+  // Load and update intake memory for the session. This drives the chatbot pre-questions.
+  let intake: MissionControlIntake = {};
+  try {
+    const existing = await getBusinessMemory(params.db, {
+      organizationId: params.organizationId,
+      namespace: "conversation",
+      scopeId: sessionId,
+      memoryKey: "mc_intake",
+    });
+    intake = (existing?.value ?? {}) as MissionControlIntake;
+  } catch {
+    intake = {};
+  }
+  const patch = extractIntakePatchFromMessage(rawMessage);
+  intake = mergeIntake(intake, patch);
+  await upsertBusinessMemory(params.db, {
+    organizationId: params.organizationId,
+    namespace: "conversation",
+    scopeId: sessionId,
+    memoryKey: "mc_intake",
+    value: intake as unknown as Record<string, unknown>,
+  }).catch(() => undefined);
+
   await params.db.from("mission_control_messages" as never).insert({
     organization_id: params.organizationId,
     session_id: sessionId,
@@ -56,6 +89,119 @@ export async function processMissionCommand(params: {
     intent: routed.intent,
     metadata: { campaign_id: params.campaignId ?? null },
   } as never);
+
+  // Zernio connect flow: if user asks to connect, prompt for API key; if they paste a key after prompt, save it.
+  if (intake.wantsConnectZernio) {
+    await upsertBusinessMemory(params.db, {
+      organizationId: params.organizationId,
+      namespace: "conversation",
+      scopeId: sessionId,
+      memoryKey: "mc_pending_action",
+      value: { type: "connect_zernio_mcp", at: new Date().toISOString() },
+    }).catch(() => undefined);
+  }
+
+  let pendingAction: { type?: string } | null = null;
+  try {
+    const existing = await getBusinessMemory(params.db, {
+      organizationId: params.organizationId,
+      namespace: "conversation",
+      scopeId: sessionId,
+      memoryKey: "mc_pending_action",
+    });
+    pendingAction = existing?.value ?? null;
+  } catch {
+    pendingAction = null;
+  }
+
+  const looksLikeApiKey = rawMessage.length >= 20 && !rawMessage.includes(" ") && !rawMessage.includes("http");
+  if (pendingAction?.type === "connect_zernio_mcp" && looksLikeApiKey) {
+    let ok = false;
+    try {
+      const encrypted = encryptJson({ api_key: rawMessage });
+      const status = { connected: true, missing: [] as string[] };
+      const { error } = await params.db
+        .from("organization_ad_credentials" as never)
+        .upsert(
+          {
+            organization_id: params.organizationId,
+            platform: "zernio_mcp",
+            encrypted,
+            status,
+            updated_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "organization_id,platform" },
+        );
+      if (!error) ok = true;
+      await writeAuditLog({
+        organizationId: params.organizationId,
+        actorUserId: params.userId,
+        action: "settings.updated",
+        entityType: "zernio_mcp",
+        entityId: "zernio_mcp",
+        metadata: { connected: ok },
+      }).catch(() => undefined);
+    } catch {
+      ok = false;
+    }
+    const assistantReply = ok
+      ? "Great — Zernio MCP is connected for your organization. Which platform do you want to start with (Meta Ads or Google Ads), and what’s your budget?"
+      : "I couldn’t save that Zernio key yet. Make sure `PLATFORM_CREDENTIALS_ENCRYPTION_KEY` is set on the server, then try pasting the key again.";
+
+    await params.db.from("mission_control_messages" as never).insert({
+      organization_id: params.organizationId,
+      session_id: sessionId,
+      role: "assistant",
+      content: assistantReply,
+      worker_key: routed.primaryWorker,
+      intent: routed.intent,
+      plan: {},
+      metadata: { suggestions: ["Meta Ads", "Google Ads", "$500 budget"] },
+    } as never);
+
+    await upsertBusinessMemory(params.db, {
+      organizationId: params.organizationId,
+      namespace: "conversation",
+      scopeId: sessionId,
+      memoryKey: "mc_pending_action",
+      value: {},
+    }).catch(() => undefined);
+
+    return {
+      sessionId,
+      playbookId: null,
+      routed,
+      plan: null,
+      assignedWorkers: [],
+      reply: assistantReply,
+      suggestions: ["Meta Ads", "Google Ads", "$500 budget"],
+    };
+  }
+
+  // If we're missing key inputs, ask pre-questions (fast launch) instead of generating a full plan.
+  const missing = computeMissingForFastLaunch(intake);
+  if (missing.length > 0 && ["create_campaign", "build_funnel", "create_ads", "lead_generation_playbook"].includes(routed.intent)) {
+    const { reply, suggestions } = buildIntakeQuestionReply({ missing, intake });
+    await params.db.from("mission_control_messages" as never).insert({
+      organization_id: params.organizationId,
+      session_id: sessionId,
+      role: "assistant",
+      content: reply,
+      worker_key: routed.primaryWorker,
+      intent: routed.intent,
+      plan: {},
+      metadata: { suggestions },
+    } as never);
+    return {
+      sessionId,
+      playbookId: null,
+      routed,
+      plan: null,
+      assignedWorkers: [],
+      reply,
+      suggestions,
+    };
+  }
 
   const planInput: RunAiMarketingAgentInput = {
     organizationId: params.organizationId,

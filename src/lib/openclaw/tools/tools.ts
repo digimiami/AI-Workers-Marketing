@@ -10,9 +10,8 @@ import { TOOL_SCHEMAS } from "@/lib/openclaw/tools/registry";
 import { zapierCallTool, zapierListTools } from "@/services/zapier/zapierMcp";
 import {
   formatZernioMcpError,
-  isZernioMcpConfigured,
-  zernioCallTool,
-  zernioListTools,
+  zernioCallToolForOrg,
+  zernioListToolsForOrg,
 } from "@/services/zernio/zernioMcp";
 import type { AnyToolDef } from "@/lib/openclaw/tools/registry";
 import type { OpenClawToolContext } from "@/lib/openclaw/tools/types";
@@ -99,13 +98,8 @@ export const TOOLS: AnyToolDef[] = [
     allowedRoles: ["campaign_launcher", "content_strategist", "lead_nurture_worker", "supervisor"],
     async handler(_ctx, input) {
       await requireOrgRow(input.organizationId);
-      if (!isZernioMcpConfigured()) {
-        throw new Error(
-          "ZERNIO_MCP_NOT_CONFIGURED — set ZERNIO_MCP_API_KEY on AiWorkers (Vercel). Keys: https://zernio.com/dashboard/api-keys",
-        );
-      }
       try {
-        const res = await zernioListTools();
+        const res = await zernioListToolsForOrg(input.organizationId);
         const tools = Array.isArray((res as { tools?: unknown }).tools)
           ? ((res as { tools: unknown[] }).tools as unknown[])
           : Array.isArray(res)
@@ -131,13 +125,8 @@ export const TOOLS: AnyToolDef[] = [
     highRisk: true,
     async handler(_ctx, input) {
       await requireOrgRow(input.organizationId);
-      if (!isZernioMcpConfigured()) {
-        throw new Error(
-          "ZERNIO_MCP_NOT_CONFIGURED — set ZERNIO_MCP_API_KEY on AiWorkers (Vercel). Keys: https://zernio.com/dashboard/api-keys",
-        );
-      }
       try {
-        const result = await zernioCallTool(input.tool_name, input.arguments);
+        const result = await zernioCallToolForOrg(input.organizationId, input.tool_name, input.arguments);
         return { result };
       } catch (e) {
         throw new Error(formatZernioMcpError(e));

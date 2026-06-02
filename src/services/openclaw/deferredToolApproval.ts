@@ -1,6 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { executePublishFunnel } from "@/services/openclaw/publishFunnelService";
-import { zernioCallTool } from "@/services/zernio/zernioMcp";
+import { zernioCallToolForOrg } from "@/services/zernio/zernioMcp";
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 
@@ -66,7 +66,7 @@ export async function applyDeferredToolAfterApproval(
     const zernioTool = String(toolInput.tool_name ?? "");
     if (!zernioTool) return null;
     const args = asRecord(toolInput.arguments);
-    const result = await zernioCallTool(zernioTool, args);
+    const result = await zernioCallToolForOrg(organizationId, zernioTool, args);
     return { deferred_tool_applied: toolName, zernio_tool: zernioTool, result };
   }
 
