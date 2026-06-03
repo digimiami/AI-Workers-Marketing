@@ -18,6 +18,7 @@ mcp/**/dist
 
 # next.js
 /.next/
+agents-aiworkers-vip/.next/
 /out/
 
 # production
