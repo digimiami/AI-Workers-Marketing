@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 
-import { AgentMarketplaceAdmin } from "@/app/admin/agent-marketplace/AgentMarketplaceAdmin";
-import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
+const AGENTS_PLATFORM_ADMIN =
+  process.env.NEXT_PUBLIC_AGENTS_PLATFORM_ADMIN_URL ?? "https://agents.aiworkers.vip/admin";
 
-export default async function AgentMarketplaceAdminPage() {
-  const orgId = await getCurrentOrgIdFromCookie();
-  if (!orgId) redirect("/admin/onboarding");
-  return <AgentMarketplaceAdmin organizationId={orgId} />;
+/** Platform catalog + skill training lives on agents.aiworkers.vip, not aiworkers.vip admin. */
+export default function AgentMarketplaceRedirectPage() {
+  redirect(AGENTS_PLATFORM_ADMIN);
 }

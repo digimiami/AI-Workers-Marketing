@@ -2,13 +2,12 @@
 
 import * as React from "react";
 
-import { toast } from "sonner";
-
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { platformFetch } from "@/lib/platform-api";
 
 type CatalogRow = {
   slug: string;
@@ -31,80 +30,76 @@ type SkillRow = {
   status: string;
 };
 
-export function AgentMarketplaceAdmin({ organizationId }: { organizationId: string }) {
+export function AgentMarketplaceAdmin() {
   const [catalog, setCatalog] = React.useState<CatalogRow[]>([]);
   const [skills, setSkills] = React.useState<SkillRow[]>([]);
   const [selectedSkill, setSelectedSkill] = React.useState<SkillRow | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [message, setMessage] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
+    setMessage(null);
     try {
-      const [catRes, skillRes] = await Promise.all([
-        fetch(`/api/admin/agent-marketplace/catalog?organizationId=${organizationId}`),
-        fetch(`/api/admin/agent-marketplace/skills?organizationId=${organizationId}`),
+      const [cat, skill] = await Promise.all([
+        platformFetch("/api/agents-platform/catalog"),
+        platformFetch("/api/agents-platform/skills"),
       ]);
-      const catJson = (await catRes.json()) as { ok: boolean; catalog: CatalogRow[] };
-      const skillJson = (await skillRes.json()) as { ok: boolean; skills: SkillRow[] };
-      if (!catRes.ok || !catJson.ok) throw new Error("Failed to load catalog");
-      if (!skillRes.ok || !skillJson.ok) throw new Error("Failed to load skills");
+      const catJson = cat.json as { catalog: CatalogRow[] };
+      const skillJson = skill.json as { skills: SkillRow[] };
       setCatalog(catJson.catalog ?? []);
       setSkills(skillJson.skills ?? []);
-      if (!selectedSkill && skillJson.skills?.[0]) setSelectedSkill(skillJson.skills[0]);
+      setSelectedSkill((prev) => prev ?? skillJson.skills?.[0] ?? null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Load failed");
+      setMessage(e instanceof Error ? e.message : "Load failed");
     } finally {
       setLoading(false);
     }
-  }, [organizationId, selectedSkill]);
+  }, []);
 
   React.useEffect(() => {
     void load();
   }, [load]);
 
   async function saveCatalogRow(row: CatalogRow) {
-    const res = await fetch("/api/admin/agent-marketplace/catalog", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        organizationId,
-        slug: row.slug,
-        stripe_price_id: row.stripe_price_id || null,
-        status: row.status,
-      }),
-    });
-    const j = (await res.json()) as { ok: boolean; message?: string };
-    if (!res.ok || !j.ok) {
-      toast.error(j.message ?? "Save failed");
-      return;
+    setMessage(null);
+    try {
+      await platformFetch("/api/agents-platform/catalog", {
+        method: "PATCH",
+        body: JSON.stringify({
+          slug: row.slug,
+          stripe_price_id: row.stripe_price_id || null,
+          status: row.status,
+        }),
+      });
+      setMessage(`Updated ${row.short_title}`);
+      void load();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Save failed");
     }
-    toast.success(`Updated ${row.short_title}`);
-    void load();
   }
 
   async function saveSkill() {
     if (!selectedSkill) return;
-    const res = await fetch("/api/admin/agent-marketplace/skills", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        organizationId,
-        skill_key: selectedSkill.skill_key,
-        name: selectedSkill.name,
-        category: selectedSkill.category,
-        description: selectedSkill.description,
-        markdown: selectedSkill.markdown,
-        agent_slug: selectedSkill.agent_slug,
-        status: selectedSkill.status,
-      }),
-    });
-    const j = (await res.json()) as { ok: boolean; message?: string };
-    if (!res.ok || !j.ok) {
-      toast.error(j.message ?? "Save failed");
-      return;
+    setMessage(null);
+    try {
+      await platformFetch("/api/agents-platform/skills", {
+        method: "POST",
+        body: JSON.stringify({
+          skill_key: selectedSkill.skill_key,
+          name: selectedSkill.name,
+          category: selectedSkill.category,
+          description: selectedSkill.description,
+          markdown: selectedSkill.markdown,
+          agent_slug: selectedSkill.agent_slug,
+          status: selectedSkill.status,
+        }),
+      });
+      setMessage(`Skill "${selectedSkill.name}" saved — new purchases get this training`);
+      void load();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Save failed");
     }
-    toast.success(`Skill "${selectedSkill.name}" saved — new purchases get this training`);
-    void load();
   }
 
   if (loading) {
@@ -114,11 +109,12 @@ export function AgentMarketplaceAdmin({ organizationId }: { organizationId: stri
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-display text-2xl font-bold">Agent Marketplace (Platform)</h1>
+        <h1 className="font-display text-2xl font-bold">Agent catalog & skill training</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Train platform skills and map Stripe prices. When a user buys an agent, it is provisioned on their org with
-          these skills installed.
+          Train platform skills and map Stripe prices. When a customer buys on aiworkers.vip, the worker is
+          provisioned with these skills.
         </p>
+        {message ? <p className="mt-2 text-sm text-primary">{message}</p> : null}
       </div>
 
       <Card>

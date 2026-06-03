@@ -24,3 +24,7 @@ export function mainAppMyAgentsUrl(agentSlug?: string): string {
   if (!agentSlug) return base;
   return `${base}?agent=${encodeURIComponent(agentSlug)}`;
 }
+
+/** Platform operator console on this site (not aiworkers.vip admin). */
+export const PLATFORM_ADMIN_PATH = "/admin";
+export const PLATFORM_MARKETPLACE_PATH = "/admin/marketplace";

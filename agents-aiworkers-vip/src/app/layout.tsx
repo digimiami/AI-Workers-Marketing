@@ -1,11 +1,7 @@
 import type { Metadata } from "next";
 
-import { AgentsShell } from "@/components/agents-shell";
 import { Providers } from "@/app/providers";
-import {
-  AGENTS_SITE_NAME,
-  AGENTS_SITE_URL,
-} from "@/lib/constants";
+import { AGENTS_SITE_NAME, AGENTS_SITE_URL } from "@/lib/constants";
 
 import "./globals.css";
 
@@ -29,9 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="dark h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        <Providers>
-          <AgentsShell>{children}</AgentsShell>
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

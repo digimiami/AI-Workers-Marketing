@@ -50,6 +50,11 @@ const serverSchema = z.object({
   /** When "1"/"true", Stripe subscription flows are disabled (checkout + webhook). */
   BILLING_DISABLE_STRIPE: z.string().optional(),
 
+  /** Bearer token for agents.aiworkers.vip platform admin (catalog + skill training). */
+  AGENTS_PLATFORM_ADMIN_SECRET: z.string().min(16).optional(),
+  /** Extra CORS origins for agents platform admin API (comma-separated). */
+  AGENTS_SITE_ORIGINS: z.string().optional(),
+
   // App
   APP_BASE_URL: z.string().url().optional(),
   PUBLIC_LEAD_ORGANIZATION_ID: z.string().uuid().optional(),
