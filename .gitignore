@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+agents-aiworkers-vip/node_modules
 mcp/**/node_modules
 mcp/**/dist
 /.pnp
