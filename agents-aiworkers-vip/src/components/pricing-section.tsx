@@ -8,7 +8,7 @@ import { SectionHeader } from "@/components/marketing/section-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { AGENTS_PRICING_TIERS } from "@/lib/pricing";
-import { MAIN_APP_SIGNUP } from "@/lib/constants";
+import { MAIN_APP_SIGNUP, mainAppSignupUrl } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 export function PricingSection() {

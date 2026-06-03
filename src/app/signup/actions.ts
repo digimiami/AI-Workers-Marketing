@@ -52,6 +52,12 @@ export async function signUpAction(formData: FormData) {
   if (orgErr || !org) redirectSignupError(orgErr?.message ?? "Failed to create workspace.");
 
   await setCurrentOrgIdCookie(String((org as any).id));
+
+  const agentSlug = formData.get("agent");
+  if (typeof agentSlug === "string" && agentSlug.length > 2) {
+    redirect(`/admin/my-agents?agent=${encodeURIComponent(agentSlug)}`);
+  }
+
   redirect("/admin/onboarding/growth");
 }
 

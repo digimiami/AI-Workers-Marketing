@@ -13,3 +13,14 @@ export const MAIN_APP_TERMS = `${MAIN_APP_URL}/terms`;
 export function agentPublicPath(slug: string): string {
   return `/agents/${slug}`;
 }
+
+export function mainAppSignupUrl(agentSlug?: string): string {
+  if (!agentSlug) return MAIN_APP_SIGNUP;
+  return `${MAIN_APP_SIGNUP}?agent=${encodeURIComponent(agentSlug)}`;
+}
+
+export function mainAppMyAgentsUrl(agentSlug?: string): string {
+  const base = `${MAIN_APP_URL}/admin/my-agents`;
+  if (!agentSlug) return base;
+  return `${base}?agent=${encodeURIComponent(agentSlug)}`;
+}

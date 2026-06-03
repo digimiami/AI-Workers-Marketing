@@ -8,7 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import {
   MAIN_APP_BOOK,
   MAIN_APP_CONTACT,
-  MAIN_APP_SIGNUP,
+  mainAppSignupUrl,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -16,14 +16,17 @@ type ConversionCtasProps = {
   className?: string;
   size?: "default" | "compact";
   align?: "start" | "center";
+  agentSlug?: string;
 };
 
 export function ConversionCtas({
   className,
   size = "default",
   align = "start",
+  agentSlug,
 }: ConversionCtasProps) {
   const isCompact = size === "compact";
+  const signupUrl = mainAppSignupUrl(agentSlug);
 
   return (
     <div
@@ -34,7 +37,7 @@ export function ConversionCtas({
       )}
     >
       <Link
-        href={MAIN_APP_SIGNUP}
+        href={signupUrl}
         className={buttonVariants({
           size: isCompact ? "default" : "lg",
           className: cn(

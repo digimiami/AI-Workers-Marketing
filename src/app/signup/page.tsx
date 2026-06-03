@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input";
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; agent?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, agent } = await searchParams;
 
   return (
     <div className="min-h-[calc(100vh-0px)] flex items-center justify-center px-4 py-16">
@@ -29,6 +29,7 @@ export default async function SignupPage({
               </p>
             ) : null}
             <form action={signUpAction} className="space-y-4">
+              {agent ? <input type="hidden" name="agent" value={agent} /> : null}
               <div className="space-y-2">
                 <label className="text-sm font-medium" htmlFor="orgName">
                   Workspace name

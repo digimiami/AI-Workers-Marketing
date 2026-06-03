@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { env } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { provisionAgentForOrganization } from "@/services/agents-marketplace/provisionService";
 
 export const runtime = "nodejs";
 
@@ -59,6 +60,8 @@ export async function POST(req: Request) {
       const leadId = asString(s.metadata?.lead_id);
       const cid = asString(s.metadata?.cid);
       const plan = asString(s.metadata?.plan);
+      const purchaseType = asString(s.metadata?.purchase_type);
+      const agentCatalogSlug = asString(s.metadata?.agent_catalog_slug);
 
       const amount = typeof s.amount_total === "number" ? s.amount_total : null;
       const currency = asString(s.currency) ?? "usd";
@@ -96,6 +99,41 @@ export async function POST(req: Request) {
         },
         created_at: new Date().toISOString(),
       } as never);
+
+      // Agent marketplace purchase → provision worker on org account.
+      if (orgId && purchaseType === "agent" && agentCatalogSlug) {
+        const { data: license } = await admin
+          .from("organization_agent_licenses" as never)
+          .select("id")
+          .eq("organization_id", orgId)
+          .eq("agent_catalog_slug", agentCatalogSlug)
+          .maybeSingle();
+
+        await admin
+          .from("organization_agent_licenses" as never)
+          .upsert(
+            {
+              organization_id: orgId,
+              agent_catalog_slug: agentCatalogSlug,
+              status: "active",
+              source: "stripe",
+              stripe_customer_id: typeof s.customer === "string" ? s.customer : null,
+              stripe_subscription_id:
+                typeof s.subscription === "string" ? s.subscription : null,
+              stripe_checkout_session_id: s.id,
+              updated_at: new Date().toISOString(),
+            } as never,
+            { onConflict: "organization_id,agent_catalog_slug" },
+          );
+
+        await provisionAgentForOrganization(admin, {
+          organizationId: orgId,
+          agentCatalogSlug,
+          licenseId: license ? String((license as { id: string }).id) : undefined,
+          source: "stripe",
+        });
+        return;
+      }
 
       // Subscription provisioning (plan/status) for SaaS billing.
       if (orgId && s.subscription && typeof s.subscription === "string") {

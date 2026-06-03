@@ -38,7 +38,7 @@ function AgentHero({ agent }: { agent: AgentDefinition }) {
               <p className="mt-3 text-lg text-muted-foreground">{agent.tagline}</p>
             </div>
           </div>
-          <ConversionCtas />
+          <ConversionCtas agentSlug={agent.slug} />
         </Reveal>
       </div>
     </section>
