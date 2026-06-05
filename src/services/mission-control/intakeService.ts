@@ -8,10 +8,53 @@ export type MissionControlIntake = {
   budgetText?: string;
   keywords?: string[];
   wantsConnectZernio?: boolean;
+  approvedToLaunch?: boolean;
+  pipelineRunId?: string;
 };
+
+const DOMAIN_RE = /\b([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)\b/gi;
+const DOMAIN_BLOCKLIST = new Set([
+  "aiworkers.vip",
+  "agents.aiworkers.vip",
+  "gmail.com",
+  "yahoo.com",
+  "hotmail.com",
+  "outlook.com",
+]);
 
 function uniqStrings(v: string[]) {
   return Array.from(new Set(v.map((s) => s.trim()).filter(Boolean)));
+}
+
+export function normalizeWebsiteUrl(raw: string): string {
+  const t = raw.trim().replace(/[),.]+$/, "");
+  if (/^https?:\/\//i.test(t)) return t;
+  return `https://${t.replace(/^\/\//, "")}`;
+}
+
+function extractDomainFromText(text: string): string | undefined {
+  const matches = text.match(DOMAIN_RE) ?? [];
+  for (const m of matches) {
+    const lower = m.toLowerCase();
+    if (DOMAIN_BLOCKLIST.has(lower)) continue;
+    if (!lower.includes(".")) continue;
+    const tld = lower.split(".").pop() ?? "";
+    if (tld.length < 2 || tld.length > 24) continue;
+    return lower;
+  }
+  return undefined;
+}
+
+export function isGreetingOnly(message: string): boolean {
+  const t = message.trim();
+  if (t.length > 40) return false;
+  return /^(hi|hello|hey|howdy|yo|good\s+(morning|afternoon|evening)|what'?s\s+up|sup)[!.?\s]*$/i.test(t);
+}
+
+export function hasLaunchApproval(message: string): boolean {
+  return /\b(go\s+ahead|do\s+(it|your\s+best)|start\s+(now|building|the)|build\s+it|launch\s+it|scan\s+(the\s+)?site|run\s+it|proceed|yes\s+please|make\s+it\s+happen)\b/i.test(
+    message.trim(),
+  );
 }
 
 export function extractIntakePatchFromMessage(message: string): Partial<MissionControlIntake> {
@@ -25,11 +68,18 @@ export function extractIntakePatchFromMessage(message: string): Partial<MissionC
   if (audienceLine?.[2]) patch.audience = audienceLine[2].trim().slice(0, 300);
 
   const urlMatch = text.match(/\bhttps?:\/\/[^\s)]+/i);
-  if (urlMatch?.[0]) patch.websiteUrl = urlMatch[0].replace(/[),.]+$/, "");
+  if (urlMatch?.[0]) {
+    patch.websiteUrl = normalizeWebsiteUrl(urlMatch[0]);
+  } else {
+    const domain = extractDomainFromText(text);
+    if (domain) patch.websiteUrl = normalizeWebsiteUrl(domain);
+  }
 
   const budgetMatch = text.match(/\$?\s?(\d{2,6})(?:\s*(?:\/\s*(day|mo|month))|\s*(daily|monthly))?/i);
   if (budgetMatch?.[0] && /\b(budget|spend|day|daily|month|monthly)\b/i.test(text)) {
     patch.budgetText = budgetMatch[0].trim();
+  } else if (/\$\d{2,6}\b/.test(text)) {
+    patch.budgetText = text.match(/\$\d{2,6}\b/)?.[0];
   }
 
   const kwLine = text.match(/\bkeywords?\s*:\s*([^\n]+)/i);
@@ -47,11 +97,39 @@ export function extractIntakePatchFromMessage(message: string): Partial<MissionC
   }
 
   if (/\bfacebook\b|\bmeta\b|\binstagram\b/i.test(text)) patch.trafficSource = "meta";
-  else if (/\bgoogle\b/i.test(text)) patch.trafficSource = "google";
+  else if (/\bgoogle\b|\badwords?\b/i.test(text)) patch.trafficSource = "google";
   else if (/\btiktok\b/i.test(text)) patch.trafficSource = "tiktok";
   else if (/\blinkedin\b/i.test(text)) patch.trafficSource = "linkedin";
 
+  if (!patch.goal) {
+    if (/\b(find|get|generate|new)\s+leads?\b/i.test(text)) patch.goal = "generate leads";
+    else if (/\b(schedul(e|ing)|book(ed)?)\s+(a\s+)?(consultation|call|appointment)s?\b/i.test(text)) {
+      patch.goal = "schedule consultations";
+    } else if (/\bquote\s+requests?\b/i.test(text)) patch.goal = "quote requests";
+    else if (/\bsales?\b/i.test(text)) patch.goal = "drive sales";
+  }
+
+  const locationMatch = text.match(/\b(?:in|near|around)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b/);
+  if (locationMatch?.[1]) patch.location = locationMatch[1].trim();
+
+  if (hasLaunchApproval(text)) patch.approvedToLaunch = true;
+
+  if (/\bno\s+website\b/i.test(text)) patch.websiteUrl = undefined;
+
   return patch;
+}
+
+export function mergeIntakeFromHistory(
+  base: MissionControlIntake,
+  history: Array<{ role: string; content: string }>,
+  latestMessage: string,
+): MissionControlIntake {
+  let intake = { ...base };
+  for (const turn of history) {
+    if (turn.role !== "user") continue;
+    intake = mergeIntake(intake, extractIntakePatchFromMessage(turn.content));
+  }
+  return mergeIntake(intake, extractIntakePatchFromMessage(latestMessage));
 }
 
 export function mergeIntake(base: MissionControlIntake, patch: Partial<MissionControlIntake>): MissionControlIntake {
@@ -59,70 +137,131 @@ export function mergeIntake(base: MissionControlIntake, patch: Partial<MissionCo
     ...base,
     ...patch,
     keywords: patch.keywords ? uniqStrings([...(base.keywords ?? []), ...patch.keywords]) : base.keywords,
+    approvedToLaunch: patch.approvedToLaunch || base.approvedToLaunch,
   };
 }
 
-export function computeMissingForFastLaunch(intake: MissionControlIntake): Array<keyof MissionControlIntake> {
-  const missing: Array<keyof MissionControlIntake> = [];
-  if (!intake.websiteUrl) missing.push("websiteUrl");
-  if (!intake.keywords || intake.keywords.length === 0) missing.push("keywords");
-  if (!intake.goal) missing.push("goal");
-  if (!intake.audience) missing.push("audience");
-  if (!intake.trafficSource || intake.trafficSource === "unknown") missing.push("trafficSource");
-  if (!intake.budgetText) missing.push("budgetText");
-  return missing;
+const ACTION_INTENTS = new Set([
+  "create_campaign",
+  "build_funnel",
+  "create_ads",
+  "lead_generation_playbook",
+  "build_landing_page",
+  "launch_campaign",
+]);
+
+export function canAutoLaunch(intake: MissionControlIntake): boolean {
+  if (intake.websiteUrl) return true;
+  const kw = intake.keywords ?? [];
+  if (kw.length >= 2 && (intake.goal || intake.location)) return true;
+  return false;
+}
+
+export function shouldBlockForIntake(params: {
+  intake: MissionControlIntake;
+  message: string;
+  intent: string;
+}): { block: true; mode: "greeting" | "minimal" } | { block: false } {
+  const { intake, message, intent } = params;
+  if (!ACTION_INTENTS.has(intent)) return { block: false };
+  if (canAutoLaunch(intake)) return { block: false };
+  if (hasLaunchApproval(message) && intake.websiteUrl) return { block: false };
+
+  if (isGreetingOnly(message)) return { block: true, mode: "greeting" };
+
+  if (!intake.websiteUrl && !(intake.keywords?.length && intake.location)) {
+    return { block: true, mode: "minimal" };
+  }
+
+  return { block: false };
 }
 
 export function buildIntakeQuestionReply(input: {
-  missing: Array<keyof MissionControlIntake>;
+  mode: "greeting" | "minimal";
   intake: MissionControlIntake;
 }) {
-  const { missing, intake } = input;
-  const lines: string[] = [];
+  const { mode, intake } = input;
   const suggestions: string[] = [];
 
-  lines.push("Perfect — I can do this fast. I just need a couple details first.");
-  lines.push("");
+  if (mode === "greeting") {
+    return {
+      reply: [
+        "Hey — great to meet you.",
+        "",
+        "Paste your **website URL** and I’ll scan it, pull your audience + keywords, and start building your funnel, landing page, and ad campaign automatically.",
+        "",
+        "No website yet? Send **keywords + target city/area + what you want** (e.g. “roof repair leads in Miami”).",
+      ].join("\n"),
+      suggestions: [
+        "My site is https://",
+        "Keywords: roofing, roof repair — Miami",
+        "Generate leads for my business",
+      ],
+    };
+  }
 
-  if (missing.includes("websiteUrl")) {
-    lines.push("1) What’s your website URL? (paste it here — I’ll do a quick research scan)");
+  const lines: string[] = [
+    "I’m ready to build — I just need one of these:",
+    "",
+    "• **Website URL** — I’ll scan the site and infer audience, keywords, offer, and locations.",
+    "• **OR** 3+ keywords + target area + goal (if you don’t have a site yet).",
+  ];
+
+  if (!intake.websiteUrl) {
     suggestions.push("My website is https://");
-    suggestions.push("No website yet");
+    suggestions.push("Scan dulcediaz.com and build everything");
   }
-  if (missing.includes("keywords")) {
-    lines.push("2) Give me 3–8 keywords you want leads for (or say “use my website copy”).");
-    suggestions.push("Keywords: roofing, roof repair, roof replacement, emergency roofer");
-    if (intake.websiteUrl) suggestions.push("Use my website copy for keywords");
+  if (!intake.keywords?.length) {
+    suggestions.push("Keywords: consultation, booking, local service");
   }
-  if (missing.includes("goal")) {
-    lines.push("3) What’s the goal? (leads, booked calls, quote requests, sales, etc.)");
-    suggestions.push("Goal: generate leads");
-    suggestions.push("Goal: booked calls");
-  }
-  if (missing.includes("audience")) {
-    lines.push("4) Who’s the audience? (location + customer type)");
-    suggestions.push("Audience: homeowners in Miami");
-    suggestions.push("Audience: commercial property managers");
-  }
-  if (missing.includes("trafficSource")) {
-    lines.push("5) Which traffic source should we start with?");
-    suggestions.push("Meta Ads");
-    suggestions.push("Google Ads");
-  }
-  if (missing.includes("budgetText")) {
-    lines.push("6) What budget should I plan for?");
-    suggestions.push("$500 budget");
-    suggestions.push("$50/day");
-  }
-
-  // Always offer Zernio connect as a quick next step when relevant.
-  if (!intake.wantsConnectZernio) {
-    suggestions.push("Connect Zernio");
-  }
+  if (!intake.goal) suggestions.push("Goal: schedule consultations");
+  suggestions.push("Go ahead — do your best");
 
   lines.push("");
-  lines.push("Once you reply, I’ll: research → generate keywords/angles → generate campaign + funnel + landing → prep ads.");
+  lines.push("Once I have that, I’ll **start the build in Workspace** — research → funnel → landing → ads.");
 
-  return { reply: lines.join("\n"), suggestions: uniqStrings(suggestions).slice(0, 8) };
+  return { reply: lines.join("\n"), suggestions: uniqStrings(suggestions).slice(0, 6) };
 }
 
+export function buildAutonomousLaunchReply(input: {
+  intake: MissionControlIntake;
+  pipelineRunId: string;
+  workspaceUrl: string;
+}): { reply: string; suggestions: string[]; workspaceUrl: string } {
+  const site = input.intake.websiteUrl ?? "your inputs";
+  const goal = input.intake.goal ?? "generate leads";
+  const channel =
+    input.intake.trafficSource === "google"
+      ? "Google Ads"
+      : input.intake.trafficSource === "meta"
+        ? "Meta Ads"
+        : "paid search + social";
+
+  return {
+    reply: [
+      `On it — I’m building your campaign now.`,
+      ``,
+      `**Site:** ${site}`,
+      `**Goal:** ${goal}`,
+      `**Channel:** ${channel}`,
+      ``,
+      `Right now I’m:`,
+      `1. Scanning the website and extracting audience, locations, and keywords`,
+      `2. Generating funnel + landing page variants`,
+      `3. Drafting ${channel} ads and lead capture`,
+      ``,
+      `Open **Workspace** to watch progress live. I’ll pause for your approval before anything goes live.`,
+    ].join("\n"),
+    suggestions: ["Open Workspace", "Show me audiences", "Change budget to $500"],
+    workspaceUrl: input.workspaceUrl,
+  };
+}
+
+// Legacy export kept for callers that still reference computeMissingForFastLaunch
+export function computeMissingForFastLaunch(intake: MissionControlIntake): Array<keyof MissionControlIntake> {
+  if (canAutoLaunch(intake)) return [];
+  const missing: Array<keyof MissionControlIntake> = [];
+  if (!intake.websiteUrl) missing.push("websiteUrl");
+  if (!intake.keywords?.length) missing.push("keywords");
+  return missing;
+}

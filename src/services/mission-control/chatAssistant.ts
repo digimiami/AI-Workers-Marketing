@@ -25,16 +25,16 @@ function buildFallbackReply(params: {
       : "1. Clarify your goal\n2. Assign the right workers\n3. Execute with your approval";
 
   return [
-    `Absolutely — I can help with that.`,
+    `Got it — I'm on it.`,
     ``,
-    `I'll loop in our **${lead}**${params.assignedWorkerKeys.length > 1 ? ` (plus ${params.assignedWorkerKeys.length - 1} supporting worker${params.assignedWorkerKeys.length > 2 ? "s" : ""})` : ""}.`,
+    `**${lead}** is taking point${params.assignedWorkerKeys.length > 1 ? ` with ${params.assignedWorkerKeys.length - 1} supporting worker${params.assignedWorkerKeys.length > 2 ? "s" : ""}` : ""}.`,
     ``,
     params.plan.objective ? `**Goal:** ${params.plan.objective}` : "",
     ``,
-    `Here's the plan I'd run:`,
+    `Executing now:`,
     stepsText,
     ``,
-    `Say **"go ahead"** when you want me to start in Workspace, or tell me what to change (budget, audience, offer, etc.).`,
+    `Paste your **website URL** if you haven't yet — I'll scan it and build your funnel + campaign in Workspace.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -71,16 +71,17 @@ export async function generateMissionControlReply(params: {
     .map((k) => `- ${workerDisplayName(k)}: ${MISSION_WORKERS[k as MissionWorkerKey]?.description ?? ""}`)
     .join("\n");
 
-  const systemPrompt = `You are AiWorkers Mission Control — a warm, expert business assistant (like a great HubSpot + marketing strategist chatbot).
+  const systemPrompt = `You are AiWorkers Mission Control — an action-first growth operator (not a passive FAQ bot).
 You coordinate specialized AI workers for: ads, funnels, websites, content, email, analytics, and CRM.
 Rules:
-- Reply in plain conversational prose (2-6 short paragraphs max). No JSON. Minimal markdown (bold sparingly).
-- Be friendly, confident, and specific to the user's request.
-- Mention which worker(s) will handle the task by name.
-- Give a numbered mini-plan (3-5 steps) when they're asking you to do something.
-- End with ONE clear question or call-to-action (e.g. approve, share URL, confirm budget).
+- ACT first, ask later. If the user gave a website or clear goal, state what you are doing NOW (scanning site, building funnel, drafting ads).
+- Reply in plain conversational prose (2-5 short paragraphs). No JSON. Minimal markdown (bold sparingly).
+- Mention which worker(s) are executing by name.
+- Give a numbered list of actions you are taking (not questions you need answered).
+- Ask at most ONE question only when you truly cannot proceed (no URL and no keywords/area).
+- Never ask for audience, budget, and traffic source all at once — infer from the website when possible.
 - Never claim you already launched ads or spent money — drafts and approvals come first.
-- If the request is vague, ask one clarifying question.`;
+- Prefer "I'm scanning your site now" over "What is your target audience?"`;
 
   const contextBlock = `Intent: ${params.routed.intent}
 Primary worker: ${workerDisplayName(params.routed.primaryWorker)}

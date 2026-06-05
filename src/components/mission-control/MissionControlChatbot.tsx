@@ -14,17 +14,18 @@ export type ChatMessage = {
   content: string;
   workerKey?: string | null;
   suggestions?: string[];
+  workspaceUrl?: string | null;
 };
 
 const WELCOME: ChatMessage = {
   id: "welcome",
   role: "assistant",
   content:
-    "Hi — I'm your Mission Control assistant. Tell me what you want to grow: campaigns, landing pages, ads, email sequences, or full lead-gen playbooks. What's on your mind?",
+    "Hi — paste your website URL and I'll scan it, find your audience, and build your funnel, landing page, and ad campaign. No site yet? Send keywords + target area + goal.",
   suggestions: [
-    "Create a campaign for my business",
-    "Build a landing page",
-    "Generate 100 leads",
+    "Generate leads for mysite.com",
+    "Scan my website and build a Google Ads campaign",
+    "Keywords: roofing, Miami — book consultations",
   ],
 };
 
@@ -85,6 +86,14 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       >
         {message.content}
+        {!isUser && message.workspaceUrl ? (
+          <Link
+            href={message.workspaceUrl}
+            className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-3 w-full")}
+          >
+            Open Workspace — watch build live
+          </Link>
+        ) : null}
         {!isUser && message.workerKey ? (
           <p className="mt-2 text-[11px] text-muted-foreground border-t border-border/40 pt-2">
             Routed via {message.workerKey.replace(/_/g, " ")}
@@ -101,6 +110,7 @@ export function MissionControlChatbot({ organizationId }: { organizationId: stri
   const [draft, setDraft] = React.useState("");
   const [typing, setTyping] = React.useState(false);
   const [quickReplies, setQuickReplies] = React.useState<string[]>(WELCOME.suggestions ?? []);
+  const [lastWorkspaceUrl, setLastWorkspaceUrl] = React.useState<string | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -170,6 +180,11 @@ export function MissionControlChatbot({ organizationId }: { organizationId: stri
     const trimmed = text.trim();
     if (!trimmed || typing) return;
 
+    if (trimmed === "Open Workspace" && lastWorkspaceUrl) {
+      window.location.href = lastWorkspaceUrl;
+      return;
+    }
+
     const userMsg: ChatMessage = {
       id: `local-user-${Date.now()}`,
       role: "user",
@@ -194,15 +209,24 @@ export function MissionControlChatbot({ organizationId }: { organizationId: stri
       if (!res.ok) throw new Error(json.message ?? "Message failed");
 
       persistSession(json.sessionId);
+      const workspaceUrl =
+        typeof json.workspaceUrl === "string" ? json.workspaceUrl : null;
+      if (workspaceUrl) setLastWorkspaceUrl(workspaceUrl);
       const assistantMsg: ChatMessage = {
         id: `local-asst-${Date.now()}`,
         role: "assistant",
         content: json.reply ?? "I'm on it — tell me a bit more about your business.",
         workerKey: json.routed?.primaryWorker,
         suggestions: json.suggestions ?? [],
+        workspaceUrl,
       };
       setMessages((m) => [...m, assistantMsg]);
       if (assistantMsg.suggestions?.length) setQuickReplies(assistantMsg.suggestions);
+      if (json.launched && workspaceUrl) {
+        window.setTimeout(() => {
+          window.location.href = workspaceUrl;
+        }, 1200);
+      }
     } catch (e) {
       setMessages((m) => [
         ...m,

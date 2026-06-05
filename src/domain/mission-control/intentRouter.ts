@@ -112,7 +112,14 @@ const RULES: IntentRule[] = [
     supporters: ["funnel_worker", "content_worker", "email_worker", "analytics_worker", "crm_worker"],
     aiMode: "create_campaign",
     weight: 10,
-    patterns: [/\bgenerate\s+\d+\s+leads\b/i, /\blead\s+gen\b/i, /\b100\s+leads\b/i],
+    patterns: [
+      /\bgenerate\s+\d+\s+leads\b/i,
+      /\blead\s+gen\b/i,
+      /\b100\s+leads\b/i,
+      /\b(find|get|generate|new)\s+leads?\b/i,
+      /\bleads?\s+for\s+[a-z0-9.-]+\.[a-z]{2,}\b/i,
+      /\bfor\s+[a-z0-9.-]+\.[a-z]{2,}\b/i,
+    ],
   },
   {
     intent: "create_campaign",

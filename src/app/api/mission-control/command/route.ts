@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 import { missionCommandBodySchema } from "@/domain/mission-control/types";
+import { continueDeferredPipelineBuild } from "@/services/mission-control/autonomousLaunchService";
 import { processMissionCommand } from "@/services/mission-control/commandOrchestrator";
 
 export async function POST(request: Request) {
@@ -23,6 +24,21 @@ export async function POST(request: Request) {
       sessionId: parsed.data.sessionId,
       campaignId: parsed.data.campaignId,
     });
+
+    if (result.launched && result.pipelineResume) {
+      after(async () => {
+        try {
+          await continueDeferredPipelineBuild({
+            db: ctx.supabase,
+            actorUserId: ctx.user.id,
+            resumeInput: result.pipelineResume!,
+          });
+        } catch (e) {
+          console.error("[mission-control] autonomous pipeline failed", e);
+        }
+      });
+    }
+
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Command failed";

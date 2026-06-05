@@ -9,10 +9,15 @@ import { generateMissionControlReply } from "@/services/mission-control/chatAssi
 import { getBusinessMemory, upsertBusinessMemory } from "@/services/mission-control/memoryService";
 import { historyFromRows, listSessionMessages } from "@/services/mission-control/sessionService";
 import {
+  beginAutonomousPipelineBuild,
+  shouldStartAutonomousBuild,
+} from "@/services/mission-control/autonomousLaunchService";
+import {
+  buildAutonomousLaunchReply,
   buildIntakeQuestionReply,
-  computeMissingForFastLaunch,
   extractIntakePatchFromMessage,
-  mergeIntake,
+  mergeIntakeFromHistory,
+  shouldBlockForIntake,
   type MissionControlIntake,
 } from "@/services/mission-control/intakeService";
 import { syncAgentsAndTemplates } from "@/services/openclaw/orchestrationService";
@@ -71,8 +76,12 @@ export async function processMissionCommand(params: {
   } catch {
     intake = {};
   }
-  const patch = extractIntakePatchFromMessage(rawMessage);
-  intake = mergeIntake(intake, patch);
+  const previousUrl = intake.websiteUrl;
+  intake = mergeIntakeFromHistory(intake, priorHistory, rawMessage);
+  const wantsNewBuild = /\b(new\s+build|start\s+over|different\s+site|fresh\s+run)\b/i.test(rawMessage);
+  if (wantsNewBuild || (intake.websiteUrl && previousUrl && intake.websiteUrl !== previousUrl)) {
+    intake.pipelineRunId = undefined;
+  }
   await upsertBusinessMemory(params.db, {
     organizationId: params.organizationId,
     namespace: "conversation",
@@ -178,10 +187,46 @@ export async function processMissionCommand(params: {
     };
   }
 
-  // If we're missing key inputs, ask pre-questions (fast launch) instead of generating a full plan.
-  const missing = computeMissingForFastLaunch(intake);
-  if (missing.length > 0 && ["create_campaign", "build_funnel", "create_ads", "lead_generation_playbook"].includes(routed.intent)) {
-    const { reply, suggestions } = buildIntakeQuestionReply({ missing, intake });
+  // Existing build in progress — point user to workspace instead of re-asking.
+  if (intake.pipelineRunId && !wantsNewBuild) {
+    const workspaceUrl = `/admin/workspace/${intake.pipelineRunId}`;
+    const assistantReply = [
+      `Your campaign build is already running.`,
+      ``,
+      `Open **Workspace** to watch research, funnel, landing pages, and ads being generated.`,
+      ``,
+      `Say **"start a new build"** with a different website if you want a fresh run.`,
+    ].join("\n");
+    await params.db.from("mission_control_messages" as never).insert({
+      organization_id: params.organizationId,
+      session_id: sessionId,
+      role: "assistant",
+      content: assistantReply,
+      worker_key: routed.primaryWorker,
+      intent: routed.intent,
+      plan: {},
+      metadata: { suggestions: ["Open Workspace"], workspaceUrl },
+    } as never);
+    return {
+      sessionId,
+      playbookId: null,
+      routed,
+      plan: null,
+      assignedWorkers: [],
+      reply: assistantReply,
+      suggestions: ["Open Workspace"],
+      workspaceUrl,
+      pipelineRunId: intake.pipelineRunId,
+      launched: false,
+    };
+  }
+
+  const intakeBlock = shouldBlockForIntake({ intake, message: rawMessage, intent: routed.intent });
+  if (intakeBlock.block) {
+    const { reply, suggestions } = buildIntakeQuestionReply({
+      mode: intakeBlock.mode,
+      intake,
+    });
     await params.db.from("mission_control_messages" as never).insert({
       organization_id: params.organizationId,
       session_id: sessionId,
@@ -200,6 +245,57 @@ export async function processMissionCommand(params: {
       assignedWorkers: [],
       reply,
       suggestions,
+      launched: false,
+    };
+  }
+
+  // Autonomous build: scan site → funnel → campaign → ads (deferred pipeline).
+  if (shouldStartAutonomousBuild({ intake, message: rawMessage, intent: routed.intent })) {
+    const launch = await beginAutonomousPipelineBuild({
+      db: params.db,
+      actorUserId: params.userId,
+      organizationId: params.organizationId,
+      intake,
+    });
+
+    intake = { ...intake, pipelineRunId: launch.pipelineRunId };
+    await upsertBusinessMemory(params.db, {
+      organizationId: params.organizationId,
+      namespace: "conversation",
+      scopeId: sessionId,
+      memoryKey: "mc_intake",
+      value: intake as unknown as Record<string, unknown>,
+    }).catch(() => undefined);
+
+    const { reply, suggestions, workspaceUrl } = buildAutonomousLaunchReply({
+      intake,
+      pipelineRunId: launch.pipelineRunId,
+      workspaceUrl: launch.workspaceUrl,
+    });
+
+    await params.db.from("mission_control_messages" as never).insert({
+      organization_id: params.organizationId,
+      session_id: sessionId,
+      role: "assistant",
+      content: reply,
+      worker_key: routed.primaryWorker,
+      intent: routed.intent,
+      plan: { objective: intake.goal ?? "Autonomous campaign build", steps: [], expected_outputs: [] },
+      metadata: { suggestions, workspaceUrl, pipelineRunId: launch.pipelineRunId },
+    } as never);
+
+    return {
+      sessionId,
+      playbookId: null,
+      routed,
+      plan: null,
+      assignedWorkers: [{ key: routed.primaryWorker, legacyAgentKey: resolveLegacyAgentKey(routed.primaryWorker) }],
+      reply,
+      suggestions,
+      workspaceUrl,
+      pipelineRunId: launch.pipelineRunId,
+      launched: true,
+      pipelineResume: launch.resumeInput,
     };
   }
 
