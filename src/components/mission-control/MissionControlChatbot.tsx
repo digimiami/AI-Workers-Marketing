@@ -222,11 +222,7 @@ export function MissionControlChatbot({ organizationId }: { organizationId: stri
       };
       setMessages((m) => [...m, assistantMsg]);
       if (assistantMsg.suggestions?.length) setQuickReplies(assistantMsg.suggestions);
-      if (json.launched && workspaceUrl) {
-        window.setTimeout(() => {
-          window.location.href = workspaceUrl;
-        }, 1200);
-      }
+      // User opens Workspace via button — avoids racing the SSE stream on hard redirect.
     } catch (e) {
       setMessages((m) => [
         ...m,

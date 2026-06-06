@@ -135,6 +135,40 @@ async function upsertSkillOutput(params: {
   } as never);
 }
 
+function resolveResumeStartStage(stRows: Array<{ stage_key?: string; status?: string }>): MarketingPipelineStageKey {
+  const stageOrder = marketingPipelineStageKeySchema.options;
+  const statusByKey = new Map(
+    stRows.map((r) => [String(r.stage_key ?? ""), String(r.status ?? "pending")]),
+  );
+
+  const running = stRows.find((r) => String(r.status) === "running");
+  if (running?.stage_key) return String(running.stage_key) as MarketingPipelineStageKey;
+
+  for (const sk of stageOrder) {
+    const st = statusByKey.get(sk);
+    if (st === "failed") return sk;
+    if (st !== "completed") return sk;
+  }
+  return "optimization";
+}
+
+async function loadLatestStageOutput(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  pipelineRunId: string,
+  stageId: string,
+  outputType?: string,
+): Promise<Record<string, unknown> | null> {
+  let q = admin
+    .from("marketing_pipeline_stage_outputs" as never)
+    .select("content")
+    .eq("pipeline_run_id", pipelineRunId)
+    .eq("stage_id", stageId);
+  if (outputType) q = q.eq("output_type", outputType);
+  const { data } = await q.order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const content = (data as { content?: unknown } | null)?.content;
+  return content && typeof content === "object" && !Array.isArray(content) ? (content as Record<string, unknown>) : null;
+}
+
 async function setStageStatus(params: {
   organizationId: string;
   pipelineRunId: string;
@@ -366,6 +400,7 @@ export type MarketingPipelineBodyState = {
   startStage: MarketingPipelineStageKey;
   stopAfterStage: MarketingPipelineStageKey | null;
   startIdx: number;
+  resumeCampaignId?: string | null;
 };
 
 export async function beginMarketingPipelineRun(params: {
@@ -452,7 +487,19 @@ export async function beginMarketingPipelineRun(params: {
     stages[stageKey] = { id: String((sRow as any).id), stage_key: stageKey, status: String((sRow as any).status) as any };
   }
 
-  return { params, admin, input, organizationId, pipelineRunId, stages, stageOrder, startStage, stopAfterStage, startIdx };
+  return {
+    params,
+    admin,
+    input,
+    organizationId,
+    pipelineRunId,
+    stages,
+    stageOrder,
+    startStage,
+    stopAfterStage,
+    startIdx,
+    resumeCampaignId: null,
+  };
 }
 
 async function loadMarketingPipelineForResume(params: {
@@ -491,17 +538,19 @@ async function loadMarketingPipelineForResume(params: {
   }
 
   const rawInput = (runRow as any).input;
+  const runCampaignId = (runRow as any).campaign_id ? String((runRow as any).campaign_id) : null;
+  const runStatus = String((runRow as any).status ?? "running");
+  const resumeStartStage = resolveResumeStartStage(stRows as Array<{ stage_key?: string; status?: string }>);
+
   const merged = {
     ...(typeof rawInput === "object" && rawInput && !Array.isArray(rawInput) ? (rawInput as Record<string, unknown>) : {}),
     organizationMode: "existing" as const,
     organizationId,
     defer: undefined,
     resumePipelineRunId: undefined,
-    ...(params.input.startStage ? { startStage: params.input.startStage } : {}),
     ...(params.input.stopAfterStage !== undefined && params.input.stopAfterStage !== null
       ? { stopAfterStage: params.input.stopAfterStage }
       : {}),
-    ...(params.input.campaignId ? { campaignId: params.input.campaignId } : {}),
   };
 
   const inputParsed = runMarketingPipelineInputSchema.safeParse(merged);
@@ -509,7 +558,26 @@ async function loadMarketingPipelineForResume(params: {
   const input = inputParsed.data;
 
   const stageOrder: MarketingPipelineStageKey[] = ["research", "strategy", "creation", "execution", "optimization"];
-  const startStage = (input as any).startStage ? (String((input as any).startStage) as MarketingPipelineStageKey) : "research";
+  const startStage = params.input.startStage
+    ? (String(params.input.startStage) as MarketingPipelineStageKey)
+    : resumeStartStage;
+
+  if (runStatus === "failed") {
+    await admin
+      .from("marketing_pipeline_runs" as never)
+      .update({ status: "running", errors: [], updated_at: nowIso() } as never)
+      .eq("id", resumeId);
+    if (stages[startStage]) {
+      await setStageStatus({
+        organizationId,
+        pipelineRunId: resumeId,
+        stageId: stages[startStage].id,
+        stageKey: startStage,
+        status: "running",
+      });
+      stages[startStage].status = "running";
+    }
+  }
   const stopAfterStage = (input as any).stopAfterStage
     ? (String((input as any).stopAfterStage) as MarketingPipelineStageKey)
     : null;
@@ -526,18 +594,31 @@ async function loadMarketingPipelineForResume(params: {
     startStage,
     stopAfterStage,
     startIdx,
+    resumeCampaignId: runCampaignId,
   };
 }
 
 async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): Promise<RunMarketingPipelineOutput> {
-  const { params, admin, input, organizationId, pipelineRunId, stages, stageOrder, startStage, stopAfterStage, startIdx } = state;
+  const {
+    params,
+    admin,
+    input,
+    organizationId,
+    pipelineRunId,
+    stages,
+    stageOrder,
+    startStage,
+    stopAfterStage,
+    startIdx,
+    resumeCampaignId,
+  } = state;
 
   const createdRecords: Array<{ table: string; id: string; label?: string }> = [];
   const approvalItems: Array<{ id: string; approval_type?: string }> = [];
   const logs: Array<{ id: string; stage_key?: MarketingPipelineStageKey | null; level: string; message: string; at: string }> = [];
   const warnings: string[] = [];
   const errors: string[] = [];
-  let campaignId: string | null = (input as any).campaignId ? String((input as any).campaignId) : null;
+  let campaignId: string | null = resumeCampaignId ?? null;
   let funnelId: string | null = null;
   const funnelStepIds: Record<string, string> = {};
   const traceId = `trace_${crypto.randomUUID()}`;
@@ -695,17 +776,39 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
     // ---------------- Stage 1: RESEARCH ----------------
-    // URL scrape/extraction (hard-fail if insufficient content)
-    await log("research", "info", "URL scrape started", { url: input.url });
-    const scraped = await scrapeUrlTextOrThrow({ url: input.url, minChars: 500, timeoutMs: 20000 });
-    await log("research", "info", "URL scrape complete", {
-      url: input.url,
-      finalUrl: scraped.finalUrl,
-      title: scraped.title,
-      contentChars: scraped.contentChars,
-    });
-
     let research = stubResearch(input) as Record<string, unknown>;
+    if (startStage !== "research") {
+      const savedResearch = await loadLatestStageOutput(admin, pipelineRunId, stages.research.id, "research.output");
+      if (savedResearch) research = savedResearch;
+    }
+
+    let scraped: Awaited<ReturnType<typeof scrapeUrlTextOrThrow>>;
+    try {
+      await log("research", "info", "URL scrape started", { url: input.url });
+      scraped = await scrapeUrlTextOrThrow({
+        url: input.url,
+        minChars: startStage === "research" ? 500 : 200,
+        timeoutMs: 20000,
+      });
+      await log("research", "info", "URL scrape complete", {
+        url: input.url,
+        finalUrl: scraped.finalUrl,
+        title: scraped.title,
+        contentChars: scraped.contentChars,
+      });
+    } catch (e) {
+      if (startStage === "research") throw e;
+      const fallbackText = String(research.offer_summary ?? "");
+      scraped = {
+        url: input.url,
+        contentText: fallbackText,
+        finalUrl: input.url,
+        title: "",
+        contentChars: fallbackText.length,
+      };
+      await log("research", "warn", "URL scrape skipped on resume — using saved research", { url: input.url });
+    }
+
     if (startStage === "research") {
       await log("research", "info", "Research stage started", { url: input.url, goal: input.goal, audience: input.audience });
       const researchFallback = stubResearch(input);
@@ -859,6 +962,20 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
 
     // ---------------- Stage 2: STRATEGY ----------------
     let strategy = stubStrategy(input, research) as Record<string, unknown>;
+    if (startIdx > stageOrder.indexOf("strategy")) {
+      const savedStrategy = await loadLatestStageOutput(admin, pipelineRunId, stages.strategy.id, "strategy.output");
+      if (savedStrategy) {
+        strategy = savedStrategy;
+        if (savedStrategy.campaignId && !campaignId) campaignId = String(savedStrategy.campaignId);
+        if (savedStrategy.funnelId) funnelId = String(savedStrategy.funnelId);
+        const stepMap = savedStrategy.funnelStepIds;
+        if (stepMap && typeof stepMap === "object" && !Array.isArray(stepMap)) {
+          for (const [k, v] of Object.entries(stepMap as Record<string, unknown>)) {
+            if (typeof v === "string") funnelStepIds[k] = v;
+          }
+        }
+      }
+    }
     if (startIdx <= stageOrder.indexOf("strategy")) {
       await setRunStatus({ organizationId, pipelineRunId, status: "running", currentStage: "strategy" });
       await setStageStatus({ organizationId, pipelineRunId, stageId: stages.strategy.id, stageKey: "strategy", status: "running" });

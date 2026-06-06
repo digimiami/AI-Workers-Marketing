@@ -72,6 +72,22 @@ export async function runWorkspaceStreamResponse(request: Request, parsed: Works
   let runPromise: Promise<unknown> | null = null;
   const urlSeed = parsed.url ? normalizeWorkspaceStreamUrl(parsed.url) : "";
 
+  if (runId) {
+    const snap = await fetchWorkspaceRunSnapshot(admin, runId);
+    const runStatus = String(snap.run.status ?? "pending");
+    if (runStatus === "running" || runStatus === "failed" || runStatus === "pending") {
+      runPromise = runMarketingPipeline({
+        supabase,
+        actorUserId: orgCtx.user.id,
+        input: {
+          organizationMode: "existing",
+          organizationId: orgId,
+          resumePipelineRunId: runId,
+        } as never,
+      });
+    }
+  }
+
   if (!runId) {
     const normalized = {
       ...parsed,
