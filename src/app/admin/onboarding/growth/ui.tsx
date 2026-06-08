@@ -9,10 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { launchFirstCampaignAction } from "@/app/admin/onboarding/growth/actions";
 
 type Goal = "leads" | "sales" | "traffic";
 
-export function GrowthOnboardingClient(props: { organizationId: string }) {
+export function GrowthOnboardingClient(props: { organizationId: string; canLaunch: boolean }) {
   const router = useRouter();
   const [step, setStep] = React.useState<1 | 2 | 3>(1);
   const [loading, setLoading] = React.useState(false);
@@ -27,62 +28,17 @@ export function GrowthOnboardingClient(props: { organizationId: string }) {
     step === 3;
 
   const onSubmit = async () => {
+    if (!props.canLaunch) {
+      toast.error("You need admin or operator access in this workspace to launch a campaign.");
+      return;
+    }
     setLoading(true);
     try {
-      // 1) Create campaign
-      const name = `${goal === "leads" ? "Lead Gen" : goal === "sales" ? "Sales" : "Traffic"} · ${new URL(url).hostname}`.slice(0, 80);
-      const create = await fetch("/api/admin/campaigns", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          organizationId: props.organizationId,
-          name,
-          type: goal === "sales" ? "client" : "lead_gen",
-          status: "draft",
-          targetAudience: audience,
-          description: `Onboarding input\\nURL: ${url}\\nGoal: ${goal}\\nAudience: ${audience}`,
-        }),
-      });
-      const cj = (await create.json().catch(() => null)) as { ok?: boolean; campaign?: { id: string }; message?: string };
-      if (!create.ok || !cj?.campaign?.id) throw new Error(cj?.message ?? "Campaign create failed");
-      const campaignId = cj.campaign.id;
-
-      // 2) Queue Growth Engine (runs in background — avoids gateway timeout on first launch)
-      const run = await fetch("/api/growth/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          organizationId: props.organizationId,
-          campaignId,
-          url,
-          goal: goal === "traffic" ? "Increase qualified traffic" : goal === "sales" ? "Drive purchases / revenue" : "Generate qualified leads",
-          audience,
-          trafficSource: "Google Ads",
-          budget: 25,
-          provider: "hybrid",
-          adsProviderMode: "stub",
-          approvalMode: "auto_draft",
-          mode: "client",
-          defer: true,
-          async: true,
-        }),
-      });
-      const rj = (await run.json().catch(() => null)) as {
-        ok?: boolean;
-        message?: string;
-        deferred?: boolean;
-        campaignId?: string | null;
-      };
-      if (!run.ok || !rj?.ok) {
-        const fallback =
-          run.status === 504
-            ? "The build is taking longer than expected. Please try again — your campaign was created."
-            : null;
-        throw new Error(rj?.message ?? fallback ?? `Growth run failed (${run.status})`);
-      }
+      const result = await launchFirstCampaignAction({ url, audience, goal });
+      if (!result.ok) throw new Error(result.message);
 
       toast.success("Campaign created. Your Growth Engine is building now.");
-      router.push(`/admin/workspace/review/${rj.campaignId ?? campaignId}`);
+      router.push(`/admin/workspace/review/${result.campaignId}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Onboarding failed");
     } finally {
@@ -173,6 +129,17 @@ export function GrowthOnboardingClient(props: { organizationId: string }) {
           </div>
         </CardContent>
       </Card>
+
+      {!props.canLaunch ? (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Permission required.</span> Your current workspace role cannot
+            create campaigns. Open the sidebar → Organization → switch to a workspace where you are{" "}
+            <span className="text-foreground">admin</span> or <span className="text-foreground">operator</span>, then try
+            again.
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="p-4 text-sm text-muted-foreground">

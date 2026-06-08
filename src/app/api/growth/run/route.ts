@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { after } from "next/server";
 
 import { z } from "zod";
 
 import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
-import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { runAiGrowthEngine } from "@/services/growth/growthEngine";
+import { queueDeferredGrowthEngine } from "@/services/growth/queueGrowthEngineRun";
 
 const bodySchema = z.object({
   organizationId: z.string().uuid(),
@@ -25,37 +23,6 @@ const bodySchema = z.object({
   async: z.boolean().optional().default(true),
   defer: z.boolean().optional(),
 });
-
-async function markCampaignGrowthStatus(params: {
-  organizationId: string;
-  campaignId: string;
-  status: "building" | "failed";
-  error?: string;
-}) {
-  const admin = createSupabaseAdminClient();
-  const { data: row } = await admin
-    .from("campaigns" as never)
-    .select("metadata")
-    .eq("organization_id", params.organizationId)
-    .eq("id", params.campaignId)
-    .maybeSingle();
-  const prevMeta = asMetadataRecord((row as { metadata?: unknown } | null)?.metadata);
-  const patch =
-    params.status === "building"
-      ? { growth_engine: { status: "building", started_at: new Date().toISOString() } }
-      : {
-          growth_engine: {
-            status: "failed",
-            failed_at: new Date().toISOString(),
-            error: params.error ?? "Growth engine failed",
-          },
-        };
-  await admin
-    .from("campaigns" as never)
-    .update({ metadata: mergeJsonbRecords(prevMeta, patch), updated_at: new Date().toISOString() } as never)
-    .eq("organization_id", params.organizationId)
-    .eq("id", params.campaignId);
-}
 
 export async function POST(request: Request) {
   const json = await request.json().catch(() => null);
@@ -83,41 +50,12 @@ export async function POST(request: Request) {
 
   const deferred = Boolean(parsed.data.defer) && Boolean(parsed.data.async);
   if (deferred) {
-    if (parsed.data.campaignId) {
-      try {
-        await markCampaignGrowthStatus({
-          organizationId,
-          campaignId: parsed.data.campaignId,
-          status: "building",
-        });
-      } catch (e) {
-        console.error("[growth/run] failed to mark campaign building", e);
-      }
-    }
-
-    after(async () => {
-      try {
-        await runAiGrowthEngine({
-          supabase: orgCtx.supabase,
-          actorUserId: orgCtx.user.id,
-          input: engineInput,
-        });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "Growth engine failed";
-        console.error("[growth/run] deferred execution failed", e);
-        if (parsed.data.campaignId) {
-          try {
-            await markCampaignGrowthStatus({
-              organizationId,
-              campaignId: parsed.data.campaignId,
-              status: "failed",
-              error: msg,
-            });
-          } catch (markErr) {
-            console.error("[growth/run] failed to mark campaign failed", markErr);
-          }
-        }
-      }
+    await queueDeferredGrowthEngine({
+      supabase: orgCtx.supabase,
+      actorUserId: orgCtx.user.id,
+      organizationId,
+      campaignId: parsed.data.campaignId ?? null,
+      input: engineInput,
     });
 
     return NextResponse.json({

@@ -18,6 +18,13 @@ export async function getOrgRole(
   return (data as { role: OrgRole }).role;
 }
 
+/** Uses SECURITY DEFINER RPC — reliable under RLS for API routes and server actions. */
+export async function isOrgOperator(supabase: SupabaseClient, organizationId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("is_org_operator" as never, { org_id: organizationId } as never);
+  if (error) return false;
+  return Boolean(data);
+}
+
 export async function assertOrgMember(
   supabase: SupabaseClient,
   userId: string,
@@ -31,11 +38,11 @@ export async function assertOrgMember(
 
 export async function assertOrgOperator(
   supabase: SupabaseClient,
-  userId: string,
+  _userId: string,
   organizationId: string,
 ): Promise<void> {
-  const role = await getOrgRole(supabase, userId, organizationId);
-  if (!role || (role !== "admin" && role !== "operator")) {
+  const allowed = await isOrgOperator(supabase, organizationId);
+  if (!allowed) {
     throw new Error("FORBIDDEN_OPERATOR");
   }
 }

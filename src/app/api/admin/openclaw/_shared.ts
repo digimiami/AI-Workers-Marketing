@@ -33,7 +33,16 @@ export async function withOrgOperator(organizationId: string) {
   try {
     await assertOrgOperator(supabase, user.id, organizationId);
   } catch {
-    return { error: NextResponse.json({ ok: false, message: "Forbidden" }, { status: 403 }) };
+    return {
+      error: NextResponse.json(
+        {
+          ok: false,
+          message:
+            "Forbidden — admin or operator role required for this workspace. Switch to a workspace you own, or ask an admin to upgrade your role.",
+        },
+        { status: 403 },
+      ),
+    };
   }
   return { user, supabase, error: null as null };
 }
