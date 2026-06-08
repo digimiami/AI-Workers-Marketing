@@ -498,7 +498,7 @@ export async function beginMarketingPipelineRun(params: {
     startStage,
     stopAfterStage,
     startIdx,
-    resumeCampaignId: null,
+    resumeCampaignId: input.campaignId ? String(input.campaignId) : null,
   };
 }
 

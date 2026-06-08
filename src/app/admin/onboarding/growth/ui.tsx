@@ -47,12 +47,13 @@ export function GrowthOnboardingClient(props: { organizationId: string }) {
       if (!create.ok || !cj?.campaign?.id) throw new Error(cj?.message ?? "Campaign create failed");
       const campaignId = cj.campaign.id;
 
-      // 2) Run Growth Engine (server orchestrates + persists everything)
+      // 2) Queue Growth Engine (runs in background — avoids gateway timeout on first launch)
       const run = await fetch("/api/growth/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           organizationId: props.organizationId,
+          campaignId,
           url,
           goal: goal === "traffic" ? "Increase qualified traffic" : goal === "sales" ? "Drive purchases / revenue" : "Generate qualified leads",
           audience,
@@ -62,13 +63,26 @@ export function GrowthOnboardingClient(props: { organizationId: string }) {
           adsProviderMode: "stub",
           approvalMode: "auto_draft",
           mode: "client",
+          defer: true,
+          async: true,
         }),
       });
-      const rj = (await run.json().catch(() => null)) as { ok?: boolean; message?: string; pipeline?: { campaignId?: string | null } };
-      if (!run.ok || !rj?.ok) throw new Error(rj?.message ?? "Growth run failed");
+      const rj = (await run.json().catch(() => null)) as {
+        ok?: boolean;
+        message?: string;
+        deferred?: boolean;
+        campaignId?: string | null;
+      };
+      if (!run.ok || !rj?.ok) {
+        const fallback =
+          run.status === 504
+            ? "The build is taking longer than expected. Please try again — your campaign was created."
+            : null;
+        throw new Error(rj?.message ?? fallback ?? `Growth run failed (${run.status})`);
+      }
 
       toast.success("Campaign created. Your Growth Engine is building now.");
-      router.push(`/admin/workspace/review/${campaignId}`);
+      router.push(`/admin/workspace/review/${rj.campaignId ?? campaignId}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Onboarding failed");
     } finally {

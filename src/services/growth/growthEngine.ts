@@ -23,6 +23,8 @@ import { generateEmailSequenceNurture } from "@/services/growth/emailSequenceSer
 export type RunAiGrowthEngineInput = {
   orgId: string;
   userId: string;
+  /** When set, the pipeline enriches this campaign instead of creating a duplicate. */
+  campaignId?: string | null;
   url: string;
   goal: string;
   audience: string;
@@ -176,6 +178,7 @@ export async function runAiGrowthEngine(params: {
     input: {
       organizationMode: "existing",
       organizationId: input.orgId,
+      campaignId: input.campaignId ?? undefined,
       url: input.url,
       mode: input.mode ?? "client",
       goal: input.goal,
@@ -210,6 +213,8 @@ export async function runAiGrowthEngine(params: {
       audience: input.audience,
       traffic_source: input.trafficSource,
       growth_engine: {
+        status: "completed",
+        completed_at: new Date().toISOString(),
         version: 1,
         url_research: research,
         business_classification: classification,

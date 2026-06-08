@@ -43,6 +43,15 @@ export function WorkspaceReviewClient({
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as WorkspaceContext;
     },
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      if (!d) return 3000;
+      const meta = (d.campaign?.metadata ?? {}) as Record<string, unknown>;
+      const ge = (meta.growth_engine ?? {}) as Record<string, unknown>;
+      const building = ge.status === "building";
+      const empty = !(d.funnel_steps?.length ?? 0) && !(d.content_assets?.length ?? 0);
+      return building || empty ? 4000 : false;
+    },
   });
 
   const retryMutation = useMutation({
@@ -82,9 +91,23 @@ export function WorkspaceReviewClient({
   });
 
   const data = ctxQuery.data;
+  const growthMeta = ((data?.campaign?.metadata ?? {}) as Record<string, unknown>).growth_engine as
+    | Record<string, unknown>
+    | undefined;
+  const isBuilding = growthMeta?.status === "building";
 
   return (
     <div className="space-y-6">
+      {isBuilding ? (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="p-4 text-sm">
+            <span className="font-medium text-foreground">Building your campaign…</span>{" "}
+            <span className="text-muted-foreground">
+              AI is researching your site, writing the funnel, and drafting ads. This page refreshes automatically.
+            </span>
+          </CardContent>
+        </Card>
+      ) : null}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Workspace review</h1>
