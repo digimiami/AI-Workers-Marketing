@@ -6,7 +6,7 @@ import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { writeAuditLog } from "@/services/audit/auditService";
 import { assertCampaignLimit } from "@/services/billing/entitlements";
-import { queueDeferredGrowthEngine } from "@/services/growth/queueGrowthEngineRun";
+import { beginMarketingPipelineRun } from "@/services/marketing-pipeline/runMarketingPipeline";
 import { requireUser } from "@/services/auth/authService";
 import { isOrgOperator } from "@/services/org/assertOrgAccess";
 
@@ -17,7 +17,7 @@ const launchSchema = z.object({
 });
 
 export type LaunchFirstCampaignResult =
-  | { ok: true; campaignId: string }
+  | { ok: true; campaignId: string; pipelineRunId: string }
   | { ok: false; message: string };
 
 export async function launchFirstCampaignAction(input: {
@@ -89,26 +89,23 @@ export async function launchFirstCampaignAction(input: {
         ? "Drive purchases / revenue"
         : "Generate qualified leads";
 
-  await queueDeferredGrowthEngine({
+  const begin = await beginMarketingPipelineRun({
     supabase,
     actorUserId: user.id,
-    organizationId,
-    campaignId,
     input: {
-      orgId: organizationId,
-      userId: user.id,
+      organizationMode: "existing",
+      organizationId,
       campaignId,
       url,
+      mode: "client",
       goal: goalText,
       audience,
       trafficSource: "Google Ads",
-      budget: 25,
       provider: "hybrid",
-      adsProviderMode: "stub",
       approvalMode: "auto_draft",
-      mode: "client",
-    },
+      notes: `Onboarding · budget $25/day`,
+    } as never,
   });
 
-  return { ok: true, campaignId };
+  return { ok: true, campaignId, pipelineRunId: begin.pipelineRunId };
 }

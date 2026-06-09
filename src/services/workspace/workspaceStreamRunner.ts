@@ -69,24 +69,7 @@ export async function runWorkspaceStreamResponse(request: Request, parsed: Works
   const supabase = await createSupabaseServerClient();
 
   let runId = parsed.runId ?? null;
-  let runPromise: Promise<unknown> | null = null;
   const urlSeed = parsed.url ? normalizeWorkspaceStreamUrl(parsed.url) : "";
-
-  if (runId) {
-    const snap = await fetchWorkspaceRunSnapshot(admin, runId);
-    const runStatus = String(snap.run.status ?? "pending");
-    if (runStatus === "running" || runStatus === "failed" || runStatus === "pending") {
-      runPromise = runMarketingPipeline({
-        supabase,
-        actorUserId: orgCtx.user.id,
-        input: {
-          organizationMode: "existing",
-          organizationId: orgId,
-          resumePipelineRunId: runId,
-        } as never,
-      });
-    }
-  }
 
   if (!runId) {
     const normalized = {
@@ -128,16 +111,16 @@ export async function runWorkspaceStreamResponse(request: Request, parsed: Works
     });
 
     runId = begin.pipelineRunId;
-    runPromise = runMarketingPipeline({
-      supabase,
-      actorUserId: orgCtx.user.id,
-      input: {
-        organizationMode: "existing",
-        organizationId: orgId,
-        resumePipelineRunId: runId,
-      } as any,
-    });
   }
+
+  const { scheduleMarketingPipelineResume } = await import("@/services/workspace/scheduleMarketingPipeline");
+  await scheduleMarketingPipelineResume({
+    supabase,
+    actorUserId: orgCtx.user.id,
+    organizationId: orgId,
+    pipelineRunId: runId!,
+    force: true,
+  });
 
   const encoder = new TextEncoder();
   const controller = new AbortController();
@@ -297,7 +280,6 @@ export async function runWorkspaceStreamResponse(request: Request, parsed: Works
           await sleep(pollMs);
         }
 
-        if (runPromise) await runPromise.catch(() => null);
       } catch (e) {
         send("error", { step: "stream", message: e instanceof Error ? e.message : "Stream failed" });
       } finally {

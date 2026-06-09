@@ -47,7 +47,8 @@ export async function assertCampaignLimit(params: { organizationId: string }) {
   const { count, error } = await admin
     .from("campaigns" as never)
     .select("id", { count: "exact", head: true })
-    .eq("organization_id", params.organizationId);
+    .eq("organization_id", params.organizationId)
+    .in("status", ["active", "paused"]);
   if (error) throw new Error(error.message);
   if ((count ?? 0) >= ent.maxCampaigns) {
     throw new Error(`PLAN_LIMIT_CAMPAIGNS:${ent.plan}`);

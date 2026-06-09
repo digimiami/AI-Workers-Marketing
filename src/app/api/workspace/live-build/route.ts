@@ -5,6 +5,7 @@ import { getCurrentOrgIdFromCookie } from "@/lib/cookies";
 import { liveWorkspaceBuildBodySchema, runLiveWorkspaceBuildStream } from "@/services/workspace/liveWorkspaceBuilder";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -21,6 +22,12 @@ export async function POST(request: Request) {
   const parsed = liveWorkspaceBuildBodySchema.safeParse(asRecord(json));
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.message }, { status: 400 });
+  }
+  if (!parsed.data.runId) {
+    return NextResponse.json(
+      { ok: false, message: "runId required — call POST /api/workspace/build-start first" },
+      { status: 400 },
+    );
   }
 
   try {

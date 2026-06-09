@@ -4,7 +4,6 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { buildRichWorkspaceResults, mergeLiveBuildDefaults } from "@/services/ai/workspaceRichResults";
 import { parseRunInput } from "@/services/ai/workspaceStreamPayloads";
-import { beginMarketingPipelineRun, runMarketingPipeline } from "@/services/marketing-pipeline/runMarketingPipeline";
 import { normalizeLiveWorkspaceResults } from "@/services/workspace/liveWorkspaceNormalize";
 import type { LiveBuildStepKey, LiveBuildStepStatus, LiveWorkspaceResults } from "@/services/workspace/liveWorkspaceTypes";
 import { fetchWorkspaceRunSnapshot, normalizeWorkspaceStreamUrl } from "@/services/workspace/workspaceRunSnapshot";
@@ -70,72 +69,11 @@ export async function runLiveWorkspaceBuildStream(args: {
   const { request, orgId, userId, supabase, body } = args;
   const admin = createSupabaseAdminClient();
 
-  let runId = body.runId ?? null;
-  let runPromise: Promise<unknown> | null = null;
-  const urlSeed = body.url ? normalizeWorkspaceStreamUrl(body.url) : "";
-
-  if (runId) {
-    const snap = await fetchWorkspaceRunSnapshot(admin, runId);
-    const runStatus = String(snap.run.status ?? "pending");
-    if (runStatus === "running" || runStatus === "failed" || runStatus === "pending") {
-      runPromise = runMarketingPipeline({
-        supabase,
-        actorUserId: userId,
-        input: {
-          organizationMode: "existing",
-          organizationId: orgId,
-          resumePipelineRunId: runId,
-        } as never,
-      });
-    }
-  }
-
+  const runId = body.runId;
   if (!runId) {
-    const normalized = {
-      ...body,
-      url: body.url ? normalizeWorkspaceStreamUrl(body.url) : body.url,
-    };
-    const required = z
-      .object({
-        url: z.string().url(),
-        goal: z.string().min(1),
-        audience: z.string().min(1),
-        trafficSource: z.string().min(1),
-      })
-      .safeParse(normalized);
-    if (!required.success) {
-      throw new Error("Invalid build params");
-    }
-
-    const begin = await beginMarketingPipelineRun({
-      supabase,
-      actorUserId: userId,
-      input: {
-        organizationMode: "existing",
-        organizationId: orgId,
-        url: required.data.url,
-        mode: body.mode ?? "affiliate",
-        goal: required.data.goal,
-        audience: required.data.audience,
-        trafficSource: required.data.trafficSource,
-        funnelStyle: body.funnelStyle,
-        provider: body.provider ?? "hybrid",
-        approvalMode: body.approvalMode ?? "auto_draft",
-        notes: null,
-      } as never,
-    });
-
-    runId = begin.pipelineRunId;
-    runPromise = runMarketingPipeline({
-      supabase,
-      actorUserId: userId,
-      input: {
-        organizationMode: "existing",
-        organizationId: orgId,
-        resumePipelineRunId: runId,
-      } as never,
-    });
+    throw new Error("runId required — call POST /api/workspace/build-start first");
   }
+  const urlSeed = body.url ? normalizeWorkspaceStreamUrl(body.url) : "";
 
   const encoder = new TextEncoder();
   const controller = new AbortController();
@@ -317,7 +255,6 @@ export async function runLiveWorkspaceBuildStream(args: {
           await sleep(400);
         }
 
-        if (runPromise) await runPromise.catch(() => null);
       } catch (e) {
         send("error", { key: "stream", message: e instanceof Error ? e.message : "Stream failed" });
       } finally {

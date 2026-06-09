@@ -289,19 +289,38 @@ export function useLiveWorkspaceBuild() {
 
       let res: Response;
       try {
+        const buildPayload = {
+          url: input.url.trim().startsWith("http") ? input.url.trim() : `https://${input.url.trim()}`,
+          goal: input.goal,
+          audience: input.audience,
+          trafficSource: input.trafficSource,
+          funnelStyle: input.funnelStyle ?? "clickfunnels_lead",
+          provider: input.provider ?? "hybrid",
+          approvalMode: input.approvalMode ?? "auto_draft",
+          mode: input.mode ?? "affiliate",
+        };
+        const kick = await fetch("/api/workspace/build-start", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(buildPayload),
+          signal: ac.signal,
+        });
+        if (!kick.ok) {
+          const msg = await kick.text().catch(() => "");
+          throw new Error(msg || `Build start failed (${kick.status})`);
+        }
+        const kicked = (await kick.json()) as { runId?: string };
+        if (!kicked.runId) throw new Error("Build start did not return a run id");
+        void fetch("/api/workspace/pipeline-execute", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId: kicked.runId }),
+          keepalive: true,
+        });
         res = await fetch("/api/workspace/live-build", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            url: input.url.trim().startsWith("http") ? input.url.trim() : `https://${input.url.trim()}`,
-            goal: input.goal,
-            audience: input.audience,
-            trafficSource: input.trafficSource,
-            funnelStyle: input.funnelStyle ?? "clickfunnels_lead",
-            provider: input.provider ?? "hybrid",
-            approvalMode: input.approvalMode ?? "auto_draft",
-            mode: input.mode ?? "affiliate",
-          }),
+          body: JSON.stringify({ runId: kicked.runId }),
           signal: ac.signal,
         });
       } catch (e) {
@@ -373,6 +392,22 @@ export function useLiveWorkspaceBuild() {
 
       let res: Response;
       try {
+        const kick = await fetch("/api/workspace/build-start", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId }),
+          signal: ac.signal,
+        });
+        if (!kick.ok) {
+          const msg = await kick.text().catch(() => "");
+          throw new Error(msg || `Resume start failed (${kick.status})`);
+        }
+        void fetch("/api/workspace/pipeline-execute", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId }),
+          keepalive: true,
+        });
         res = await fetch("/api/workspace/live-build", {
           method: "POST",
           headers: { "content-type": "application/json" },

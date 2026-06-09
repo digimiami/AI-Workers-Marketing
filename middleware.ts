@@ -4,9 +4,13 @@ import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware";
 
 const ADMIN_PREFIX = "/admin";
 const PROTECTED_API_PREFIXES = ["/api/admin/", "/api/growth/", "/api/workspace/"];
+const PROTECTED_API_EXACT = ["/api/workspace/build-start", "/api/workspace/pipeline-execute", "/api/workspace/live-build"];
 
 function isProtectedApi(pathname: string) {
-  return PROTECTED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  return (
+    PROTECTED_API_EXACT.includes(pathname) ||
+    PROTECTED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+  );
 }
 
 export async function middleware(request: NextRequest) {

@@ -37,8 +37,8 @@ export function GrowthOnboardingClient(props: { organizationId: string; canLaunc
       const result = await launchFirstCampaignAction({ url, audience, goal });
       if (!result.ok) throw new Error(result.message);
 
-      toast.success("Campaign created. Your Growth Engine is building now.");
-      router.push(`/admin/workspace/review/${result.campaignId}`);
+      toast.success("Campaign created. Your AI workspace is building now.");
+      router.push(`/admin/workspace/${result.pipelineRunId}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Onboarding failed");
     } finally {
