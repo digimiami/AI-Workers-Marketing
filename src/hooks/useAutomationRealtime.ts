@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { isSupabaseBrowserConfigured } from "@/lib/env";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /**
@@ -15,7 +16,7 @@ export function useAutomationRealtime(organizationId: string | null, onChange: (
   }, [onChange]);
 
   React.useEffect(() => {
-    if (!organizationId) return;
+    if (!organizationId || !isSupabaseBrowserConfigured()) return;
     const supabase = createSupabaseBrowserClient();
     const channel = supabase
       .channel(`automation:${organizationId}`)

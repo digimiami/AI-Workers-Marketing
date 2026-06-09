@@ -111,9 +111,6 @@ const PLACEHOLDER_SUPABASE_ANON_KEY =
   "00000000000000000000000000000000"; // 32 chars — replace in .env
 
 function withOptionalBuildPlaceholders(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const isBrowser =
-    // eslint-disable-next-line no-restricted-globals
-    typeof window !== "undefined";
   const skip =
     raw.SKIP_ENV_VALIDATION === "true" ||
     raw.SKIP_ENV_VALIDATION === "1" ||
@@ -121,28 +118,36 @@ function withOptionalBuildPlaceholders(raw: NodeJS.ProcessEnv): NodeJS.ProcessEn
 
   const duringNpmBuild = raw.npm_lifecycle_event === "build";
   const duringDev = raw.npm_lifecycle_event === "dev";
-  const supabaseMissing =
-    !raw.SUPABASE_URL ||
-    !raw.SUPABASE_ANON_KEY ||
-    !raw.NEXT_PUBLIC_SUPABASE_URL ||
-    !raw.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // In dev, allow the app to boot without Supabase configured so routes can
-  // return a clear 503 instead of crashing at import-time.
-  // In the browser bundle, server-only env vars are never present; always use placeholders there.
-  const usePlaceholders =
-    isBrowser || skip || ((duringNpmBuild || duringDev) && supabaseMissing);
-  if (!usePlaceholders) return raw;
+  const publicUrl =
+    raw.NEXT_PUBLIC_SUPABASE_URL ?? raw.SUPABASE_URL ?? "";
+  const publicAnon =
+    raw.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? raw.SUPABASE_ANON_KEY ?? "";
 
-  return {
+  const clientMissing = !publicUrl || !publicAnon;
+  const serverMissing = !raw.SUPABASE_URL || !raw.SUPABASE_ANON_KEY;
+  const allowPlaceholders = skip || duringNpmBuild || duringDev;
+
+  if (!allowPlaceholders && !clientMissing && !serverMissing) return raw;
+
+  const out: NodeJS.ProcessEnv = {
     ...raw,
-    SUPABASE_URL: raw.SUPABASE_URL ?? PLACEHOLDER_SUPABASE_URL,
-    SUPABASE_ANON_KEY: raw.SUPABASE_ANON_KEY ?? PLACEHOLDER_SUPABASE_ANON_KEY,
-    NEXT_PUBLIC_SUPABASE_URL:
-      raw.NEXT_PUBLIC_SUPABASE_URL ?? PLACEHOLDER_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY:
-      raw.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? PLACEHOLDER_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_SUPABASE_URL: publicUrl || undefined,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: publicAnon || undefined,
   };
+
+  if (allowPlaceholders) {
+    if (!out.SUPABASE_URL) out.SUPABASE_URL = PLACEHOLDER_SUPABASE_URL;
+    if (!out.SUPABASE_ANON_KEY) out.SUPABASE_ANON_KEY = PLACEHOLDER_SUPABASE_ANON_KEY;
+    if (!out.NEXT_PUBLIC_SUPABASE_URL) {
+      out.NEXT_PUBLIC_SUPABASE_URL = PLACEHOLDER_SUPABASE_URL;
+    }
+    if (!out.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      out.NEXT_PUBLIC_SUPABASE_ANON_KEY = PLACEHOLDER_SUPABASE_ANON_KEY;
+    }
+  }
+
+  return out;
 }
 
 export const env = (() => {
@@ -167,12 +172,18 @@ export const env = (() => {
   } as const;
 })();
 
-export function isSupabaseConfigured() {
+export function isSupabaseBrowserConfigured() {
   return (
-    env.server.SUPABASE_URL !== PLACEHOLDER_SUPABASE_URL &&
-    env.server.SUPABASE_ANON_KEY !== PLACEHOLDER_SUPABASE_ANON_KEY &&
     env.client.NEXT_PUBLIC_SUPABASE_URL !== PLACEHOLDER_SUPABASE_URL &&
     env.client.NEXT_PUBLIC_SUPABASE_ANON_KEY !== PLACEHOLDER_SUPABASE_ANON_KEY
+  );
+}
+
+export function isSupabaseConfigured() {
+  return (
+    isSupabaseBrowserConfigured() &&
+    env.server.SUPABASE_URL !== PLACEHOLDER_SUPABASE_URL &&
+    env.server.SUPABASE_ANON_KEY !== PLACEHOLDER_SUPABASE_ANON_KEY
   );
 }
 
