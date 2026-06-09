@@ -8,7 +8,7 @@ import { writeAuditLog } from "@/services/audit/auditService";
 import { assertCampaignLimit } from "@/services/billing/entitlements";
 import { beginMarketingPipelineRun } from "@/services/marketing-pipeline/runMarketingPipeline";
 import { requireUser } from "@/services/auth/authService";
-import { isOrgOperator } from "@/services/org/assertOrgAccess";
+import { isOrgOperatorForUser } from "@/services/org/assertOrgAccess";
 
 const launchSchema = z.object({
   url: z.string().url(),
@@ -35,7 +35,7 @@ export async function launchFirstCampaignAction(input: {
   }
 
   const supabase = await createSupabaseServerClient();
-  const operator = await isOrgOperator(supabase, organizationId);
+  const operator = await isOrgOperatorForUser(supabase, user.id, organizationId);
   if (!operator) {
     return {
       ok: false,

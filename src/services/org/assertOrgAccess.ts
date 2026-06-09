@@ -18,11 +18,30 @@ export async function getOrgRole(
   return (data as { role: OrgRole }).role;
 }
 
-/** Uses SECURITY DEFINER RPC — reliable under RLS for API routes and server actions. */
+function isOperatorRole(role: OrgRole | null): boolean {
+  return role === "admin" || role === "operator";
+}
+
+/** Check operator access for an explicit user (works with admin + user clients). */
+export async function isOrgOperatorForUser(
+  supabase: SupabaseClient,
+  userId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const role = await getOrgRole(supabase, userId, organizationId);
+  return isOperatorRole(role);
+}
+
+/** Check whether the current auth session is an org operator (user-scoped client only). */
 export async function isOrgOperator(supabase: SupabaseClient, organizationId: string): Promise<boolean> {
   const { data, error } = await supabase.rpc("is_org_operator" as never, { org_id: organizationId } as never);
-  if (error) return false;
-  return Boolean(data);
+  if (!error && typeof data === "boolean") return data;
+  // Fallback when RPC is unavailable — read own membership row under RLS.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return false;
+  return isOrgOperatorForUser(supabase, user.id, organizationId);
 }
 
 export async function assertOrgMember(
@@ -38,10 +57,10 @@ export async function assertOrgMember(
 
 export async function assertOrgOperator(
   supabase: SupabaseClient,
-  _userId: string,
+  userId: string,
   organizationId: string,
 ): Promise<void> {
-  const allowed = await isOrgOperator(supabase, organizationId);
+  const allowed = await isOrgOperatorForUser(supabase, userId, organizationId);
   if (!allowed) {
     throw new Error("FORBIDDEN_OPERATOR");
   }
