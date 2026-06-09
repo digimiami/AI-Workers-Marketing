@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 
+import { ZernioAdsPanel } from "@/components/ads/ZernioAdsPanel";
+
 type CampaignRow = {
   id: string;
   campaign_id: string;
@@ -95,8 +97,12 @@ export function AdsClient(props: { organizationId: string }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Ads</h1>
-        <p className="text-sm text-muted-foreground">Paid campaigns + recent performance snapshots (stub/live).</p>
+        <p className="text-sm text-muted-foreground">
+          Local ad drafts plus live control via Zernio MCP (Meta, Google, TikTok) when your API key is connected.
+        </p>
       </div>
+
+      <ZernioAdsPanel organizationId={props.organizationId} />
 
       <Card>
         <CardHeader className="pb-2">

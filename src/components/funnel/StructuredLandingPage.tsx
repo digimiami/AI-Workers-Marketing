@@ -112,7 +112,35 @@ export function StructuredLandingPage(props: {
     .map((x) => ({ title: x.title, desc: x.desc }));
   const process: ProcessItem[] = (processItemsFromItems.length ? processItemsFromItems : processItemsFromBullets).slice(0, 6);
 
-  const hasInlineForm = blocks.map(asRecord).some((b) => str(b.type) === "lead_capture_form");
+  const formBlock = blocks.map(asRecord).find((b) => str(b.type) === "lead_capture_form") ?? {};
+  const formFieldKeys = strArr(formBlock.fields).length
+    ? strArr(formBlock.fields)
+    : ["email", "name", "phone"];
+  const formTracking = asRecord(formBlock.tracking);
+  const trackCampaign = formTracking.campaign === true;
+  const trackEmail = formTracking.email === true;
+  const hasInlineForm = Boolean(formBlock.type) || blocks.map(asRecord).some((b) => str(b.type) === "lead_capture_form");
+
+  const imageBlocks = blocks
+    .map(asRecord)
+    .filter((b) => str(b.type) === "image")
+    .map((b) => ({
+      url: str(b.url) || str(b.image_url),
+      alt: str(b.alt) || "Image",
+      caption: str(b.caption),
+    }))
+    .filter((b) => b.url);
+
+  const videoBlocks = blocks
+    .map(asRecord)
+    .filter((b) => str(b.type) === "video")
+    .map((b) => ({
+      url: str(b.url) || str(b.video_url),
+      caption: str(b.caption),
+    }))
+    .filter((b) => b.url);
+
+  const heroImageUrl = str(hero.image_url) || str(hero.imageUrl);
 
   const sectionBlocks = blocks
     .map(asRecord)
@@ -237,6 +265,13 @@ export function StructuredLandingPage(props: {
               ) : null}
             </div>
 
+            {heroImageUrl ? (
+              <div className="mt-6 overflow-hidden rounded-2xl border border-[#EDE6DD] shadow-sm">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={heroImageUrl} alt={headline || "Hero"} className="h-auto w-full object-cover" />
+              </div>
+            ) : null}
+
             {(() => {
               const ribbon = (proofPoints.length
                 ? proofPoints
@@ -290,6 +325,37 @@ export function StructuredLandingPage(props: {
           </div>
         </div>
       </section>
+
+      {imageBlocks
+        .filter((img) => img.url !== heroImageUrl)
+        .map((img) => (
+          <section key={img.url} className={shellCard}>
+            <div className="overflow-hidden rounded-2xl">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={img.url} alt={img.alt} className="h-auto w-full object-cover" />
+            </div>
+            {img.caption ? (
+              <p className={ed ? "mt-3 text-sm text-[#6b5b4e]" : "mt-3 text-sm text-muted-foreground"}>{img.caption}</p>
+            ) : null}
+          </section>
+        ))}
+
+      {videoBlocks.map((vid) => (
+        <section key={vid.url} className={shellCard}>
+          <div className="aspect-video overflow-hidden rounded-2xl border border-border/40">
+            <iframe
+              src={vid.url}
+              title={vid.caption || "Video"}
+              className="h-full w-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+          {vid.caption ? (
+            <p className={ed ? "mt-3 text-sm text-[#6b5b4e]" : "mt-3 text-sm text-muted-foreground"}>{vid.caption}</p>
+          ) : null}
+        </section>
+      ))}
 
       {benefits.length ? (
         <section className="space-y-4">
@@ -582,25 +648,48 @@ export function StructuredLandingPage(props: {
           <input type="hidden" name="funnelId" value={props.funnelId} />
           <input type="hidden" name="funnelStepId" value={props.funnelStepId} />
           <input type="hidden" name="sourcePage" value={props.sourcePage} />
+          {trackCampaign ? <input type="hidden" name="trackCampaign" value="true" /> : null}
+          {trackEmail ? <input type="hidden" name="trackEmail" value="true" /> : null}
           <div className="grid gap-3 md:grid-cols-3">
-            <div className="space-y-1">
-              <label className={ed ? "text-sm font-medium text-[#2C2A29]" : "text-sm font-medium"} htmlFor="email">
-                Email
-              </label>
-              <input id="email" name="email" type="email" required placeholder="you@domain.com" className={landingInput(ed)} />
-            </div>
-            <div className="space-y-1">
-              <label className={ed ? "text-sm font-medium text-[#2C2A29]" : "text-sm font-medium"} htmlFor="fullName">
-                Name (optional)
-              </label>
-              <input id="fullName" name="fullName" type="text" placeholder="First + last" className={landingInput(ed)} />
-            </div>
-            <div className="space-y-1">
-              <label className={ed ? "text-sm font-medium text-[#2C2A29]" : "text-sm font-medium"} htmlFor="phone">
-                Phone (optional)
-              </label>
-              <input id="phone" name="phone" type="tel" inputMode="tel" placeholder="(555) 555‑5555" className={landingInput(ed)} />
-            </div>
+            {formFieldKeys.includes("email") ? (
+              <div className="space-y-1">
+                <label className={ed ? "text-sm font-medium text-[#2C2A29]" : "text-sm font-medium"} htmlFor="email">
+                  Email
+                </label>
+                <input id="email" name="email" type="email" required placeholder="you@domain.com" className={landingInput(ed)} />
+              </div>
+            ) : null}
+            {formFieldKeys.includes("name") ? (
+              <div className="space-y-1">
+                <label className={ed ? "text-sm font-medium text-[#2C2A29]" : "text-sm font-medium"} htmlFor="fullName">
+                  Name{formFieldKeys.includes("email") ? " (optional)" : ""}
+                </label>
+                <input
+                  id="fullName"
+                  name="fullName"
+                  type="text"
+                  required={!formFieldKeys.includes("email")}
+                  placeholder="First + last"
+                  className={landingInput(ed)}
+                />
+              </div>
+            ) : null}
+            {formFieldKeys.includes("phone") ? (
+              <div className="space-y-1">
+                <label className={ed ? "text-sm font-medium text-[#2C2A29]" : "text-sm font-medium"} htmlFor="phone">
+                  Phone{formFieldKeys.includes("email") ? " (optional)" : ""}
+                </label>
+                <input id="phone" name="phone" type="tel" inputMode="tel" placeholder="(555) 555‑5555" className={landingInput(ed)} />
+              </div>
+            ) : null}
+            {formFieldKeys.includes("company") ? (
+              <div className="space-y-1">
+                <label className={ed ? "text-sm font-medium text-[#2C2A29]" : "text-sm font-medium"} htmlFor="company">
+                  Company
+                </label>
+                <input id="company" name="company" type="text" placeholder="Company name" className={landingInput(ed)} />
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {ed ? (

@@ -31,6 +31,7 @@ export async function generateLandingVariants(input: {
   audience: string;
   trafficSource: string;
   baseLanding: Record<string, unknown> | null;
+  customInstructions?: string | null;
 }): Promise<LandingVariantsResult> {
   const userPrompt = buildLandingVariantsUserPrompt({
     url: input.url,
@@ -39,6 +40,7 @@ export async function generateLandingVariants(input: {
     audience: input.audience,
     trafficSource: input.trafficSource,
     baseLanding: input.baseLanding,
+    customInstructions: input.customInstructions ?? null,
   });
 
   console.info("[landing] variants-prompt", {

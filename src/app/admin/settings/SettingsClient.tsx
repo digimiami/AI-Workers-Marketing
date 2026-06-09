@@ -356,6 +356,8 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
         ok: boolean;
         zernio: {
           configured: boolean;
+          orgConnected?: boolean;
+          envFallback?: boolean;
           serverUrl: string;
           urlWarning?: boolean;
           urlWarningMessage?: string | null;
@@ -363,6 +365,26 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
         zapier: { configured: boolean };
       };
     },
+  });
+
+  const [zernioApiKey, setZernioApiKey] = React.useState("");
+
+  const connectZernioOrg = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/integrations/zernio-mcp/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId, apiKey: zernioApiKey.trim() }),
+      });
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; message?: string };
+      if (!res.ok || !j?.ok) throw new Error(j?.message ?? "Save failed");
+    },
+    onSuccess: async () => {
+      setZernioApiKey("");
+      toast.success("Zernio API key saved for this organization");
+      await mcpStatusQuery.refetch();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
   });
 
   const testZernioMcp = useMutation({
@@ -498,21 +520,44 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span className="text-muted-foreground">Server-side (OpenClaw tools):</span>
+            <span className="text-muted-foreground">Connection:</span>
             {mcpStatusQuery.isLoading ? (
               <span className="text-muted-foreground">Checking…</span>
             ) : mcpStatusQuery.data?.zernio?.configured ? (
               <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-200">
-                ZERNIO_MCP_API_KEY configured
+                {mcpStatusQuery.data.zernio.orgConnected ? "Org API key saved" : "Server env key"}
               </span>
             ) : (
               <span className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-950 dark:text-amber-100">
-                Not configured on server
+                Not connected — add key below or in Ads Manager
               </span>
             )}
           </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end max-w-xl">
+            <div className="space-y-1">
+              <Label htmlFor="zernio-org-api-key" className="text-xs">
+                Organization Zernio API key
+              </Label>
+              <Input
+                id="zernio-org-api-key"
+                type="password"
+                autoComplete="off"
+                placeholder="sk_…"
+                value={zernioApiKey}
+                onChange={(e) => setZernioApiKey(e.target.value)}
+                className="font-mono text-sm"
+              />
+            </div>
+            <Button
+              type="button"
+              disabled={connectZernioOrg.isPending || zernioApiKey.trim().length < 10}
+              onClick={() => connectZernioOrg.mutate()}
+            >
+              {connectZernioOrg.isPending ? "Saving…" : "Save org key"}
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground">
-            Set <code className="font-mono text-[11px]">ZERNIO_MCP_API_KEY</code> in Vercel (production) so supervisor tools{" "}
+            Or set <code className="font-mono text-[11px]">ZERNIO_MCP_API_KEY</code> in Vercel (production) so supervisor tools{" "}
             <code className="font-mono text-[11px]">zernio_mcp_list_tools</code> and{" "}
             <code className="font-mono text-[11px]">zernio_mcp_call_tool</code> work. Optional:{" "}
             <code className="font-mono text-[11px]">ZERNIO_MCP_SERVER_URL</code> (defaults to{" "}
@@ -547,7 +592,7 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
           <p className="text-xs text-muted-foreground">
             For <strong>Cursor</strong> on your machine, paste under Settings → MCP (merge into{" "}
             <code className="font-mono text-[11px]">mcpServers</code>
-            ). For <strong>this deployment</strong> (OpenClaw / agents), keys live only in server env — never commit them to git.
+            ). For <strong>this deployment</strong>, use the org key above or server env — never commit keys to git.
           </p>
         </CardContent>
       </Card>

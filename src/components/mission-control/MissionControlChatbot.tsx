@@ -15,6 +15,7 @@ export type ChatMessage = {
   workerKey?: string | null;
   suggestions?: string[];
   workspaceUrl?: string | null;
+  previewUrl?: string | null;
 };
 
 const WELCOME: ChatMessage = {
@@ -92,6 +93,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-3 w-full")}
           >
             Open Workspace — watch build live
+          </Link>
+        ) : null}
+        {!isUser && message.previewUrl ? (
+          <Link
+            href={message.previewUrl}
+            className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-3 w-full")}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Preview updated landing page
           </Link>
         ) : null}
         {!isUser && message.workerKey ? (
@@ -211,6 +222,7 @@ export function MissionControlChatbot({ organizationId }: { organizationId: stri
       persistSession(json.sessionId);
       const workspaceUrl =
         typeof json.workspaceUrl === "string" ? json.workspaceUrl : null;
+      const previewUrl = typeof json.previewUrl === "string" ? json.previewUrl : null;
       if (workspaceUrl) setLastWorkspaceUrl(workspaceUrl);
       const assistantMsg: ChatMessage = {
         id: `local-asst-${Date.now()}`,
@@ -219,6 +231,7 @@ export function MissionControlChatbot({ organizationId }: { organizationId: stri
         workerKey: json.routed?.primaryWorker,
         suggestions: json.suggestions ?? [],
         workspaceUrl,
+        previewUrl,
       };
       setMessages((m) => [...m, assistantMsg]);
       if (assistantMsg.suggestions?.length) setQuickReplies(assistantMsg.suggestions);

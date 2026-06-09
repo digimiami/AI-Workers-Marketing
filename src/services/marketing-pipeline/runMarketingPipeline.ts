@@ -18,6 +18,7 @@ import {
   computeLandingConversionScore,
   LANDING_CONVERSION_SCORE_MIN,
   LANDING_CONVERSION_SCORE_SOFT_MIN,
+  clearCampaignLandingFix,
   markCampaignNeedsLandingFix,
   mentionsAiWorkersPlatform,
   specificPageKeywords,
@@ -26,6 +27,7 @@ import {
   type LandingFixReason,
 } from "@/services/marketing-pipeline/landingCopyGuards";
 import { buildLandingVariantBlocks, DEFAULT_LANDING_VISUAL_PRESET } from "@/services/marketing-pipeline/landingVariantBlocks";
+import { syncCampaignBuildMetadata } from "@/services/workspace/campaignBuildContext";
 
 import {
   marketingPipelineStageKeySchema,
@@ -622,6 +624,14 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
   const warnings: string[] = [];
   const errors: string[] = [];
   let campaignId: string | null = resumeCampaignId ?? null;
+  if (campaignId) {
+    await syncCampaignBuildMetadata(admin, organizationId, campaignId, {
+      url: input.url,
+      goal: input.goal,
+      audience: input.audience,
+      trafficSource: input.trafficSource,
+    });
+  }
   let funnelId: string | null = null;
   const funnelStepIds: Record<string, string> = {};
   const traceId = `trace_${crypto.randomUUID()}`;
@@ -1051,11 +1061,23 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
             status: "draft",
             target_audience: input.audience,
             description: [input.notes, `URL: ${input.url}`].filter(Boolean).join("\n"),
-            metadata: { marketing_pipeline: { run_id: pipelineRunId, trace_id: traceId, strategy_bundle: strategy } },
+            metadata: {
+              url: input.url,
+              goal: input.goal,
+              audience: input.audience,
+              traffic_source: input.trafficSource,
+              marketing_pipeline: { run_id: pipelineRunId, trace_id: traceId, strategy_bundle: strategy },
+            },
           },
         });
         campaignId = String(campaign.id);
         createdRecords.push({ table: "campaigns", id: campaignId, label: campaign.name });
+        await syncCampaignBuildMetadata(admin, organizationId, campaignId, {
+          url: input.url,
+          goal: input.goal,
+          audience: input.audience,
+          trafficSource: input.trafficSource,
+        });
         await admin
           .from("marketing_pipeline_runs" as never)
           .update({ campaign_id: campaignId, updated_at: nowIso() } as never)
@@ -1512,6 +1534,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
       audience: input.audience,
       trafficSource: input.trafficSource,
       baseLanding: drLanding.output,
+      customInstructions: input.notes ?? null,
     });
 
     const runVariants = async (extra: string | null) => {
@@ -1624,15 +1647,6 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
                 softMin: LANDING_CONVERSION_SCORE_SOFT_MIN,
                 variantKey: variantsVerdict.variantKey,
               });
-              if (campaignId) {
-                await markCampaignNeedsLandingFix({
-                  admin,
-                  organizationId,
-                  campaignId,
-                  reason: "low_conversion_score",
-                  detail: `draft accepted — scores=${scores.join(",")} target=${LANDING_CONVERSION_SCORE_MIN}`,
-                });
-              }
               acceptedSoftConversion = true;
             }
           }
@@ -2019,6 +2033,10 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
         selectedVariantKey: "direct_response",
         keys: createdLandingIds.map((x) => x.key),
       });
+
+      if (campaignId && createdLandingIds.length > 0) {
+        await clearCampaignLandingFix({ admin, organizationId, campaignId });
+      }
 
       const selectedKey =
         typeof (normalizedVariants[0] as any)?.variantKey === "string"

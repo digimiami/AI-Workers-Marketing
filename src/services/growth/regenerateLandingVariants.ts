@@ -4,6 +4,8 @@ import { generateLandingVariants } from "@/services/growth/landingVariantsServic
 import { scrapeUrlTextOrThrow } from "@/services/web/scrapeUrlText";
 import {
   clearCampaignLandingFix,
+  computeLandingConversionScore,
+  LANDING_CONVERSION_SCORE_SOFT_MIN,
   markCampaignNeedsLandingFix,
   validateLandingVariantQuality,
   type LandingFixReason,
@@ -199,6 +201,13 @@ export async function regenerateLandingVariantsForCampaign(params: {
       scrapedContentPrefix: scrapedContent,
     });
     if (!verdict.ok) {
+      if (verdict.reason === "low_conversion_score") {
+        const score = computeLandingConversionScore(content);
+        if (score >= LANDING_CONVERSION_SCORE_SOFT_MIN) {
+          prepared.push({ key, angle, content });
+          continue;
+        }
+      }
       rejections.push({ key, reason: verdict.reason, detail: verdict.detail });
       continue;
     }

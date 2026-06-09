@@ -6,6 +6,8 @@ import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { asMetadataRecord, mergeJsonbRecords } from "@/lib/mergeJsonbRecords";
 import { regenerateLandingVariantsForCampaign } from "@/services/growth/regenerateLandingVariants";
+import { clearCampaignLandingFix } from "@/services/marketing-pipeline/landingCopyGuards";
+import { resolveCampaignBuildFields, syncCampaignBuildMetadata } from "@/services/workspace/campaignBuildContext";
 
 const bodySchema = z.object({
   organizationId: z.string().uuid(),
@@ -56,8 +58,24 @@ export async function POST(request: Request) {
       .maybeSingle();
     const meta = ((campRow as { metadata?: unknown } | null)?.metadata ?? {}) as Record<string, unknown>;
     const ge = (meta.growth_engine ?? {}) as Record<string, unknown>;
-    const landingStatus = typeof ge.landing_status === "string" ? String(ge.landing_status) : null;
-    const landingFix = (ge.landing_fix ?? null) as Record<string, unknown> | null;
+    let landingStatus = typeof ge.landing_status === "string" ? String(ge.landing_status) : null;
+    let landingFix = (ge.landing_fix ?? null) as Record<string, unknown> | null;
+
+    const buildFields = await resolveCampaignBuildFields(admin, organizationId, campaignId);
+    if (buildFields.url && buildFields.goal && buildFields.audience && buildFields.trafficSource) {
+      await syncCampaignBuildMetadata(admin, organizationId, campaignId, buildFields);
+    }
+
+    if (
+      rows.length > 0 &&
+      landingStatus === "needs_generation_fix" &&
+      typeof landingFix?.reason === "string" &&
+      (landingFix.reason === "low_conversion_score" || String(landingFix.detail ?? "").includes("draft accepted"))
+    ) {
+      await clearCampaignLandingFix({ admin, organizationId, campaignId });
+      landingStatus = null;
+      landingFix = null;
+    }
 
     const variantsWithPreview = rows.map((r) => {
       const content = (r.content ?? {}) as Record<string, unknown>;
@@ -95,25 +113,12 @@ export async function POST(request: Request) {
         ? String((json as { trafficSource?: string }).trafficSource)
         : "";
 
-    const { data: campRow } = await admin
-      .from("campaigns" as never)
-      .select("metadata,name")
-      .eq("organization_id", organizationId)
-      .eq("id", campaignId)
-      .maybeSingle();
-    const meta = ((campRow as { metadata?: unknown } | null)?.metadata ?? {}) as Record<string, unknown>;
-    const ge = (meta.growth_engine ?? {}) as Record<string, unknown>;
-
-    const url = overrideUrl || (typeof meta.url === "string" ? String(meta.url) : "");
-    const goal = overrideGoal || (typeof meta.goal === "string" ? String(meta.goal) : "");
-    const audience = overrideAudience || (typeof meta.audience === "string" ? String(meta.audience) : "");
-    const trafficSource =
-      overrideTraffic ||
-      (typeof meta.traffic_source === "string"
-        ? String(meta.traffic_source)
-        : typeof ge.traffic_source === "string"
-          ? String(ge.traffic_source)
-          : "");
+    const { url, goal, audience, trafficSource } = await resolveCampaignBuildFields(admin, organizationId, campaignId, {
+      url: overrideUrl || undefined,
+      goal: overrideGoal || undefined,
+      audience: overrideAudience || undefined,
+      trafficSource: overrideTraffic || undefined,
+    });
 
     if (!url || !goal || !audience || !trafficSource) {
       return NextResponse.json(

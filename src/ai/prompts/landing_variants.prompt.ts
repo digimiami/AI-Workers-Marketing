@@ -12,6 +12,7 @@ export function buildLandingVariantsUserPrompt(input: {
   audience: string;
   trafficSource: string;
   baseLanding: Record<string, unknown> | null;
+  customInstructions?: string | null;
 }) {
   const contentExcerpt = String(input.content ?? "").slice(0, 6000);
   return JSON.stringify(
@@ -24,6 +25,7 @@ export function buildLandingVariantsUserPrompt(input: {
         audience: input.audience,
         trafficSource: input.trafficSource,
         baseLanding: input.baseLanding,
+        custom_instructions: input.customInstructions?.trim() || null,
       },
       required_json_shape: {
         variants: [
@@ -64,6 +66,13 @@ export function buildLandingVariantsUserPrompt(input: {
               },
             ],
             formFields: ["string"],
+            media: {
+              heroImageUrl: "string (optional)",
+              images: [{ url: "string", alt: "string", caption: "string (optional)" }],
+              videoUrl: "string (optional embed URL)",
+              videoCaption: "string (optional)",
+            },
+            tracking: { campaign: "boolean", email: "boolean" },
             psychologicalTrigger: "string",
             finalCTA: { headline: "string", subheadline: "string", ctaText: "string" },
           },
@@ -85,6 +94,7 @@ export function buildLandingVariantsUserPrompt(input: {
         "psychologicalTrigger must name the persuasion pattern in plain language (clarity, risk reversal, social proof, urgency with integrity — no manipulation playbook).",
         "Mobile-first: imply concise blocks, thumb-friendly primary CTA, avoid walls of text; sections should be scannable.",
         "Unless the URL is aiworkers.vip or aiworkers.com, never name or promote AiWorkers — write for the business at the URL.",
+        "If custom_instructions is set, honor every explicit request (lead form fields, images, video embeds, campaign UTM tracking, email lead tracking) while keeping conversion quality.",
       ],
     },
     null,

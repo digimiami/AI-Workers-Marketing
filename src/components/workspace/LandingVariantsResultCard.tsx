@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Layers, RefreshCw } from "lucide-react";
+import { AlertTriangle, Layers, RefreshCw, Sparkles } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 type VariantPreview = {
@@ -41,6 +42,8 @@ export function LandingVariantsResultCard(props: {
   const [landingFix, setLandingFix] = React.useState<LandingFix | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [regenerating, setRegenerating] = React.useState(false);
+  const [customizing, setCustomizing] = React.useState(false);
+  const [assistantPrompt, setAssistantPrompt] = React.useState("");
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
@@ -121,6 +124,34 @@ export function LandingVariantsResultCard(props: {
     }
   }, [cid, props.organizationId, refresh]);
 
+  const customize = React.useCallback(async () => {
+    if (!cid || !assistantPrompt.trim()) return;
+    setCustomizing(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/workspace/landing-customize", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organizationId: props.organizationId,
+          campaignId: cid,
+          instruction: assistantPrompt.trim(),
+        }),
+      });
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; message?: string; previewUrl?: string } | null;
+      if (!res.ok || !j?.ok) {
+        setErrorMsg(j?.message || `Customize failed (${res.status})`);
+      } else {
+        setAssistantPrompt("");
+      }
+      await refresh();
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Customize failed");
+    } finally {
+      setCustomizing(false);
+    }
+  }, [assistantPrompt, cid, props.organizationId, refresh]);
+
   if (!cid) return null;
 
   const labelForKey = (k: string) => {
@@ -184,6 +215,29 @@ export function LandingVariantsResultCard(props: {
             {errorMsg}
           </div>
         ) : null}
+
+        <div className="rounded-2xl border border-cyan-500/25 bg-cyan-500/5 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-medium text-cyan-100/90">
+            <Sparkles className="h-3.5 w-3.5" />
+            AI Assistant — customize landing
+          </div>
+          <Textarea
+            value={assistantPrompt}
+            onChange={(e) => setAssistantPrompt(e.target.value)}
+            rows={2}
+            placeholder='e.g. "Add a lead form with email + phone, track campaign, add hero image and a YouTube video"'
+            className="min-h-[72px] resize-y bg-background/60 text-sm"
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={customizing || !assistantPrompt.trim() || !rows.length}
+            onClick={() => void customize()}
+          >
+            {customizing ? "Applying…" : "Apply to landing"}
+          </Button>
+        </div>
 
         {!rows.length ? (
           <div className="text-xs text-muted-foreground">{loading ? "Loading variants…" : "No variants yet (run pipeline)."}</div>

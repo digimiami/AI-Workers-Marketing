@@ -62,7 +62,12 @@ export function normalizeZernioMcpServerUrl(raw: string | undefined | null): str
   return trimmed;
 }
 
-async function getZernioApiKeyForOrg(organizationId: string): Promise<string | null> {
+export type ZernioOrgCredentials = {
+  apiKey: string;
+  serverUrl: string | null;
+};
+
+export async function getZernioOrgCredentials(organizationId: string): Promise<ZernioOrgCredentials | null> {
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin
     .from("organization_ad_credentials" as never)
@@ -75,17 +80,51 @@ async function getZernioApiKeyForOrg(organizationId: string): Promise<string | n
   try {
     const decrypted = decryptJson((data as { encrypted: unknown }).encrypted);
     const k = typeof decrypted.api_key === "string" ? decrypted.api_key.trim() : "";
-    return k && k.length >= 10 ? k : null;
+    if (!k || k.length < 10) return null;
+    const serverUrl =
+      typeof decrypted.server_url === "string" && decrypted.server_url.trim()
+        ? decrypted.server_url.trim()
+        : null;
+    return { apiKey: k, serverUrl };
   } catch {
     return null;
   }
 }
 
+export async function isZernioMcpConfiguredForOrg(organizationId: string): Promise<boolean> {
+  const org = await getZernioOrgCredentials(organizationId).catch(() => null);
+  if (org?.apiKey) return true;
+  return isZernioMcpConfigured();
+}
+
+export async function getZernioConnectionStatus(organizationId: string) {
+  const org = await getZernioOrgCredentials(organizationId).catch(() => null);
+  const envKey = Boolean(env.server.ZERNIO_MCP_API_KEY?.trim() && env.server.ZERNIO_MCP_API_KEY.length >= 10);
+  const configuredRaw = org?.serverUrl ?? env.server.ZERNIO_MCP_SERVER_URL?.trim();
+  const effectiveUrl = normalizeZernioMcpServerUrl(configuredRaw);
+  const urlWarning = Boolean(
+    configuredRaw &&
+      configuredRaw !== effectiveUrl &&
+      configuredRaw.includes("zernio.com") &&
+      !configuredRaw.includes("mcp.zernio.com"),
+  );
+  return {
+    connected: Boolean(org?.apiKey) || envKey,
+    orgConnected: Boolean(org?.apiKey),
+    envFallback: envKey && !org?.apiKey,
+    serverUrl: effectiveUrl,
+    urlWarning,
+    urlWarningMessage: urlWarning
+      ? "Zernio URL pointed at the marketing site. Use https://mcp.zernio.com/mcp."
+      : null,
+  };
+}
+
 async function getZernioConfig(organizationId?: string | null) {
-  const orgKey = organizationId ? await getZernioApiKeyForOrg(organizationId).catch(() => null) : null;
-  const apiKey = (orgKey ?? env.server.ZERNIO_MCP_API_KEY ?? "").trim();
+  const orgCreds = organizationId ? await getZernioOrgCredentials(organizationId).catch(() => null) : null;
+  const apiKey = (orgCreds?.apiKey ?? env.server.ZERNIO_MCP_API_KEY ?? "").trim();
   if (!apiKey || apiKey.length < 10) throw new Error("ZERNIO_MCP_NOT_CONFIGURED");
-  const configured = env.server.ZERNIO_MCP_SERVER_URL?.trim();
+  const configured = orgCreds?.serverUrl ?? env.server.ZERNIO_MCP_SERVER_URL?.trim();
   const serverUrl = normalizeZernioMcpServerUrl(configured);
   if (
     configured &&
@@ -95,7 +134,7 @@ async function getZernioConfig(organizationId?: string | null) {
       `[zernio-mcp] ZERNIO_MCP_SERVER_URL was "${configured}" — using MCP endpoint ${serverUrl}. ${ZERNIO_WRONG_ENDPOINT_HINT}`,
     );
   }
-  return { serverUrl, apiKey, source: orgKey ? "org" : "env" as const };
+  return { serverUrl, apiKey, source: orgCreds?.apiKey ? ("org" as const) : ("env" as const) };
 }
 
 export function isZernioMcpConfigured(): boolean {

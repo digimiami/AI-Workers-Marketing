@@ -59,6 +59,9 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Pipeline failed";
-    return NextResponse.json({ ok: false, message: msg, runId: parsed.data.runId }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, message: msg, runId: parsed.data.runId, status: "failed", errors: [msg] },
+      { status: 200 },
+    );
   }
 }

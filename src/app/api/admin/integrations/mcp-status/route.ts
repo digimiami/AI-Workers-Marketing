@@ -4,11 +4,7 @@ import { z } from "zod";
 
 import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
 import { env } from "@/lib/env";
-import {
-  DEFAULT_ZERNIO_MCP_SERVER_URL,
-  isZernioMcpConfigured,
-  normalizeZernioMcpServerUrl,
-} from "@/services/zernio/zernioMcp";
+import { getZernioConnectionStatus, isZernioMcpConfigured } from "@/services/zernio/zernioMcp";
 
 /**
  * MCP integration flags for admin UI (no secrets returned).
@@ -28,25 +24,18 @@ export async function GET(request: Request) {
     env.server.ZAPIER_MCP_SERVER_URL?.trim() && env.server.ZAPIER_MCP_SECRET && env.server.ZAPIER_MCP_SECRET.length >= 10,
   );
 
-  const configuredRaw = env.server.ZERNIO_MCP_SERVER_URL?.trim();
-  const effectiveUrl = normalizeZernioMcpServerUrl(configuredRaw);
-  const urlWarning = Boolean(
-    configuredRaw &&
-      configuredRaw !== effectiveUrl &&
-      configuredRaw.includes("zernio.com") &&
-      !configuredRaw.includes("mcp.zernio.com"),
-  );
+  const zernioStatus = await getZernioConnectionStatus(parsed.data);
 
   return NextResponse.json({
     ok: true,
     zernio: {
-      configured: isZernioMcpConfigured(),
-      serverUrl: effectiveUrl,
-      configuredServerUrl: configuredRaw || null,
-      urlWarning,
-      urlWarningMessage: urlWarning
-        ? "ZERNIO_MCP_SERVER_URL points at the marketing/docs site. Use https://mcp.zernio.com/mcp in Vercel."
-        : null,
+      configured: zernioStatus.connected || isZernioMcpConfigured(),
+      orgConnected: zernioStatus.orgConnected,
+      envFallback: zernioStatus.envFallback,
+      serverUrl: zernioStatus.serverUrl,
+      configuredServerUrl: env.server.ZERNIO_MCP_SERVER_URL?.trim() || null,
+      urlWarning: zernioStatus.urlWarning,
+      urlWarningMessage: zernioStatus.urlWarningMessage,
     },
     zapier: {
       configured: zapierConfigured,

@@ -14,6 +14,9 @@ const schema = z.object({
   email: z.string().email(),
   fullName: z.string().min(1).optional(),
   phone: z.string().min(6).optional(),
+  company: z.string().min(1).optional(),
+  trackCampaign: z.coerce.boolean().optional(),
+  trackEmail: z.coerce.boolean().optional(),
   sourcePage: z.string().optional(),
   sourceContentAssetId: z.string().uuid().optional(),
   utm: z.record(z.string(), z.string()).optional(),
@@ -71,7 +74,17 @@ export async function POST(request: Request) {
         source_content_asset_id: parsed.data.sourceContentAssetId ?? null,
         metadata: {
           ...(parsed.data.metadata ?? {}),
-          utm: parsed.data.utm ?? null,
+          utm:
+            parsed.data.utm ??
+            (parsed.data.trackCampaign
+              ? {
+                  campaign: parsed.data.campaignId ?? undefined,
+                  source: "landing",
+                  medium: "funnel",
+                }
+              : null),
+          track_email: parsed.data.trackEmail === true,
+          company: parsed.data.company ?? null,
           funnel_id: parsed.data.funnelId ?? null,
           user_agent: ua,
           ip_hash: hashIp(ip),

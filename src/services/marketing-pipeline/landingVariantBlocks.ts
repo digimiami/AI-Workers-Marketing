@@ -84,6 +84,21 @@ export function buildLandingVariantBlocks(v: Record<string, unknown>): unknown[]
         ? String((v as { hero_badge?: unknown }).hero_badge).trim().slice(0, 160)
         : "";
 
+  const media = asRecord((v as { media?: unknown }).media);
+  const heroImageUrl =
+    typeof media.heroImageUrl === "string"
+      ? media.heroImageUrl
+      : typeof (v as { heroImageUrl?: unknown }).heroImageUrl === "string"
+        ? String((v as { heroImageUrl?: unknown }).heroImageUrl)
+        : "";
+  const videoUrl = typeof media.videoUrl === "string" ? media.videoUrl : "";
+  const videoCaption = typeof media.videoCaption === "string" ? media.videoCaption : "";
+  const formFields = Array.isArray((v as { formFields?: unknown }).formFields)
+    ? ((v as { formFields: unknown[] }).formFields as unknown[]).filter((x): x is string => typeof x === "string")
+    : ["email", "name"];
+  const tracking = asRecord((v as { tracking?: unknown }).tracking);
+  const finalCtaRaw = asRecord((v as { finalCTA?: unknown }).finalCTA);
+
   const blocks: unknown[] = [
     {
       type: "hero",
@@ -92,8 +107,28 @@ export function buildLandingVariantBlocks(v: Record<string, unknown>): unknown[]
       cta_label: cta,
       trust_line: trustLine,
       ...(heroBadge ? { badge: heroBadge } : {}),
+      ...(heroImageUrl ? { image_url: heroImageUrl } : {}),
     },
   ];
+
+  if (heroImageUrl) {
+    blocks.push({ type: "image", url: heroImageUrl, alt: headline || "Hero", caption: subheadline || undefined });
+  }
+  if (videoUrl) {
+    blocks.push({ type: "video", url: videoUrl, caption: videoCaption || undefined });
+  }
+
+  const mediaImages = Array.isArray(media.images) ? (media.images as unknown[]).map((x) => asRecord(x)) : [];
+  for (const img of mediaImages) {
+    const url = typeof img.url === "string" ? img.url : "";
+    if (!url || url === heroImageUrl) continue;
+    blocks.push({
+      type: "image",
+      url,
+      alt: typeof img.alt === "string" ? img.alt : "",
+      caption: typeof img.caption === "string" ? img.caption : undefined,
+    });
+  }
 
   if (benefitItems.length) {
     blocks.push({ type: "benefits", items: benefitItems.map((x) => ({ title: x.title, desc: x.desc })) });
@@ -177,13 +212,51 @@ export function buildLandingVariantBlocks(v: Record<string, unknown>): unknown[]
     });
   }
 
-  blocks.push(...secBlocks);
+  for (const s of secBlocks) {
+    const st = String(s.type || "section");
+    if (st === "image" && typeof (s as { imageUrl?: unknown }).imageUrl === "string") {
+      blocks.push({
+        type: "image",
+        url: String((s as { imageUrl?: unknown }).imageUrl),
+        alt: typeof s.title === "string" ? s.title : "",
+        caption: typeof s.body === "string" ? s.body : undefined,
+      });
+    } else if (st === "video" && typeof (s as { videoUrl?: unknown }).videoUrl === "string") {
+      blocks.push({
+        type: "video",
+        url: String((s as { videoUrl?: unknown }).videoUrl),
+        caption: typeof s.title === "string" ? s.title : undefined,
+      });
+    } else {
+      blocks.push(s);
+    }
+  }
 
   if (trustLine.trim()) {
     blocks.push({ type: "section", title: "Trust", body: trustLine });
   }
 
-  blocks.push({ type: "lead_capture_form" });
+  const finalHeadline = typeof finalCtaRaw.headline === "string" ? finalCtaRaw.headline : "";
+  const finalSub = typeof finalCtaRaw.subheadline === "string" ? finalCtaRaw.subheadline : "";
+  const finalCtaText =
+    typeof finalCtaRaw.ctaText === "string" ? finalCtaRaw.ctaText : typeof finalCtaRaw.cta === "string" ? finalCtaRaw.cta : "";
+  if (finalHeadline || finalSub || finalCtaText) {
+    blocks.push({
+      type: "final_cta",
+      headline: finalHeadline,
+      subheadline: finalSub,
+      cta_label: finalCtaText || cta,
+    });
+  }
+
+  blocks.push({
+    type: "lead_capture_form",
+    fields: formFields,
+    tracking: {
+      campaign: tracking.campaign === true,
+      email: tracking.email === true,
+    },
+  });
 
   return blocks;
 }

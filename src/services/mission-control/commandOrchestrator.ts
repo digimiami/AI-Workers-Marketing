@@ -20,6 +20,10 @@ import {
   shouldBlockForIntake,
   type MissionControlIntake,
 } from "@/services/mission-control/intakeService";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { customizeLandingPageForCampaign } from "@/services/growth/customizeLandingPage";
+import { executeZernioAdsCommand } from "@/services/zernio/zernioAdsManager";
+import { getZernioConnectionStatus } from "@/services/zernio/zernioMcp";
 import { syncAgentsAndTemplates } from "@/services/openclaw/orchestrationService";
 import { encryptJson } from "@/services/platforms/credentialsCrypto";
 import { writeAuditLog } from "@/services/audit/auditService";
@@ -219,6 +223,124 @@ export async function processMissionCommand(params: {
       pipelineRunId: intake.pipelineRunId,
       launched: false,
     };
+  }
+
+  const isAdsCommand =
+    routed.intent === "create_ads" ||
+    routed.intent === "launch_campaign" ||
+    routed.intent === "optimize_campaign" ||
+    /\b(meta|google|tiktok|facebook)\s+ads?\b/i.test(rawMessage) ||
+    /\b(boost|launch|pause)\b.*\bads?\b/i.test(rawMessage);
+
+  if (isAdsCommand) {
+    const zernio = await getZernioConnectionStatus(params.organizationId);
+    if (zernio.connected) {
+      const adsOut = await executeZernioAdsCommand({
+        organizationId: params.organizationId,
+        userId: params.userId,
+        message: rawMessage,
+        campaignId: params.campaignId ?? null,
+        allowSpend: /\b(launch|go live|create|boost|spend|\$)\b/i.test(rawMessage),
+      });
+      const assistantReply = adsOut.ok
+        ? adsOut.reply
+        : adsOut.blocked
+          ? `${adsOut.reply}\n\nSay "launch with budget" or enable spend in Ads Manager to proceed.`
+          : `Ads command failed: ${adsOut.reply}`;
+
+      await params.db.from("mission_control_messages" as never).insert({
+        organization_id: params.organizationId,
+        session_id: sessionId,
+        role: "assistant",
+        content: assistantReply,
+        worker_key: "marketing_worker",
+        intent: routed.intent,
+        plan: {},
+        metadata: {
+          suggestions: ["List campaigns", "Show ad analytics", "Open Ads Manager"],
+          toolName: adsOut.toolName ?? null,
+        },
+      } as never);
+
+      return {
+        sessionId,
+        playbookId: null,
+        routed,
+        plan: null,
+        assignedWorkers: [{ key: "marketing_worker", legacyAgentKey: resolveLegacyAgentKey("marketing_worker") }],
+        reply: assistantReply,
+        suggestions: ["List campaigns", "Show ad analytics", "Open Ads Manager"],
+        launched: false,
+      };
+    }
+  }
+
+  const isLandingCustomize =
+    /\b(add|put|include|update|change|customize|insert|generate)\b.*\b(landing|page|form|video|image|picture|photo|tracking)\b/i.test(
+      rawMessage,
+    ) || /\btrack\s+(campaign|email|leads?)\b/i.test(rawMessage);
+
+  if (isLandingCustomize) {
+    const admin = createSupabaseAdminClient();
+    let targetCampaignId = params.campaignId ?? null;
+    if (!targetCampaignId && intake.pipelineRunId) {
+      const { data: runRow } = await admin
+        .from("marketing_pipeline_runs" as never)
+        .select("campaign_id")
+        .eq("id", intake.pipelineRunId)
+        .maybeSingle();
+      if ((runRow as { campaign_id?: string | null } | null)?.campaign_id) {
+        targetCampaignId = String((runRow as { campaign_id: string }).campaign_id);
+      }
+    }
+
+    if (targetCampaignId) {
+      const customized = await customizeLandingPageForCampaign({
+        admin,
+        organizationId: params.organizationId,
+        campaignId: targetCampaignId,
+        instruction: rawMessage,
+        actorUserId: params.userId,
+      });
+
+      const assistantReply = customized.ok
+        ? [
+            `Done — I updated your landing page.`,
+            ``,
+            `Applied: ${customized.applied.join(", ").replace(/_/g, " ")}`,
+            ``,
+            `Preview the live page, then publish when ready.`,
+          ].join("\n")
+        : `I couldn't update the landing page yet: ${customized.message}`;
+
+      await params.db.from("mission_control_messages" as never).insert({
+        organization_id: params.organizationId,
+        session_id: sessionId,
+        role: "assistant",
+        content: assistantReply,
+        worker_key: "funnel_worker",
+        intent: routed.intent,
+        plan: {},
+        metadata: {
+          suggestions: customized.ok ? ["Preview landing", "Add a video", "Track email signups"] : ["Open Workspace", "Regenerate landing"],
+          previewUrl: customized.ok ? customized.previewUrl : null,
+          campaignId: targetCampaignId,
+        },
+      } as never);
+
+      return {
+        sessionId,
+        playbookId: null,
+        routed,
+        plan: null,
+        assignedWorkers: [{ key: "funnel_worker", legacyAgentKey: resolveLegacyAgentKey("funnel_worker") }],
+        reply: assistantReply,
+        suggestions: customized.ok ? ["Preview landing", "Add a video", "Track email signups"] : ["Open Workspace"],
+        previewUrl: customized.ok ? customized.previewUrl : null,
+        campaignId: targetCampaignId,
+        launched: false,
+      };
+    }
   }
 
   const intakeBlock = shouldBlockForIntake({ intake, message: rawMessage, intent: routed.intent });
