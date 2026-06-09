@@ -2,6 +2,7 @@ import { env } from "@/lib/env";
 import { runStrictJsonPrompt } from "@/services/ai/jsonPrompt";
 import { assertAiUsageAllowed, recordAiUsage } from "@/services/ai/rateLimiter";
 import {
+  extractZernioToolResultPayload,
   formatZernioMcpError,
   zernioCallToolForOrg,
   zernioListToolsForOrg,
@@ -51,26 +52,7 @@ export async function listZernioAdsTools(organizationId: string) {
 }
 
 function extractToolResultPayload(result: unknown): unknown {
-  if (!result || typeof result !== "object") return result;
-  const r = result as { content?: unknown; structuredContent?: unknown; isError?: boolean };
-  if (r.structuredContent) return r.structuredContent;
-  if (Array.isArray(r.content)) {
-    const text = r.content
-      .map((c) => {
-        const row = c as { type?: string; text?: string };
-        return row.type === "text" && typeof row.text === "string" ? row.text : "";
-      })
-      .filter(Boolean)
-      .join("\n");
-    if (text) {
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text;
-      }
-    }
-  }
-  return result;
+  return extractZernioToolResultPayload(result);
 }
 
 export async function callZernioAdsTool(

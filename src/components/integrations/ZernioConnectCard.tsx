@@ -3,10 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, KeyRound, Loader2, Plug } from "lucide-react";
+import { KeyRound, Loader2, Plug } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { ZernioConnectedApps } from "@/components/integrations/ZernioConnectedApps";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +36,29 @@ export function ZernioConnectCard(props: { organizationId: string; className?: s
 
   const connected = Boolean(statusQuery.data?.connected);
 
+  const mcpAccountsQuery = useQuery({
+    queryKey: ["mcp-integrations-status", props.organizationId],
+    enabled: connected,
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/admin/integrations/mcp-status?organizationId=${encodeURIComponent(props.organizationId)}`,
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as {
+        zernio?: {
+          connectedAccounts?: Array<{
+            id: string;
+            platform: string;
+            label: string;
+            status?: string;
+            username?: string | null;
+          }>;
+          accountsError?: string | null;
+        };
+      };
+    },
+  });
+
   const connect = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/admin/integrations/zernio-mcp/connect", {
@@ -49,26 +73,11 @@ export function ZernioConnectCard(props: { organizationId: string; className?: s
       toast.success("Zernio connected — AI can manage your ad platforms");
       setApiKey("");
       await qc.invalidateQueries({ queryKey: ["zernio-ads-status", props.organizationId] });
+      await qc.invalidateQueries({ queryKey: ["mcp-integrations-status", props.organizationId] });
       await statusQuery.refetch();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Connect failed"),
   });
-
-  if (connected && props.compact) {
-    return (
-      <Card className={cn("border-emerald-500/20 bg-emerald-500/5", props.className)}>
-        <CardContent className="flex items-center justify-between gap-3 py-4">
-          <div className="flex items-center gap-2 text-sm">
-            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-            <span>Zernio connected</span>
-          </div>
-          <Link href="/admin/ads" className={buttonVariants({ size: "sm", variant: "outline" })}>
-            Ads Manager
-          </Link>
-        </CardContent>
-      </Card>
-    );
-  }
 
   if (connected) {
     return (
@@ -86,6 +95,13 @@ export function ZernioConnectCard(props: { organizationId: string; className?: s
             to manage Meta, Google, and TikTok ads.
           </CardDescription>
         </CardHeader>
+        <CardContent>
+          <ZernioConnectedApps
+            loading={mcpAccountsQuery.isLoading}
+            accounts={mcpAccountsQuery.data?.zernio?.connectedAccounts ?? []}
+            accountsError={mcpAccountsQuery.data?.zernio?.accountsError}
+          />
+        </CardContent>
       </Card>
     );
   }

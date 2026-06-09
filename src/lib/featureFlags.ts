@@ -1,5 +1,5 @@
-import { env } from "@/lib/env";
 import { asMetadataRecord } from "@/lib/mergeJsonbRecords";
+import { env } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type FeatureFlagKey =
@@ -21,7 +21,8 @@ export type FeatureFlags = Record<FeatureFlagKey, boolean>;
  * environment defaults and provide an easy single place to switch behavior.
  */
 export function getDefaultFeatureFlags(): FeatureFlags {
-  const isProd = env.server.NODE_ENV === "production";
+  // eslint-disable-next-line no-process-env
+  const isProd = process.env.NODE_ENV === "production";
 
   return {
     enable_openclaw: true,

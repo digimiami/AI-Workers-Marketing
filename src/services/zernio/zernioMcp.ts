@@ -203,6 +203,125 @@ export async function withZernioMcpClient<T>(
   }
 }
 
+export function extractZernioToolResultPayload(result: unknown): unknown {
+  if (!result || typeof result !== "object") return result;
+  const r = result as { content?: unknown; structuredContent?: unknown; isError?: boolean };
+  if (r.structuredContent) return r.structuredContent;
+  if (Array.isArray(r.content)) {
+    const text = r.content
+      .map((c) => {
+        const row = c as { type?: string; text?: string };
+        return row.type === "text" && typeof row.text === "string" ? row.text : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+    if (text) {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    }
+  }
+  return result;
+}
+
+export type ZernioConnectedAccount = {
+  id: string;
+  platform: string;
+  label: string;
+  status?: string;
+  username?: string | null;
+};
+
+const PLATFORM_LABELS: Record<string, string> = {
+  instagram: "Instagram",
+  facebook: "Facebook",
+  twitter: "X (Twitter)",
+  x: "X (Twitter)",
+  linkedin: "LinkedIn",
+  tiktok: "TikTok",
+  youtube: "YouTube",
+  threads: "Threads",
+  pinterest: "Pinterest",
+  reddit: "Reddit",
+  bluesky: "Bluesky",
+  whatsapp: "WhatsApp",
+  telegram: "Telegram",
+  discord: "Discord",
+  snapchat: "Snapchat",
+  google_business: "Google Business",
+  meta_ads: "Meta Ads",
+  google_ads: "Google Ads",
+  tiktok_ads: "TikTok Ads",
+};
+
+function platformLabel(platform: string): string {
+  const key = platform.toLowerCase().replace(/\s+/g, "_");
+  return PLATFORM_LABELS[key] ?? platform.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function normalizeZernioConnectedAccounts(data: unknown): ZernioConnectedAccount[] {
+  const root = data as { accounts?: unknown[]; data?: { accounts?: unknown[] } } | unknown[];
+  const rows = Array.isArray(root)
+    ? root
+    : Array.isArray(root?.accounts)
+      ? root.accounts
+      : Array.isArray(root?.data?.accounts)
+        ? root.data.accounts
+        : [];
+
+  const out: ZernioConnectedAccount[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const id = String(r._id ?? r.id ?? r.account_id ?? "").trim();
+    const platform = String(r.platform ?? r.provider ?? r.type ?? "unknown").trim();
+    if (!id && !platform) continue;
+    const username =
+      typeof r.username === "string"
+        ? r.username
+        : typeof r.handle === "string"
+          ? r.handle
+          : typeof r.name === "string"
+            ? r.name
+            : null;
+    const status =
+      typeof r.status === "string"
+        ? r.status
+        : typeof r.connectionStatus === "string"
+          ? r.connectionStatus
+          : undefined;
+    out.push({
+      id: id || `${platform}-${out.length}`,
+      platform,
+      label: platformLabel(platform),
+      status,
+      username,
+    });
+  }
+  return out;
+}
+
+export async function listZernioConnectedAccounts(organizationId: string): Promise<{
+  accounts: ZernioConnectedAccount[];
+  tool?: string;
+}> {
+  const candidates = ["accounts_list", "list_accounts", "v1_accounts_list"];
+  let lastError: unknown = null;
+  for (const tool of candidates) {
+    try {
+      const result = await zernioCallToolForOrg(organizationId, tool, {});
+      const data = extractZernioToolResultPayload(result);
+      const accounts = normalizeZernioConnectedAccounts(data);
+      return { accounts, tool };
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(formatZernioMcpError(lastError));
+}
+
 export async function zernioListTools() {
   return withZernioMcpClient({}, async (client) => client.listTools());
 }

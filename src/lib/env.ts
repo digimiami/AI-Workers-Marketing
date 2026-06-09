@@ -156,17 +156,35 @@ function withOptionalBuildPlaceholders(raw: NodeJS.ProcessEnv): NodeJS.ProcessEn
 
 export const env = (() => {
   const raw = withOptionalBuildPlaceholders(getProcessEnv());
-  const serverParsed = serverSchema.safeParse(raw);
   const clientParsed = clientSchema.safeParse(raw);
-
-  if (!serverParsed.success) {
-    throw new Error(
-      `Invalid server environment variables:\n${serverParsed.error.message}`,
-    );
-  }
   if (!clientParsed.success) {
     throw new Error(
       `Invalid client environment variables:\n${clientParsed.error.message}`,
+    );
+  }
+
+  // Browser bundles only receive NEXT_PUBLIC_* — never validate full server schema on the client.
+  if (typeof window !== "undefined") {
+    const serverParsed = serverSchema.safeParse({
+      NODE_ENV: raw.NODE_ENV ?? "production",
+      SUPABASE_URL: clientParsed.data.NEXT_PUBLIC_SUPABASE_URL,
+      SUPABASE_ANON_KEY: clientParsed.data.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    });
+    if (!serverParsed.success) {
+      throw new Error(
+        `Invalid server environment variables:\n${serverParsed.error.message}`,
+      );
+    }
+    return {
+      server: serverParsed.data,
+      client: clientParsed.data,
+    } as const;
+  }
+
+  const serverParsed = serverSchema.safeParse(raw);
+  if (!serverParsed.success) {
+    throw new Error(
+      `Invalid server environment variables:\n${serverParsed.error.message}`,
     );
   }
 

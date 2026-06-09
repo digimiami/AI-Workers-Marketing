@@ -25,6 +25,7 @@ import {
   type FeatureFlags,
   getDefaultFeatureFlags,
 } from "@/lib/featureFlags";
+import { ZernioConnectedApps } from "@/components/integrations/ZernioConnectedApps";
 import { toast } from "sonner";
 
 type SettingRow = { key: string; value: Record<string, unknown>; updated_at: string };
@@ -361,6 +362,14 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
           serverUrl: string;
           urlWarning?: boolean;
           urlWarningMessage?: string | null;
+          connectedAccounts?: Array<{
+            id: string;
+            platform: string;
+            label: string;
+            status?: string;
+            username?: string | null;
+          }>;
+          accountsError?: string | null;
         };
         zapier: { configured: boolean };
       };
@@ -381,6 +390,7 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
     },
     onSuccess: async () => {
       setZernioApiKey("");
+      await qc.invalidateQueries({ queryKey: ["mcp-integrations-status", organizationId] });
       toast.success("Zernio API key saved for this organization");
       await mcpStatusQuery.refetch();
     },
@@ -410,12 +420,13 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
       if (!res.ok) throw new Error(j.message ?? raw);
       return j;
     },
-    onSuccess: (j) => {
+    onSuccess: async (j) => {
       if (j.urlWasCorrected) {
         toast.warning(
           "Connected, but ZERNIO_MCP_SERVER_URL was the marketing site. Update Vercel to https://mcp.zernio.com/mcp",
         );
       }
+      await qc.invalidateQueries({ queryKey: ["mcp-integrations-status", organizationId] });
       toast.success(j.message ?? `Zernio MCP OK (${j.toolCount ?? 0} tools)`);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Zernio test failed"),
@@ -533,6 +544,13 @@ export function SettingsClient({ organizationId }: { organizationId: string }) {
               </span>
             )}
           </div>
+          {mcpStatusQuery.data?.zernio?.configured ? (
+            <ZernioConnectedApps
+              loading={mcpStatusQuery.isLoading}
+              accounts={mcpStatusQuery.data?.zernio?.connectedAccounts ?? []}
+              accountsError={mcpStatusQuery.data?.zernio?.accountsError}
+            />
+          ) : null}
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end max-w-xl">
             <div className="space-y-1">
               <Label htmlFor="zernio-org-api-key" className="text-xs">

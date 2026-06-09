@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, ExternalLink, KeyRound, Loader2, Plug, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
+import { ZernioConnectedApps } from "@/components/integrations/ZernioConnectedApps";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,29 @@ export function ZernioAdsPanel(props: { organizationId: string; campaignId?: str
     },
   });
 
+  const mcpAccountsQuery = useQuery({
+    queryKey: ["mcp-integrations-status", props.organizationId],
+    enabled: Boolean(statusQuery.data?.status?.connected ?? statusQuery.data?.ok),
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/admin/integrations/mcp-status?organizationId=${encodeURIComponent(props.organizationId)}`,
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as {
+        zernio?: {
+          connectedAccounts?: Array<{
+            id: string;
+            platform: string;
+            label: string;
+            status?: string;
+            username?: string | null;
+          }>;
+          accountsError?: string | null;
+        };
+      };
+    },
+  });
+
   const connected = Boolean(statusQuery.data?.status?.connected ?? statusQuery.data?.ok);
 
   const connect = useMutation({
@@ -56,6 +80,7 @@ export function ZernioAdsPanel(props: { organizationId: string; campaignId?: str
       toast.success("Zernio API key saved — AI can manage ads on your connected platforms");
       setApiKey("");
       await qc.invalidateQueries({ queryKey: ["zernio-ads-status", props.organizationId] });
+      await qc.invalidateQueries({ queryKey: ["mcp-integrations-status", props.organizationId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Connect failed"),
   });
@@ -202,6 +227,12 @@ export function ZernioAdsPanel(props: { organizationId: string; campaignId?: str
 
         {connected ? (
           <>
+            <ZernioConnectedApps
+              loading={mcpAccountsQuery.isLoading}
+              accounts={mcpAccountsQuery.data?.zernio?.connectedAccounts ?? []}
+              accountsError={mcpAccountsQuery.data?.zernio?.accountsError}
+            />
+
             <div className="rounded-xl border border-border/50 bg-muted/10 p-3 text-xs text-muted-foreground">
               MCP endpoint:{" "}
               <code className="font-mono">{statusQuery.data?.status?.serverUrl ?? "https://mcp.zernio.com/mcp"}</code>
