@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
 import { writeAuditLog } from "@/services/audit/auditService";
-import { encryptJson } from "@/services/platforms/credentialsCrypto";
-import { getZernioConnectionStatus } from "@/services/zernio/zernioMcp";
+import {
+  deleteZernioOrgCredentials,
+  getZernioConnectionStatus,
+  saveZernioOrgCredentials,
+} from "@/services/zernio/zernioMcp";
 
 const bodySchema = z.object({
   organizationId: z.string().uuid(),
@@ -21,7 +23,7 @@ export async function GET(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: "organizationId required" }, { status: 400 });
   }
-  const ctx = await withOrgOperator(parsed.data);
+  const ctx = await withOrgMember(parsed.data);
   if (ctx.error) return ctx.error;
   const status = await getZernioConnectionStatus(parsed.data);
   return NextResponse.json({ ok: true, ...status });
@@ -34,17 +36,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const ctx = await withOrgOperator(parsed.data.organizationId);
+  const ctx = await withOrgMember(parsed.data.organizationId);
   if (ctx.error) return ctx.error;
 
-  const admin = createSupabaseAdminClient();
-
   if (parsed.data.disconnect) {
-    await admin
-      .from("organization_ad_credentials" as never)
-      .delete()
-      .eq("organization_id", parsed.data.organizationId)
-      .eq("platform", "zernio_mcp");
+    await deleteZernioOrgCredentials(parsed.data.organizationId);
     return NextResponse.json({ ok: true, connected: false });
   }
 
@@ -52,24 +48,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "apiKey required" }, { status: 400 });
   }
 
-  const encrypted = encryptJson({
-    api_key: parsed.data.apiKey,
-    server_url: parsed.data.serverUrl ?? null,
+  const saved = await saveZernioOrgCredentials(parsed.data.organizationId, {
+    apiKey: parsed.data.apiKey,
+    serverUrl: parsed.data.serverUrl ?? null,
   });
-
-  const { error } = await admin
-    .from("organization_ad_credentials" as never)
-    .upsert(
-      {
-        organization_id: parsed.data.organizationId,
-        platform: "zernio_mcp",
-        encrypted,
-        status: { connected: true, missing: [] as string[] },
-        updated_at: new Date().toISOString(),
-      } as never,
-      { onConflict: "organization_id,platform" },
-    );
-  if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+  if (!saved.ok) return NextResponse.json({ ok: false, message: saved.error }, { status: 500 });
 
   await writeAuditLog({
     organizationId: parsed.data.organizationId,

@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { ArrowUpRight, Bot, DollarSign, Megaphone, Target, TrendingUp, Users } from "lucide-react";
 
 import { MissionControlChatbot } from "@/components/mission-control/MissionControlChatbot";
+import { ZernioConnectCard } from "@/components/integrations/ZernioConnectCard";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -133,6 +134,8 @@ export function MissionControlClient({ organizationId }: { organizationId: strin
         </motion.div>
 
         <motion.div className="lg:col-span-2 space-y-4" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}>
+          <ZernioConnectCard organizationId={organizationId} />
+
           <Card className="border-border/60 glass-panel">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">

@@ -145,6 +145,7 @@ export function ZernioAdsPanel(props: { organizationId: string; campaignId?: str
                 Zernio API key
               </a>{" "}
               so the AI assistant can list, create, and manage Meta / Google / TikTok ads via 280+ MCP tools.
+              Any workspace member can save an org API key here.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
+import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
 import { writeAuditLog } from "@/services/audit/auditService";
-import { encryptJson } from "@/services/platforms/credentialsCrypto";
+import { getZernioConnectionStatus, saveZernioOrgCredentials } from "@/services/zernio/zernioMcp";
 
 const bodySchema = z.object({
   organizationId: z.string().uuid(),
@@ -18,28 +18,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const ctx = await withOrgOperator(parsed.data.organizationId);
+  const ctx = await withOrgMember(parsed.data.organizationId);
   if (ctx.error) return ctx.error;
 
-  const encrypted = encryptJson({
-    api_key: parsed.data.apiKey,
-    server_url: parsed.data.serverUrl ?? null,
+  const saved = await saveZernioOrgCredentials(parsed.data.organizationId, {
+    apiKey: parsed.data.apiKey,
+    serverUrl: parsed.data.serverUrl ?? null,
   });
-  const status = { connected: true, missing: [] as string[] };
-
-  const { error } = await ctx.supabase
-    .from("organization_ad_credentials" as never)
-    .upsert(
-      {
-        organization_id: parsed.data.organizationId,
-        platform: "zernio_mcp",
-        encrypted,
-        status,
-        updated_at: new Date().toISOString(),
-      } as never,
-      { onConflict: "organization_id,platform" },
-    );
-  if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+  if (!saved.ok) return NextResponse.json({ ok: false, message: saved.error }, { status: 500 });
 
   await writeAuditLog({
     organizationId: parsed.data.organizationId,
@@ -47,9 +33,10 @@ export async function POST(request: Request) {
     action: "settings.updated",
     entityType: "zernio_mcp",
     entityId: "zernio_mcp",
-    metadata: { connected: true },
+    metadata: { connected: true, surface: "mission_control" },
   });
 
-  return NextResponse.json({ ok: true, connected: true });
+  const status = await getZernioConnectionStatus(parsed.data.organizationId);
+  return NextResponse.json({ ok: true, ...status });
 }
 

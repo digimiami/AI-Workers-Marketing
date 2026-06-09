@@ -3,7 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 import { env } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { decryptJson } from "@/services/platforms/credentialsCrypto";
+import { decryptJson, encryptJson } from "@/services/platforms/credentialsCrypto";
 
 /** Hosted Zernio MCP (Streamable HTTP). See https://docs.zernio.com/mcp */
 export const DEFAULT_ZERNIO_MCP_SERVER_URL = "https://mcp.zernio.com/mcp";
@@ -89,6 +89,40 @@ export async function getZernioOrgCredentials(organizationId: string): Promise<Z
   } catch {
     return null;
   }
+}
+
+export async function saveZernioOrgCredentials(
+  organizationId: string,
+  input: { apiKey: string; serverUrl?: string | null },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = createSupabaseAdminClient();
+  const encrypted = encryptJson({
+    api_key: input.apiKey.trim(),
+    server_url: input.serverUrl?.trim() ?? null,
+  });
+  const { error } = await admin
+    .from("organization_ad_credentials" as never)
+    .upsert(
+      {
+        organization_id: organizationId,
+        platform: "zernio_mcp",
+        encrypted,
+        status: { connected: true, missing: [] as string[] },
+        updated_at: new Date().toISOString(),
+      } as never,
+      { onConflict: "organization_id,platform" },
+    );
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function deleteZernioOrgCredentials(organizationId: string): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  await admin
+    .from("organization_ad_credentials" as never)
+    .delete()
+    .eq("organization_id", organizationId)
+    .eq("platform", "zernio_mcp");
 }
 
 export async function isZernioMcpConfiguredForOrg(organizationId: string): Promise<boolean> {

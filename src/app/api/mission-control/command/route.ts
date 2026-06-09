@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
+import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
 import { missionCommandBodySchema } from "@/domain/mission-control/types";
 import { processMissionCommand } from "@/services/mission-control/commandOrchestrator";
 
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const ctx = await withOrgOperator(parsed.data.organizationId);
+  const ctx = await withOrgMember(parsed.data.organizationId);
   if (ctx.error) return ctx.error;
 
   try {

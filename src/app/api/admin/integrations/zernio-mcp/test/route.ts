@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { z } from "zod";
 
-import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
+import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
 import {
   formatZernioMcpError,
   getZernioConnectionStatus,
@@ -14,7 +14,7 @@ const bodySchema = z.object({
 });
 
 /**
- * Verifies Zernio MCP connectivity (listTools). Operators only.
+ * Verifies Zernio MCP connectivity (listTools). Any org member.
  */
 export async function POST(request: Request) {
   const json = await request.json().catch(() => null);
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Invalid body" }, { status: 400 });
   }
 
-  const ctx = await withOrgOperator(parsed.data.organizationId);
+  const ctx = await withOrgMember(parsed.data.organizationId);
   if (ctx.error) return ctx.error;
 
   const conn = await getZernioConnectionStatus(parsed.data.organizationId);

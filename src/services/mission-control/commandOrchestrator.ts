@@ -23,9 +23,8 @@ import {
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { customizeLandingPageForCampaign } from "@/services/growth/customizeLandingPage";
 import { executeZernioAdsCommand } from "@/services/zernio/zernioAdsManager";
-import { getZernioConnectionStatus } from "@/services/zernio/zernioMcp";
+import { getZernioConnectionStatus, saveZernioOrgCredentials } from "@/services/zernio/zernioMcp";
 import { syncAgentsAndTemplates } from "@/services/openclaw/orchestrationService";
-import { encryptJson } from "@/services/platforms/credentialsCrypto";
 import { writeAuditLog } from "@/services/audit/auditService";
 
 export async function processMissionCommand(params: {
@@ -131,28 +130,15 @@ export async function processMissionCommand(params: {
   if (pendingAction?.type === "connect_zernio_mcp" && looksLikeApiKey) {
     let ok = false;
     try {
-      const encrypted = encryptJson({ api_key: rawMessage });
-      const status = { connected: true, missing: [] as string[] };
-      const { error } = await params.db
-        .from("organization_ad_credentials" as never)
-        .upsert(
-          {
-            organization_id: params.organizationId,
-            platform: "zernio_mcp",
-            encrypted,
-            status,
-            updated_at: new Date().toISOString(),
-          } as never,
-          { onConflict: "organization_id,platform" },
-        );
-      if (!error) ok = true;
+      const saved = await saveZernioOrgCredentials(params.organizationId, { apiKey: rawMessage });
+      ok = saved.ok;
       await writeAuditLog({
         organizationId: params.organizationId,
         actorUserId: params.userId,
         action: "settings.updated",
         entityType: "zernio_mcp",
         entityId: "zernio_mcp",
-        metadata: { connected: ok },
+        metadata: { connected: ok, surface: "mission_control_chat" },
       }).catch(() => undefined);
     } catch {
       ok = false;

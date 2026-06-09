@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { z } from "zod";
 
-import { withOrgOperator } from "@/app/api/admin/openclaw/_shared";
+import { withOrgMember } from "@/app/api/admin/openclaw/_shared";
 import {
   callZernioAdsTool,
   executeZernioAdsCommand,
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Invalid body", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const ctx = await withOrgOperator(parsed.data.organizationId);
+  const ctx = await withOrgMember(parsed.data.organizationId);
   if (ctx.error) return ctx.error;
 
   const status = await getZernioConnectionStatus(parsed.data.organizationId);
