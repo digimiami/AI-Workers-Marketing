@@ -308,6 +308,26 @@ export function AiWorkspacePage(props: Props) {
             </div>
           ) : null}
 
+          {live.state.finalStatus === "failed" && !live.state.errors.length ? (
+            <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100">
+              Build failed during campaign assembly. Click <span className="font-medium">Retry stream</span> below or
+              regenerate from saved workspaces.
+              <div className="mt-3">
+                <Button
+                  variant="outline"
+                  className="border-rose-500/50"
+                  disabled={!(live.state.runId ?? runIdProp)}
+                  onClick={() => {
+                    const rid = live.state.runId ?? runIdProp;
+                    if (rid) void live.resume(rid, { preserveResults: true });
+                  }}
+                >
+                  Retry stream
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {live.state.errors.length ? (
             <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100">
               {live.state.errors.map((e, i) => (
