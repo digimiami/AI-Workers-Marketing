@@ -119,22 +119,26 @@ function withOptionalBuildPlaceholders(raw: NodeJS.ProcessEnv): NodeJS.ProcessEn
   const duringNpmBuild = raw.npm_lifecycle_event === "build";
   const duringDev = raw.npm_lifecycle_event === "dev";
 
+  // Bidirectional mirror — Vercel often sets only NEXT_PUBLIC_*; server routes need SUPABASE_*.
+  // Client bundles only receive NEXT_PUBLIC_*; mirroring avoids runtime crashes in "use client" pages.
   const publicUrl =
     raw.NEXT_PUBLIC_SUPABASE_URL ?? raw.SUPABASE_URL ?? "";
   const publicAnon =
     raw.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? raw.SUPABASE_ANON_KEY ?? "";
 
-  const clientMissing = !publicUrl || !publicAnon;
-  const serverMissing = !raw.SUPABASE_URL || !raw.SUPABASE_ANON_KEY;
-  const allowPlaceholders = skip || duringNpmBuild || duringDev;
-
-  if (!allowPlaceholders && !clientMissing && !serverMissing) return raw;
-
   const out: NodeJS.ProcessEnv = {
     ...raw,
     NEXT_PUBLIC_SUPABASE_URL: publicUrl || undefined,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: publicAnon || undefined,
+    SUPABASE_URL: raw.SUPABASE_URL ?? (publicUrl || undefined),
+    SUPABASE_ANON_KEY: raw.SUPABASE_ANON_KEY ?? (publicAnon || undefined),
   };
+
+  const clientMissing = !out.NEXT_PUBLIC_SUPABASE_URL || !out.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const serverMissing = !out.SUPABASE_URL || !out.SUPABASE_ANON_KEY;
+  const allowPlaceholders = skip || duringNpmBuild || duringDev;
+
+  if (!allowPlaceholders && !clientMissing && !serverMissing) return out;
 
   if (allowPlaceholders) {
     if (!out.SUPABASE_URL) out.SUPABASE_URL = PLACEHOLDER_SUPABASE_URL;
