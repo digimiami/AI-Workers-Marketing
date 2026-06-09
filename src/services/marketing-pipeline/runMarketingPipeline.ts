@@ -15,6 +15,9 @@ import {
   isHeroAnchored,
   isSelfBrandCampaignUrl,
   LANDING_FREQ_STOPWORDS,
+  computeLandingConversionScore,
+  LANDING_CONVERSION_SCORE_MIN,
+  LANDING_CONVERSION_SCORE_SOFT_MIN,
   markCampaignNeedsLandingFix,
   mentionsAiWorkersPlatform,
   specificPageKeywords,
@@ -1564,7 +1567,7 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     let variantsVerdict = validateVariantsShape(asRecord(variantsOut.output));
     console.info("[landing] variants-attempt", { attempt: 1, verdict: variantsVerdict });
 
-    for (let vAttempt = 2; vAttempt <= 4; vAttempt++) {
+    for (let vAttempt = 2; vAttempt <= 5; vAttempt++) {
       if (variantsVerdict.ok) break;
       let rule: string;
       if (variantsVerdict.reason === "banned") {
@@ -1606,32 +1609,64 @@ async function executeMarketingPipelineBody(state: MarketingPipelineBodyState): 
     }
 
     if (!variantsVerdict.ok) {
-      if (variantsVerdict.reason === "banned") {
-        await failVariants("banned_phrase", String(variantsVerdict.bannedMatch ?? ""));
-      } else if (variantsVerdict.reason === "not_anchored") {
-        await failVariants("not_anchored", `variant=${variantsVerdict.variantKey ?? "?"}`);
-      } else if (variantsVerdict.reason === "body_not_anchored") {
-        await failVariants("body_not_anchored", `variant=${variantsVerdict.variantKey ?? "?"}`);
-      } else if (variantsVerdict.reason === "variant_quality") {
+      let acceptedSoftConversion = false;
+      if (variantsVerdict.reason === "variant_quality") {
         const rawQ = variantsVerdict.verdict;
-        if (!rawQ || rawQ.ok) {
-          await failVariants("invalid_shape", "variant_quality_missing_verdict");
-        } else {
-          const q = rawQ;
-          if (q.reason === "generic_cta") {
-            await failVariants("generic_cta", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
-          } else if (q.reason === "low_conversion_score") {
-            await failVariants("low_conversion_score", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
-          } else if (q.reason === "not_anchored") {
-            await failVariants("not_anchored", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
-          } else if (q.reason === "banned_phrase" || q.reason === "placeholder") {
-            await failVariants("banned_phrase", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
-          } else {
-            await failVariants("invalid_shape", `variant=${variantsVerdict.variantKey}: ${q.detail ?? q.reason}`);
+        if (rawQ && !rawQ.ok && rawQ.reason === "low_conversion_score") {
+          const varsRaw = asRecord(variantsOut.output).variants;
+          if (Array.isArray(varsRaw)) {
+            const scores = varsRaw.map((raw) => computeLandingConversionScore(asRecord(raw)));
+            const worst = scores.length ? Math.min(...scores) : 0;
+            if (worst >= LANDING_CONVERSION_SCORE_SOFT_MIN) {
+              await log("creation", "warn", "Landing variants below target — saved as draft", {
+                scores,
+                target: LANDING_CONVERSION_SCORE_MIN,
+                softMin: LANDING_CONVERSION_SCORE_SOFT_MIN,
+                variantKey: variantsVerdict.variantKey,
+              });
+              if (campaignId) {
+                await markCampaignNeedsLandingFix({
+                  admin,
+                  organizationId,
+                  campaignId,
+                  reason: "low_conversion_score",
+                  detail: `draft accepted — scores=${scores.join(",")} target=${LANDING_CONVERSION_SCORE_MIN}`,
+                });
+              }
+              acceptedSoftConversion = true;
+            }
           }
         }
-      } else {
-        await failVariants("invalid_shape", "verdict=invalid_shape");
+      }
+
+      if (!acceptedSoftConversion) {
+        if (variantsVerdict.reason === "banned") {
+          await failVariants("banned_phrase", String(variantsVerdict.bannedMatch ?? ""));
+        } else if (variantsVerdict.reason === "not_anchored") {
+          await failVariants("not_anchored", `variant=${variantsVerdict.variantKey ?? "?"}`);
+        } else if (variantsVerdict.reason === "body_not_anchored") {
+          await failVariants("body_not_anchored", `variant=${variantsVerdict.variantKey ?? "?"}`);
+        } else if (variantsVerdict.reason === "variant_quality") {
+          const rawQ = variantsVerdict.verdict;
+          if (!rawQ || rawQ.ok) {
+            await failVariants("invalid_shape", "variant_quality_missing_verdict");
+          } else {
+            const q = rawQ;
+            if (q.reason === "generic_cta") {
+              await failVariants("generic_cta", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
+            } else if (q.reason === "low_conversion_score") {
+              await failVariants("low_conversion_score", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
+            } else if (q.reason === "not_anchored") {
+              await failVariants("not_anchored", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
+            } else if (q.reason === "banned_phrase" || q.reason === "placeholder") {
+              await failVariants("banned_phrase", `variant=${variantsVerdict.variantKey}: ${q.detail ?? ""}`);
+            } else {
+              await failVariants("invalid_shape", `variant=${variantsVerdict.variantKey}: ${q.detail ?? q.reason}`);
+            }
+          }
+        } else {
+          await failVariants("invalid_shape", "verdict=invalid_shape");
+        }
       }
     }
 

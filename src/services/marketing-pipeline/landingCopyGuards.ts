@@ -312,7 +312,10 @@ export function findBannedSubstring(text: string): string | null {
 }
 
 /** Minimum heuristic conversion score (0–100) required before a variant may be published. */
+/** Target score — retries aim to reach this. */
 export const LANDING_CONVERSION_SCORE_MIN = 85;
+/** Minimum to ship as draft after retries (pipeline continues; user can regenerate). */
+export const LANDING_CONVERSION_SCORE_SOFT_MIN = 72;
 
 const WEAK_CTA_EXACT = new Set([
   "learn more",
